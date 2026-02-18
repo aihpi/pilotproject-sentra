@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { SourceResponse } from "@/types";
-import { streamQuery } from "@/lib/api";
+import { streamQuery, submitFeedback } from "@/lib/api";
 import { SearchBar } from "@/components/SearchBar";
 import { AnswerCard } from "@/components/AnswerCard";
 import { SourceList } from "@/components/SourceList";
@@ -13,6 +13,7 @@ export function SearchView() {
   const [answer, setAnswer] = useState("");
   const [sources, setSources] = useState<SourceResponse[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [feedbackGiven, setFeedbackGiven] = useState<"positive" | "negative" | null>(null);
 
   const handleSearch = async () => {
     if (!question.trim() || isStreaming) return;
@@ -20,6 +21,7 @@ export function SearchView() {
     setAnswer("");
     setSources([]);
     setError(null);
+    setFeedbackGiven(null);
     setIsStreaming(true);
 
     try {
@@ -74,7 +76,17 @@ export function SearchView() {
 
       {(answer || isStreaming) && (
         <div className="space-y-6">
-          <AnswerCard answer={answer} isStreaming={isStreaming} />
+          <AnswerCard
+            answer={answer}
+            isStreaming={isStreaming}
+            feedbackGiven={feedbackGiven}
+            onFeedback={(rating) => {
+              setFeedbackGiven(rating);
+              submitFeedback({ question, answer, rating }).catch((err) =>
+                console.error("Failed to submit feedback:", err)
+              );
+            }}
+          />
           <SourceList sources={sources} />
         </div>
       )}

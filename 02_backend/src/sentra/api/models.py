@@ -15,6 +15,7 @@ class SourceResponse(BaseModel):
     fachbereich: str
     score: float
     text_preview: str
+    source_file: str
 
 
 class QueryResponse(BaseModel):
@@ -37,6 +38,17 @@ class DocumentInfo(BaseModel):
     completion_date: str
     language: str
     source_file: str
+
+
+class FeedbackRequest(BaseModel):
+    question: str
+    answer: str
+    rating: str  # "positive" or "negative"
+    comment: str | None = None
+
+
+class FeedbackResponse(BaseModel):
+    status: str
 
 
 class HealthResponse(BaseModel):

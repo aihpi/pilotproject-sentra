@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # RAG
     retrieval_top_k: int = 10
 
+    # Feedback
+    feedback_file: str = "/data/feedback.jsonl"
+
 
 @lru_cache
 def get_settings() -> Settings:

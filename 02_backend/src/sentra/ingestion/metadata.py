@@ -260,7 +260,7 @@ def _detect_language(markdown: str, source_file: str) -> str:
         if line.startswith("|") or line.startswith("---"):
             continue
         sample_lines.append(line)
-        if sum(len(l) for l in sample_lines) > 2000:
+        if sum(len(line) for line in sample_lines) > 2000:
             break
 
     sample = " ".join(sample_lines)

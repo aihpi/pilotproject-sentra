@@ -20,6 +20,7 @@ class Source:
     fachbereich: str
     score: float
     text_preview: str
+    source_file: str
 
 
 @dataclass
@@ -147,6 +148,7 @@ def _build_sources(results: list[dict]) -> list[Source]:
                 fachbereich=r["fachbereich"],
                 score=r["score"],
                 text_preview=preview,
+                source_file=r.get("source_file", ""),
             )
         )
 

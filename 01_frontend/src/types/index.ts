@@ -12,6 +12,7 @@ export interface SourceResponse {
   fachbereich: string;
   score: number;
   text_preview: string;
+  source_file: string;
 }
 
 export interface QueryResponse {
@@ -34,6 +35,13 @@ export interface DocumentInfo {
   completion_date: string;
   language: string;
   source_file: string;
+}
+
+export interface FeedbackRequest {
+  question: string;
+  answer: string;
+  rating: "positive" | "negative";
+  comment?: string | null;
 }
 
 export interface HealthResponse {
