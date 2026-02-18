@@ -1,11 +1,15 @@
 import json
 import logging
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import StreamingResponse
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import FileResponse, StreamingResponse
 
 from sentra.api.models import (
     DocumentInfo,
+    FeedbackRequest,
+    FeedbackResponse,
     HealthResponse,
     IngestResponse,
     QueryRequest,
@@ -56,6 +60,7 @@ async def query(
                 fachbereich=s.fachbereich,
                 score=s.score,
                 text_preview=s.text_preview,
+                source_file=s.source_file,
             )
             for s in result.sources
         ],
@@ -83,6 +88,7 @@ def _stream_response(body: QueryRequest, settings: Settings) -> StreamingRespons
                 "fachbereich": s.fachbereich,
                 "score": s.score,
                 "text_preview": s.text_preview,
+                "source_file": s.source_file,
             }
             for s in sources
         ]
@@ -175,6 +181,56 @@ async def list_documents(
             break
 
     return documents
+
+
+@router.get("/documents/{filename}")
+async def serve_document(
+    filename: str,
+    settings: Settings = Depends(get_settings),
+) -> FileResponse:
+    """Serve a PDF document by filename."""
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are served")
+
+    file_path = Path(settings.documents_dir) / filename
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    return FileResponse(
+        path=str(file_path),
+        media_type="application/pdf",
+        content_disposition_type="inline",
+        filename=filename,
+    )
+
+
+@router.post("/feedback", response_model=FeedbackResponse)
+async def submit_feedback(
+    body: FeedbackRequest,
+    settings: Settings = Depends(get_settings),
+) -> FeedbackResponse:
+    """Record user feedback on an answer."""
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    feedback_entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "question": body.question,
+        "answer": body.answer,
+        "rating": body.rating,
+        "comment": body.comment,
+    }
+
+    feedback_path = Path(settings.feedback_file)
+    feedback_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(feedback_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(feedback_entry, ensure_ascii=False) + "\n")
+
+    logger.info("Feedback recorded: %s", body.rating)
+    return FeedbackResponse(status="ok")
 
 
 @router.get("/health", response_model=HealthResponse)
