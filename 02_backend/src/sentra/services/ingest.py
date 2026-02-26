@@ -36,7 +36,7 @@ def run_ingestion(settings: Settings) -> dict:
     for doc in parsed_docs:
         try:
             metadata = extract_metadata(
-                doc.markdown, doc.furniture_text, doc.source_file
+                doc.markdown, doc.furniture_text, doc.source_file, doc.pdf_metadata
             )
             chunks = chunk_document(
                 doc.markdown, metadata, max_tokens=settings.chunk_max_tokens

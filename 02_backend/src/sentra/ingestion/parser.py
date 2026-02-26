@@ -1,7 +1,8 @@
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
+import pypdfium2 as pdfium
 from docling.document_converter import DocumentConverter
 from docling_core.types.doc.document import ContentLayer
 
@@ -15,6 +16,7 @@ class ParsedDocument:
     source_file: str
     markdown: str
     furniture_text: str  # page headers/footers — used for metadata extraction
+    pdf_metadata: dict = field(default_factory=dict)
 
 
 def parse_pdfs(documents_dir: str) -> list[ParsedDocument]:
@@ -23,6 +25,7 @@ def parse_pdfs(documents_dir: str) -> list[ParsedDocument]:
     Returns a list of ParsedDocument with:
     - markdown: body content (for chunking and embedding)
     - furniture_text: page headers/footers (for metadata extraction)
+    - pdf_metadata: embedded PDF metadata (CreationDate, etc.)
 
     Documents that fail to parse are logged and skipped.
     """
@@ -32,6 +35,11 @@ def parse_pdfs(documents_dir: str) -> list[ParsedDocument]:
     if not pdf_paths:
         logger.warning("No PDF files found in %s", documents_dir)
         return []
+
+    # Pre-extract PDF metadata using pypdfium2 (before Docling converts)
+    metadata_by_name: dict[str, dict] = {}
+    for pdf_path in pdf_paths:
+        metadata_by_name[pdf_path.name] = _extract_pdf_metadata(pdf_path)
 
     logger.info("Parsing %d PDF files from %s", len(pdf_paths), documents_dir)
     converter = DocumentConverter()
@@ -48,6 +56,7 @@ def parse_pdfs(documents_dir: str) -> list[ParsedDocument]:
                     source_file=source,
                     markdown=markdown,
                     furniture_text=furniture_text,
+                    pdf_metadata=metadata_by_name.get(source, {}),
                 )
             )
             logger.info("Parsed %s (%d chars body, %d chars furniture)", source, len(markdown), len(furniture_text))
@@ -56,6 +65,18 @@ def parse_pdfs(documents_dir: str) -> list[ParsedDocument]:
 
     logger.info("Successfully parsed %d / %d documents", len(results), len(pdf_paths))
     return results
+
+
+def _extract_pdf_metadata(pdf_path: Path) -> dict:
+    """Extract embedded metadata from a PDF using pypdfium2."""
+    try:
+        doc = pdfium.PdfDocument(pdf_path)
+        metadata = doc.get_metadata_dict()
+        doc.close()
+        return metadata
+    except Exception:
+        logger.debug("Could not read PDF metadata from %s", pdf_path.name)
+        return {}
 
 
 def _extract_furniture_text(doc) -> str:
