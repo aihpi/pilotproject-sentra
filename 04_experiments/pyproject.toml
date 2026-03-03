@@ -1,0 +1,16 @@
+[project]
+name = "04-experiments"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "ipykernel>=7.2.0",
+    "pip>=26.0.1",
+]
+
+[project.optional-dependencies]
+a001 = [
+    "pandas>=3.0.1",
+    "pypdf2>=3.0.1",
+]
