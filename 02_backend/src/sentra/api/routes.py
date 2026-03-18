@@ -7,17 +7,25 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
 from sentra.api.models import (
+    AnswerRequest,
     DocumentInfo,
+    DocumentSearchRequest,
+    DocumentSearchResponse,
+    ExternalSourcesRequest,
+    ExternalSourcesResponse,
     FeedbackRequest,
     FeedbackResponse,
+    GeneratedAnswerResponse,
     HealthResponse,
     IngestResponse,
     QueryRequest,
     QueryResponse,
+    SimilarDocumentsRequest,
     SourceResponse,
 )
 from sentra.config import Settings, get_settings
 from sentra.rag.store import VectorStore
+from sentra.services import explorer
 from sentra.services.ingest import run_ingestion
 from sentra.services.query import run_query, run_query_stream
 
@@ -251,3 +259,181 @@ async def health(
             status="degraded",
             qdrant=f"error: {e}",
         )
+
+
+# ── Explorer endpoints (v2) ─────────────────────────────────────────
+
+
+@router.post("/explorer/documents", response_model=DocumentSearchResponse)
+async def explorer_documents(
+    body: DocumentSearchRequest,
+    settings: Settings = Depends(get_settings),
+) -> DocumentSearchResponse:
+    """UC#1: Find documents by topic."""
+    date_from, date_to = explorer._date_range_params(body.date_range)
+    docs = explorer.search_documents_by_topic(
+        query=body.query,
+        date_from=date_from,
+        date_to=date_to,
+        top_k=body.top_k,
+        settings=settings,
+        fachbereich=body.fachbereich,
+        document_type=body.document_type,
+    )
+    return DocumentSearchResponse(documents=docs)
+
+
+@router.post("/explorer/similar", response_model=DocumentSearchResponse)
+async def explorer_similar(
+    body: SimilarDocumentsRequest,
+    settings: Settings = Depends(get_settings),
+) -> DocumentSearchResponse:
+    """UC#4: Find documents similar to a given Aktenzeichen."""
+    docs = explorer.find_similar_documents(
+        aktenzeichen=body.aktenzeichen,
+        top_k=body.top_k,
+        settings=settings,
+    )
+    return DocumentSearchResponse(documents=docs)
+
+
+@router.post("/explorer/sources", response_model=ExternalSourcesResponse)
+async def explorer_sources(
+    body: ExternalSourcesRequest,
+    settings: Settings = Depends(get_settings),
+) -> ExternalSourcesResponse:
+    """UC#6: Find external sources cited in documents matching a topic."""
+    date_from, date_to = explorer._date_range_params(body.date_range)
+    sources = explorer.find_external_sources(
+        query=body.query,
+        date_from=date_from,
+        date_to=date_to,
+        settings=settings,
+        fachbereich=body.fachbereich,
+        document_type=body.document_type,
+    )
+    return ExternalSourcesResponse(sources=sources)
+
+
+@router.post("/explorer/answer", response_model=GeneratedAnswerResponse)
+async def explorer_answer(
+    request: Request,
+    body: AnswerRequest,
+    settings: Settings = Depends(get_settings),
+) -> GeneratedAnswerResponse | StreamingResponse:
+    """UC#10: Answer a specific Fachfrage. Supports SSE streaming."""
+    date_from, date_to = explorer._date_range_params(body.date_range)
+    accept = request.headers.get("accept", "")
+
+    if "text/event-stream" in accept:
+        return _explorer_stream_response(
+            "answer", body.query, date_from, date_to, body.top_k, settings,
+            fachbereich=body.fachbereich, document_type=body.document_type,
+            system_prompt=body.system_prompt,
+        )
+
+    result = explorer.answer_question(
+        query=body.query,
+        date_from=date_from,
+        date_to=date_to,
+        top_k=body.top_k,
+        settings=settings,
+        fachbereich=body.fachbereich,
+        document_type=body.document_type,
+        system_prompt=body.system_prompt,
+    )
+    return GeneratedAnswerResponse(
+        text=result.text, sources=result.sources, system_prompt=result.system_prompt,
+    )
+
+
+@router.post("/explorer/overview", response_model=GeneratedAnswerResponse)
+async def explorer_overview(
+    request: Request,
+    body: AnswerRequest,
+    settings: Settings = Depends(get_settings),
+) -> GeneratedAnswerResponse | StreamingResponse:
+    """UC#2: Generate a structured topic overview. Supports SSE streaming."""
+    date_from, date_to = explorer._date_range_params(body.date_range)
+    accept = request.headers.get("accept", "")
+
+    if "text/event-stream" in accept:
+        return _explorer_stream_response(
+            "overview", body.query, date_from, date_to, body.top_k, settings,
+            fachbereich=body.fachbereich, document_type=body.document_type,
+            system_prompt=body.system_prompt,
+        )
+
+    result = explorer.generate_overview(
+        query=body.query,
+        date_from=date_from,
+        date_to=date_to,
+        top_k=body.top_k,
+        settings=settings,
+        fachbereich=body.fachbereich,
+        document_type=body.document_type,
+        system_prompt=body.system_prompt,
+    )
+    return GeneratedAnswerResponse(
+        text=result.text, sources=result.sources, system_prompt=result.system_prompt,
+    )
+
+
+def _explorer_stream_response(
+    mode: str,
+    query: str,
+    date_from: str | None,
+    date_to: str | None,
+    top_k: int,
+    settings: Settings,
+    fachbereich: str | None = None,
+    document_type: str | None = None,
+    system_prompt: str | None = None,
+) -> StreamingResponse:
+    """SSE streaming for explorer answer/overview endpoints."""
+
+    async def event_stream():
+        if mode == "answer":
+            stream, sources, effective_prompt = explorer.answer_question_stream(
+                query=query,
+                date_from=date_from,
+                date_to=date_to,
+                top_k=top_k,
+                settings=settings,
+                fachbereich=fachbereich,
+                document_type=document_type,
+                system_prompt=system_prompt,
+            )
+        else:
+            stream, sources, effective_prompt = explorer.generate_overview_stream(
+                query=query,
+                date_from=date_from,
+                date_to=date_to,
+                top_k=top_k,
+                settings=settings,
+                fachbereich=fachbereich,
+                document_type=document_type,
+                system_prompt=system_prompt,
+            )
+
+        # Send sources first
+        sources_data = [s.model_dump() for s in sources]
+        yield f"event: sources\ndata: {json.dumps(sources_data, ensure_ascii=False)}\n\n"
+
+        # Send system prompt for transparency
+        yield f"event: system_prompt\ndata: {json.dumps({'text': effective_prompt}, ensure_ascii=False)}\n\n"
+
+        # Stream answer tokens
+        for token in stream:
+            yield f"event: token\ndata: {json.dumps({'text': token}, ensure_ascii=False)}\n\n"
+
+        yield "event: done\ndata: {}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
