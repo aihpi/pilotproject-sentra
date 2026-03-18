@@ -1,18 +1,19 @@
 import { useState } from "react";
 import { Header } from "@/components/Header";
-import { SearchView } from "@/components/SearchView";
 import { DocumentsView } from "@/components/DocumentsView";
+import { ExplorerView } from "@/components/explorer/ExplorerView";
+
+export type ViewType = "explorer" | "documents";
 
 export default function App() {
-  const [activeView, setActiveView] = useState<"search" | "documents">(
-    "search"
-  );
+  const [activeView, setActiveView] = useState<ViewType>("explorer");
 
   return (
     <div className="min-h-screen bg-background">
       <Header activeView={activeView} onViewChange={setActiveView} />
       <main>
-        {activeView === "search" ? <SearchView /> : <DocumentsView />}
+        {activeView === "explorer" && <ExplorerView />}
+        {activeView === "documents" && <DocumentsView />}
       </main>
     </div>
   );
