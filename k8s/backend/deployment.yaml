@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentra-backend
+  labels:
+    app: sentra-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sentra-backend
+  template:
+    metadata:
+      labels:
+        app: sentra-backend
+    spec:
+      containers:
+        - name: backend
+          image: ghcr.io/aihpi/pilotproject-sentra/backend:latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: sentra-backend-config
+          env:
+            - name: AI_HUB_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: sentra-secret
+                  key: AI_HUB_API_KEY
+                  optional: true
+          volumeMounts:
+            - name: documents
+              mountPath: /data
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 12
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            periodSeconds: 30
+            timeoutSeconds: 10
+          resources:
+            limits:
+              cpu: "4"
+              memory: "4Gi"
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+      volumes:
+        - name: documents
+          persistentVolumeClaim:
+            claimName: sentra-documents
