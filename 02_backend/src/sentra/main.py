@@ -6,6 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from sentra.api.routes import router
 from sentra.config import get_settings
+from sentra.rag.embeddings import EmbeddingClient
+from sentra.rag.generator import AnswerGenerator
 from sentra.rag.store import VectorStore
 
 logging.basicConfig(
@@ -17,11 +19,25 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI):
-    """Startup and shutdown lifecycle."""
+async def lifespan(app: FastAPI):
+    """Startup and shutdown lifecycle.
+
+    Creates shared client instances stored on app.state so they are
+    reused across all requests instead of being created per-request.
+    """
     settings = get_settings()
+
     store = VectorStore(settings)
     store.ensure_collection()
+    store.ensure_doc_collection()
+
+    embedder = EmbeddingClient(settings)
+    generator = AnswerGenerator(settings)
+
+    app.state.store = store
+    app.state.embedder = embedder
+    app.state.generator = generator
+
     info = store.collection_info()
     logger.info("Qdrant ready — %d points indexed", info["points_count"])
     yield

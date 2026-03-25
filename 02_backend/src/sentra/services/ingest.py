@@ -1,9 +1,11 @@
 import logging
-from collections import defaultdict
+import re
+import time
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
-from sentra.config import Settings
 from sentra.ingestion.chunker import Chunk, chunk_document
-from sentra.ingestion.metadata import DocumentMetadata, extract_metadata
+from sentra.ingestion.metadata import extract_metadata
 from sentra.ingestion.parser import parse_pdfs
 from sentra.ingestion.urls import extract_urls
 from sentra.rag.embeddings import EmbeddingClient
@@ -11,160 +13,225 @@ from sentra.rag.store import VectorStore
 
 logger = logging.getLogger(__name__)
 
+# Filename pattern for quick AZ derivation (avoids Docling for skip check)
+_FILENAME_AZ_RE = re.compile(r"((?:WD|EU)\s*\d+)-(\d+)-(\d+)")
 
-def run_ingestion(settings: Settings) -> dict:
-    """Run the full document ingestion pipeline.
 
-    Pipeline: PDF → Docling → metadata extraction → chunking → embedding → Qdrant
-              → document-level embeddings + URL extraction → doc collection
+@dataclass
+class IngestionProgress:
+    """Tracks progress of a background ingestion run."""
 
-    Returns a summary dict with counts and any errors.
+    status: str = "idle"  # idle | running | completed | failed
+    total_files: int = 0
+    processed: int = 0
+    skipped: int = 0
+    chunks_created: int = 0
+    errors: list[str] = field(default_factory=list)
+    current_file: str = ""
+    started_at: str | None = None
+    completed_at: str | None = None
+    stale_documents: list[str] = field(default_factory=list)
+
+
+_progress = IngestionProgress()
+
+
+def get_ingestion_progress() -> IngestionProgress:
+    """Return the current ingestion progress (module-level singleton)."""
+    return _progress
+
+
+def _az_from_filename(filename: str) -> str | None:
+    """Quickly derive aktenzeichen from filename without Docling."""
+    match = _FILENAME_AZ_RE.search(filename)
+    if match:
+        fb = re.sub(r"(WD|EU)(\d)", r"\1 \2", match.group(1).strip())
+        return f"{fb} - 3000 - {match.group(2)}/{match.group(3)}"
+    return None
+
+
+def run_ingestion(
+    store: VectorStore,
+    embedder: EmbeddingClient,
+    documents_dir: str,
+    force: bool = False,
+) -> None:
+    """Run the full document ingestion pipeline as a background task.
+
+    Pipeline: for each PDF → Docling → metadata → chunk → embed → Qdrant
+    Processes one document at a time to limit memory usage.
+    Skips already-indexed documents unless force=True.
     """
-    errors: list[str] = []
+    global _progress
+    _progress = IngestionProgress(
+        status="running",
+        started_at=datetime.now(timezone.utc).isoformat(),
+    )
 
-    # 1. Parse PDFs with Docling
-    logger.info("Step 1/5: Parsing PDFs from %s", settings.documents_dir)
-    parsed_docs = parse_pdfs(settings.documents_dir)
-    if not parsed_docs:
-        return {
-            "documents_processed": 0,
-            "chunks_created": 0,
-            "errors": ["No PDF files found or all failed to parse"],
-        }
+    try:
+        _run_ingestion_inner(store, embedder, documents_dir, force)
+    except Exception as e:
+        msg = f"Ingestion failed: {e}"
+        logger.exception(msg)
+        _progress.errors.append(msg)
+        _progress.status = "failed"
+        _progress.completed_at = datetime.now(timezone.utc).isoformat()
+        return
 
-    # 2. Extract metadata, chunk, and extract URLs from each document
-    logger.info("Step 2/5: Extracting metadata and chunking %d documents", len(parsed_docs))
-    all_chunks: list[Chunk] = []
-    doc_metadata: dict[str, DocumentMetadata] = {}
-    doc_markdowns: dict[str, str] = {}
+    _progress.status = "completed"
+    _progress.completed_at = datetime.now(timezone.utc).isoformat()
 
-    for doc in parsed_docs:
+    logger.info(
+        "Ingestion complete: %d processed, %d skipped, %d chunks, %d errors",
+        _progress.processed,
+        _progress.skipped,
+        _progress.chunks_created,
+        len(_progress.errors),
+    )
+
+
+def _run_ingestion_inner(
+    store: VectorStore,
+    embedder: EmbeddingClient,
+    documents_dir: str,
+    force: bool,
+) -> None:
+    """Inner ingestion logic — processes documents one by one."""
+    # Load already-indexed aktenzeichen for incremental skip
+    indexed_az: set[str] = set()
+    if not force:
+        indexed_az = store.get_indexed_aktenzeichen()
+        if indexed_az:
+            logger.info("Found %d already-indexed documents", len(indexed_az))
+
+    store.ensure_collection()
+    store.ensure_doc_collection()
+
+    # Count total files and pre-filter for incremental ingestion
+    from pathlib import Path
+    pdf_dir = Path(documents_dir)
+    all_pdf_paths = sorted(pdf_dir.glob("*.pdf"))
+
+    if not all_pdf_paths:
+        _progress.errors.append("No PDF files found")
+        return
+
+    # Pre-filter: skip files whose AZ (derived from filename) is already indexed.
+    # This avoids expensive Docling parsing for already-indexed documents.
+    paths_to_process: list[Path] = []
+    filesystem_az: set[str] = set()
+
+    for p in all_pdf_paths:
+        az = _az_from_filename(p.name)
+        if az:
+            filesystem_az.add(az)
+        if not force and az and az in indexed_az:
+            _progress.skipped += 1
+            logger.info("Skipping %s (%s, already indexed)", p.name, az)
+        else:
+            paths_to_process.append(p)
+
+    _progress.total_files = len(all_pdf_paths)
+
+    if not paths_to_process:
+        logger.info("All %d documents already indexed, nothing to do", len(all_pdf_paths))
+        return
+
+    logger.info(
+        "%d new files to process (%d skipped as already indexed)",
+        len(paths_to_process),
+        _progress.skipped,
+    )
+
+    for doc in parse_pdfs(documents_dir, pdf_paths=paths_to_process):
+        doc_start = time.monotonic()
+        _progress.current_file = doc.source_file
+
         try:
+            # Extract metadata
             metadata = extract_metadata(
                 doc.markdown, doc.furniture_text, doc.source_file, doc.pdf_metadata
             )
-            chunks = chunk_document(
-                doc.markdown, metadata, max_tokens=settings.chunk_max_tokens
-            )
-            all_chunks.extend(chunks)
-            doc_metadata[metadata.aktenzeichen] = metadata
-            doc_markdowns[metadata.aktenzeichen] = doc.markdown
+
+            filesystem_az.add(metadata.aktenzeichen)
+
+            # Chunk
+            chunks = chunk_document(doc.markdown, metadata)
+
+            if not chunks:
+                _progress.processed += 1
+                logger.warning("No chunks produced for %s", doc.source_file)
+                continue
+
+            # Embed this document's chunks
+            texts = [chunk.text for chunk in chunks]
+            embeddings = embedder.embed_documents(texts)
+
+            # Upsert chunks to Qdrant
+            store.upsert_chunks(chunks, embeddings)
+            _progress.chunks_created += len(chunks)
+
+            # Build and store doc-level record
+            _store_doc_record(store, embedder, chunks, embeddings, metadata, doc.markdown)
+
+            elapsed = time.monotonic() - doc_start
+            _progress.processed += 1
             logger.info(
-                "  %s: %s → %d chunks",
+                "[%d/%d] %s → %s: %d chunks (%.1fs)",
+                _progress.processed + _progress.skipped,
+                _progress.total_files,
                 doc.source_file,
                 metadata.aktenzeichen,
                 len(chunks),
+                elapsed,
             )
+
         except Exception as e:
             msg = f"Failed to process {doc.source_file}: {e}"
             logger.exception(msg)
-            errors.append(msg)
+            _progress.errors.append(msg)
+            _progress.processed += 1
 
-    if not all_chunks:
-        return {
-            "documents_processed": len(parsed_docs),
-            "chunks_created": 0,
-            "errors": errors or ["All documents produced zero chunks"],
-        }
+    _progress.current_file = ""
 
-    # 3. Embed all chunks
-    logger.info("Step 3/5: Embedding %d chunks", len(all_chunks))
-    embedder = EmbeddingClient(settings)
-    texts = [chunk.text for chunk in all_chunks]
-    try:
-        embeddings = embedder.embed_documents(texts)
-    except Exception as e:
-        msg = f"Embedding failed: {e}"
-        logger.exception(msg)
-        return {
-            "documents_processed": len(parsed_docs),
-            "chunks_created": 0,
-            "errors": errors + [msg],
-        }
-
-    # 4. Store chunks in Qdrant
-    logger.info("Step 4/5: Storing %d chunks in Qdrant", len(all_chunks))
-    store = VectorStore(settings)
-    store.ensure_collection()
-    try:
-        points_count = store.upsert_chunks(all_chunks, embeddings)
-    except Exception as e:
-        msg = f"Qdrant upsert failed: {e}"
-        logger.exception(msg)
-        return {
-            "documents_processed": len(parsed_docs),
-            "chunks_created": 0,
-            "errors": errors + [msg],
-        }
-
-    # 5. Build and store document-level records (embeddings + URLs)
-    logger.info("Step 5/5: Building document-level records")
-    try:
-        _build_doc_records(all_chunks, embeddings, doc_metadata, doc_markdowns, store)
-    except Exception as e:
-        msg = f"Doc record creation failed: {e}"
-        logger.exception(msg)
-        errors.append(msg)
-
-    logger.info(
-        "Ingestion complete: %d documents, %d chunks, %d errors",
-        len(parsed_docs),
-        points_count,
-        len(errors),
-    )
-
-    return {
-        "documents_processed": len(parsed_docs),
-        "chunks_created": points_count,
-        "errors": errors,
-    }
+    # Detect stale documents (in Qdrant but not on filesystem)
+    if indexed_az and filesystem_az:
+        stale = indexed_az - filesystem_az
+        if stale:
+            _progress.stale_documents = sorted(stale)
+            logger.warning(
+                "Found %d stale documents in Qdrant not on filesystem: %s",
+                len(stale),
+                ", ".join(sorted(stale)[:10]),
+            )
 
 
-def _build_doc_records(
+def _store_doc_record(
+    store: VectorStore,
+    embedder: EmbeddingClient,
     chunks: list[Chunk],
     embeddings: list[list[float]],
-    doc_metadata: dict[str, DocumentMetadata],
-    doc_markdowns: dict[str, str],
-    store: VectorStore,
+    metadata,
+    markdown: str,
 ) -> None:
-    """Compute doc-level mean embeddings, extract URLs, store in doc collection."""
-    # Group chunk embeddings by aktenzeichen
-    az_embeddings: dict[str, list[list[float]]] = defaultdict(list)
-    for chunk, emb in zip(chunks, embeddings):
-        az_embeddings[chunk.metadata.aktenzeichen].append(emb)
+    """Compute doc-level mean embedding, extract URLs, and store a single doc record."""
+    mean_emb = VectorStore.mean_embedding(embeddings)
 
-    records: list[dict] = []
-    doc_embeds: list[list[float]] = []
+    urls = extract_urls(markdown)
+    url_records = [
+        {"url": u.url, "label": u.label, "context": u.context} for u in urls
+    ]
 
-    for az, chunk_embs in az_embeddings.items():
-        meta = doc_metadata.get(az)
-        if not meta:
-            continue
+    record = {
+        "aktenzeichen": metadata.aktenzeichen,
+        "title": metadata.title,
+        "fachbereich_number": metadata.fachbereich_number,
+        "fachbereich": metadata.fachbereich,
+        "document_type": metadata.document_type,
+        "completion_date": metadata.completion_date,
+        "language": metadata.language,
+        "source_file": metadata.source_file,
+        "urls": url_records,
+    }
 
-        # Mean embedding across all chunks
-        mean_emb = VectorStore.mean_embedding(chunk_embs)
-
-        # Extract external URLs from the document markdown
-        markdown = doc_markdowns.get(az, "")
-        urls = extract_urls(markdown)
-        url_records = [
-            {"url": u.url, "label": u.label, "context": u.context} for u in urls
-        ]
-
-        records.append({
-            "aktenzeichen": meta.aktenzeichen,
-            "title": meta.title,
-            "fachbereich_number": meta.fachbereich_number,
-            "fachbereich": meta.fachbereich,
-            "document_type": meta.document_type,
-            "completion_date": meta.completion_date,
-            "language": meta.language,
-            "source_file": meta.source_file,
-            "urls": url_records,
-        })
-        doc_embeds.append(mean_emb)
-
-    if records:
-        store.ensure_doc_collection()
-        store.upsert_doc_records(records, doc_embeds)
-        logger.info("Stored %d document-level records", len(records))
+    store.upsert_doc_records([record], [mean_emb])

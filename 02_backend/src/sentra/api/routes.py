@@ -1,10 +1,10 @@
 import json
 import logging
+import threading
 
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
 
 from sentra.api.models import (
     AnswerRequest,
@@ -17,135 +17,93 @@ from sentra.api.models import (
     FeedbackResponse,
     GeneratedAnswerResponse,
     HealthResponse,
-    IngestResponse,
-    QueryRequest,
-    QueryResponse,
+    IngestionStatusResponse,
+    IngestStartResponse,
     SimilarDocumentsRequest,
-    SourceResponse,
 )
 from sentra.config import Settings, get_settings
+from sentra.rag.embeddings import EmbeddingClient
+from sentra.rag.generator import AnswerGenerator
 from sentra.rag.store import VectorStore
 from sentra.services import explorer
-from sentra.services.ingest import run_ingestion
-from sentra.services.query import run_query, run_query_stream
+from sentra.services.ingest import get_ingestion_progress, run_ingestion
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api")
 
 
-@router.post("/query", response_model=QueryResponse)
-async def query(
-    request: Request,
-    body: QueryRequest,
+# ── Dependency helpers (read shared clients from app.state) ──────────
+
+
+def get_store(request: Request) -> VectorStore:
+    return request.app.state.store
+
+
+def get_embedder(request: Request) -> EmbeddingClient:
+    return request.app.state.embedder
+
+
+def get_generator(request: Request) -> AnswerGenerator:
+    return request.app.state.generator
+
+
+# ── Ingestion endpoints ──────────────────────────────────────────────
+
+
+@router.post("/ingest", response_model=IngestStartResponse)
+def ingest(
+    force: bool = False,
+    store: VectorStore = Depends(get_store),
+    embedder: EmbeddingClient = Depends(get_embedder),
     settings: Settings = Depends(get_settings),
-) -> QueryResponse | StreamingResponse:
-    """RAG query endpoint.
-
-    Accepts a question and optional filters. Returns an answer with source citations.
-    Supports SSE streaming when Accept: text/event-stream header is set.
-    """
-    # Check if client wants streaming
-    accept = request.headers.get("accept", "")
-    if "text/event-stream" in accept:
-        return _stream_response(body, settings)
-
-    result = run_query(
-        question=body.question,
-        settings=settings,
-        fachbereich=body.fachbereich,
-        document_type=body.document_type,
-        top_k=body.top_k,
-    )
-
-    return QueryResponse(
-        answer=result.answer,
-        sources=[
-            SourceResponse(
-                aktenzeichen=s.aktenzeichen,
-                title=s.title,
-                section_title=s.section_title,
-                fachbereich=s.fachbereich,
-                score=s.score,
-                text_preview=s.text_preview,
-                source_file=s.source_file,
-            )
-            for s in result.sources
-        ],
-    )
-
-
-def _stream_response(body: QueryRequest, settings: Settings) -> StreamingResponse:
-    """Generate an SSE streaming response."""
-
-    async def event_stream():
-        stream, sources = run_query_stream(
-            question=body.question,
-            settings=settings,
-            fachbereich=body.fachbereich,
-            document_type=body.document_type,
-            top_k=body.top_k,
-        )
-
-        # Send sources first
-        sources_data = [
-            {
-                "aktenzeichen": s.aktenzeichen,
-                "title": s.title,
-                "section_title": s.section_title,
-                "fachbereich": s.fachbereich,
-                "score": s.score,
-                "text_preview": s.text_preview,
-                "source_file": s.source_file,
-            }
-            for s in sources
-        ]
-        yield f"event: sources\ndata: {json.dumps(sources_data, ensure_ascii=False)}\n\n"
-
-        # Stream answer tokens
-        for token in stream:
-            yield f"event: token\ndata: {json.dumps({'text': token}, ensure_ascii=False)}\n\n"
-
-        yield "event: done\ndata: {}\n\n"
-
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-@router.post("/ingest", response_model=IngestResponse)
-async def ingest(
-    settings: Settings = Depends(get_settings),
-) -> IngestResponse:
-    """Trigger document ingestion.
+) -> IngestStartResponse:
+    """Trigger document ingestion as a background task.
 
     Processes all PDFs in the configured documents directory.
+    Use force=true to re-index already-indexed documents.
+    Poll GET /api/ingest/status for progress.
     """
-    logger.info("Ingestion triggered via API")
-    result = run_ingestion(settings)
+    progress = get_ingestion_progress()
+    if progress.status == "running":
+        raise HTTPException(status_code=409, detail="Ingestion already running")
 
-    return IngestResponse(
-        documents_processed=result["documents_processed"],
-        chunks_created=result["chunks_created"],
-        errors=result["errors"],
+    logger.info("Ingestion triggered via API (force=%s)", force)
+    thread = threading.Thread(
+        target=run_ingestion,
+        args=(store, embedder, settings.documents_dir, force),
+        daemon=True,
     )
+    thread.start()
+
+    return IngestStartResponse(status="started")
+
+
+@router.get("/ingest/status", response_model=IngestionStatusResponse)
+def ingest_status() -> IngestionStatusResponse:
+    """Get the current ingestion progress."""
+    progress = get_ingestion_progress()
+    return IngestionStatusResponse(
+        status=progress.status,
+        total_files=progress.total_files,
+        processed=progress.processed,
+        skipped=progress.skipped,
+        chunks_created=progress.chunks_created,
+        errors=list(progress.errors),
+        current_file=progress.current_file,
+        started_at=progress.started_at,
+        completed_at=progress.completed_at,
+    )
+
+
+# ── Document endpoints ───────────────────────────────────────────────
 
 
 @router.get("/documents", response_model=list[DocumentInfo])
-async def list_documents(
-    settings: Settings = Depends(get_settings),
+def list_documents(
+    store: VectorStore = Depends(get_store),
 ) -> list[DocumentInfo]:
-    """List all indexed documents with metadata.
-
-    Retrieves unique documents from Qdrant by scrolling through all points
-    and deduplicating by Aktenzeichen.
-    """
-    store = VectorStore(settings)
+    """List all indexed documents with metadata."""
     try:
         info = store.collection_info()
         if info["points_count"] == 0:
@@ -153,50 +111,30 @@ async def list_documents(
     except Exception:
         return []
 
-    # Scroll through all points to collect unique documents
-    seen: set[str] = set()
-    documents: list[DocumentInfo] = []
-
-    offset = None
-    while True:
-        points, offset = store._client.scroll(
-            collection_name=settings.collection_name,
-            limit=100,
-            offset=offset,
-            with_payload=True,
-            with_vectors=False,
+    raw_docs = store.scroll_all_documents()
+    return [
+        DocumentInfo(
+            aktenzeichen=d.get("aktenzeichen", ""),
+            title=d.get("title", ""),
+            fachbereich_number=d.get("fachbereich_number", ""),
+            fachbereich=d.get("fachbereich", ""),
+            document_type=d.get("document_type", ""),
+            completion_date=d.get("completion_date", ""),
+            language=d.get("language", ""),
+            source_file=d.get("source_file", ""),
         )
-
-        for point in points:
-            az = point.payload.get("aktenzeichen", "")
-            if az in seen:
-                continue
-            seen.add(az)
-            documents.append(
-                DocumentInfo(
-                    aktenzeichen=az,
-                    title=point.payload.get("title", ""),
-                    fachbereich_number=point.payload.get("fachbereich_number", ""),
-                    fachbereich=point.payload.get("fachbereich", ""),
-                    document_type=point.payload.get("document_type", ""),
-                    completion_date=point.payload.get("completion_date", ""),
-                    language=point.payload.get("language", ""),
-                    source_file=point.payload.get("source_file", ""),
-                )
-            )
-
-        if offset is None:
-            break
-
-    return documents
+        for d in raw_docs
+    ]
 
 
 @router.get("/documents/{filename}")
-async def serve_document(
+def serve_document(
     filename: str,
     settings: Settings = Depends(get_settings),
-) -> FileResponse:
+):
     """Serve a PDF document by filename."""
+    from fastapi.responses import FileResponse
+
     if "/" in filename or "\\" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     if not filename.lower().endswith(".pdf"):
@@ -214,14 +152,16 @@ async def serve_document(
     )
 
 
+# ── Feedback endpoint ────────────────────────────────────────────────
+
+
 @router.post("/feedback", response_model=FeedbackResponse)
-async def submit_feedback(
+def submit_feedback(
     body: FeedbackRequest,
     settings: Settings = Depends(get_settings),
 ) -> FeedbackResponse:
     """Record user feedback on an answer."""
     from datetime import datetime, timezone
-    from pathlib import Path
 
     feedback_entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -241,13 +181,15 @@ async def submit_feedback(
     return FeedbackResponse(status="ok")
 
 
+# ── Health endpoint ──────────────────────────────────────────────────
+
+
 @router.get("/health", response_model=HealthResponse)
-async def health(
-    settings: Settings = Depends(get_settings),
+def health(
+    store: VectorStore = Depends(get_store),
 ) -> HealthResponse:
     """Health check endpoint. Verifies Qdrant connectivity."""
     try:
-        store = VectorStore(settings)
         collection = store.collection_info()
         return HealthResponse(
             status="healthy",
@@ -265,9 +207,10 @@ async def health(
 
 
 @router.post("/explorer/documents", response_model=DocumentSearchResponse)
-async def explorer_documents(
+def explorer_documents(
     body: DocumentSearchRequest,
-    settings: Settings = Depends(get_settings),
+    store: VectorStore = Depends(get_store),
+    embedder: EmbeddingClient = Depends(get_embedder),
 ) -> DocumentSearchResponse:
     """UC#1: Find documents by topic."""
     date_from, date_to = explorer._date_range_params(body.date_range)
@@ -276,7 +219,8 @@ async def explorer_documents(
         date_from=date_from,
         date_to=date_to,
         top_k=body.top_k,
-        settings=settings,
+        store=store,
+        embedder=embedder,
         fachbereich=body.fachbereich,
         document_type=body.document_type,
     )
@@ -284,23 +228,24 @@ async def explorer_documents(
 
 
 @router.post("/explorer/similar", response_model=DocumentSearchResponse)
-async def explorer_similar(
+def explorer_similar(
     body: SimilarDocumentsRequest,
-    settings: Settings = Depends(get_settings),
+    store: VectorStore = Depends(get_store),
 ) -> DocumentSearchResponse:
     """UC#4: Find documents similar to a given Aktenzeichen."""
     docs = explorer.find_similar_documents(
         aktenzeichen=body.aktenzeichen,
         top_k=body.top_k,
-        settings=settings,
+        store=store,
     )
     return DocumentSearchResponse(documents=docs)
 
 
 @router.post("/explorer/sources", response_model=ExternalSourcesResponse)
-async def explorer_sources(
+def explorer_sources(
     body: ExternalSourcesRequest,
-    settings: Settings = Depends(get_settings),
+    store: VectorStore = Depends(get_store),
+    embedder: EmbeddingClient = Depends(get_embedder),
 ) -> ExternalSourcesResponse:
     """UC#6: Find external sources cited in documents matching a topic."""
     date_from, date_to = explorer._date_range_params(body.date_range)
@@ -308,7 +253,8 @@ async def explorer_sources(
         query=body.query,
         date_from=date_from,
         date_to=date_to,
-        settings=settings,
+        store=store,
+        embedder=embedder,
         fachbereich=body.fachbereich,
         document_type=body.document_type,
     )
@@ -316,28 +262,22 @@ async def explorer_sources(
 
 
 @router.post("/explorer/answer", response_model=GeneratedAnswerResponse)
-async def explorer_answer(
-    request: Request,
+def explorer_answer(
     body: AnswerRequest,
-    settings: Settings = Depends(get_settings),
-) -> GeneratedAnswerResponse | StreamingResponse:
-    """UC#10: Answer a specific Fachfrage. Supports SSE streaming."""
+    store: VectorStore = Depends(get_store),
+    embedder: EmbeddingClient = Depends(get_embedder),
+    generator: AnswerGenerator = Depends(get_generator),
+) -> GeneratedAnswerResponse:
+    """UC#10: Answer a specific Fachfrage."""
     date_from, date_to = explorer._date_range_params(body.date_range)
-    accept = request.headers.get("accept", "")
-
-    if "text/event-stream" in accept:
-        return _explorer_stream_response(
-            "answer", body.query, date_from, date_to, body.top_k, settings,
-            fachbereich=body.fachbereich, document_type=body.document_type,
-            system_prompt=body.system_prompt,
-        )
-
     result = explorer.answer_question(
         query=body.query,
         date_from=date_from,
         date_to=date_to,
         top_k=body.top_k,
-        settings=settings,
+        store=store,
+        embedder=embedder,
+        generator=generator,
         fachbereich=body.fachbereich,
         document_type=body.document_type,
         system_prompt=body.system_prompt,
@@ -348,92 +288,26 @@ async def explorer_answer(
 
 
 @router.post("/explorer/overview", response_model=GeneratedAnswerResponse)
-async def explorer_overview(
-    request: Request,
+def explorer_overview(
     body: AnswerRequest,
-    settings: Settings = Depends(get_settings),
-) -> GeneratedAnswerResponse | StreamingResponse:
-    """UC#2: Generate a structured topic overview. Supports SSE streaming."""
+    store: VectorStore = Depends(get_store),
+    embedder: EmbeddingClient = Depends(get_embedder),
+    generator: AnswerGenerator = Depends(get_generator),
+) -> GeneratedAnswerResponse:
+    """UC#2: Generate a structured topic overview."""
     date_from, date_to = explorer._date_range_params(body.date_range)
-    accept = request.headers.get("accept", "")
-
-    if "text/event-stream" in accept:
-        return _explorer_stream_response(
-            "overview", body.query, date_from, date_to, body.top_k, settings,
-            fachbereich=body.fachbereich, document_type=body.document_type,
-            system_prompt=body.system_prompt,
-        )
-
     result = explorer.generate_overview(
         query=body.query,
         date_from=date_from,
         date_to=date_to,
         top_k=body.top_k,
-        settings=settings,
+        store=store,
+        embedder=embedder,
+        generator=generator,
         fachbereich=body.fachbereich,
         document_type=body.document_type,
         system_prompt=body.system_prompt,
     )
     return GeneratedAnswerResponse(
         text=result.text, sources=result.sources, system_prompt=result.system_prompt,
-    )
-
-
-def _explorer_stream_response(
-    mode: str,
-    query: str,
-    date_from: str | None,
-    date_to: str | None,
-    top_k: int,
-    settings: Settings,
-    fachbereich: str | None = None,
-    document_type: str | None = None,
-    system_prompt: str | None = None,
-) -> StreamingResponse:
-    """SSE streaming for explorer answer/overview endpoints."""
-
-    async def event_stream():
-        if mode == "answer":
-            stream, sources, effective_prompt = explorer.answer_question_stream(
-                query=query,
-                date_from=date_from,
-                date_to=date_to,
-                top_k=top_k,
-                settings=settings,
-                fachbereich=fachbereich,
-                document_type=document_type,
-                system_prompt=system_prompt,
-            )
-        else:
-            stream, sources, effective_prompt = explorer.generate_overview_stream(
-                query=query,
-                date_from=date_from,
-                date_to=date_to,
-                top_k=top_k,
-                settings=settings,
-                fachbereich=fachbereich,
-                document_type=document_type,
-                system_prompt=system_prompt,
-            )
-
-        # Send sources first
-        sources_data = [s.model_dump() for s in sources]
-        yield f"event: sources\ndata: {json.dumps(sources_data, ensure_ascii=False)}\n\n"
-
-        # Send system prompt for transparency
-        yield f"event: system_prompt\ndata: {json.dumps({'text': effective_prompt}, ensure_ascii=False)}\n\n"
-
-        # Stream answer tokens
-        for token in stream:
-            yield f"event: token\ndata: {json.dumps({'text': token}, ensure_ascii=False)}\n\n"
-
-        yield "event: done\ndata: {}\n\n"
-
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
     )

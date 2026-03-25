@@ -10,15 +10,16 @@ Run:  uv run pytest tests/test_api_endpoints.py -v -m integration
 """
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from sentra.api.routes import router
-from sentra.config import Settings, get_settings
+from sentra.api.routes import get_embedder, get_generator, get_store, router
+from sentra.config import get_settings
+from sentra.rag.embeddings import EmbeddingClient
+from sentra.rag.generator import AnswerGenerator
+from sentra.rag.store import VectorStore
 
 pytestmark = pytest.mark.integration
-
-# We need to import the app creation or build a minimal one
-from fastapi import FastAPI
 
 app = FastAPI()
 app.include_router(router)
@@ -26,8 +27,16 @@ app.include_router(router)
 
 @pytest.fixture(scope="module")
 def client(settings):
-    """TestClient with real settings injected."""
+    """TestClient with real settings and shared clients injected."""
+    store = VectorStore(settings)
+    embedder = EmbeddingClient(settings)
+    generator = AnswerGenerator(settings)
+
     app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_store] = lambda: store
+    app.dependency_overrides[get_embedder] = lambda: embedder
+    app.dependency_overrides[get_generator] = lambda: generator
+
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
@@ -104,7 +113,6 @@ class TestDocumentServingEndpoint:
         """Path traversal must not serve arbitrary files. FastAPI normalizes
         '../' out of URLs, so the handler sees just 'passwd' → 400 (non-PDF).
         For direct '..' in path params, the route returns 400."""
-        # Direct injection: the route checks for ".." in the filename
         response = client.get("/api/documents/..%2F..%2Fetc%2Fpasswd")
         assert response.status_code in (400, 404), (
             f"Path traversal attempt returned {response.status_code}, expected 400 or 404"

@@ -175,6 +175,28 @@ class VectorStore:
             for point in results
         ]
 
+    def scroll_all_documents(self) -> list[dict]:
+        """Scroll all points and return unique documents by aktenzeichen."""
+        seen: set[str] = set()
+        documents: list[dict] = []
+        offset = None
+        while True:
+            points, offset = self._client.scroll(
+                collection_name=self._collection,
+                limit=100,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            for point in points:
+                az = point.payload.get("aktenzeichen", "")
+                if az not in seen:
+                    seen.add(az)
+                    documents.append(point.payload)
+            if offset is None:
+                break
+        return documents
+
     def delete_collection(self) -> None:
         """Delete the collection (useful for re-ingestion)."""
         self._client.delete_collection(collection_name=self._collection)
@@ -306,6 +328,33 @@ class VectorStore:
             with_payload=True,
         )
         return [point.payload for point in points]
+
+    def get_indexed_aktenzeichen(self) -> set[str]:
+        """Get all aktenzeichen values from the doc collection."""
+        result: set[str] = set()
+        try:
+            collections = self._client.get_collections().collections
+            if not any(c.name == self._doc_collection for c in collections):
+                return result
+        except Exception:
+            return result
+
+        offset = None
+        while True:
+            points, offset = self._client.scroll(
+                collection_name=self._doc_collection,
+                limit=100,
+                offset=offset,
+                with_payload=["aktenzeichen"],
+                with_vectors=False,
+            )
+            for point in points:
+                az = point.payload.get("aktenzeichen", "")
+                if az:
+                    result.add(az)
+            if offset is None:
+                break
+        return result
 
     def delete_doc_collection(self) -> None:
         """Delete the document-level collection."""

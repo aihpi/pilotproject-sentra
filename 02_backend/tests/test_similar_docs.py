@@ -26,38 +26,38 @@ AZ_WD8_B = "WD 8 - 3000 - 011/22"
 
 
 class TestSimilarDocumentsBasic:
-    def test_returns_results(self, require_qdrant, settings):
+    def test_returns_results(self, require_qdrant, store):
         """Looking up a known document should return similar documents."""
-        results = find_similar_documents(AZ_WD3, top_k=5, settings=settings)
+        results = find_similar_documents(AZ_WD3, top_k=5, store=store)
         assert len(results) > 0, "find_similar_documents returned no results"
 
-    def test_self_excluded(self, require_qdrant, settings):
+    def test_self_excluded(self, require_qdrant, store):
         """The queried document should NOT appear in its own results."""
-        results = find_similar_documents(AZ_WD3, top_k=16, settings=settings)
+        results = find_similar_documents(AZ_WD3, top_k=16, store=store)
         az_set = {r.aktenzeichen for r in results}
         assert AZ_WD3 not in az_set, (
             f"The queried document {AZ_WD3} appeared in its own similar results"
         )
 
-    def test_all_results_unique(self, require_qdrant, settings):
+    def test_all_results_unique(self, require_qdrant, store):
         """No duplicate documents in results."""
-        results = find_similar_documents(AZ_WD3, top_k=16, settings=settings)
+        results = find_similar_documents(AZ_WD3, top_k=16, store=store)
         seen = set()
         for r in results:
             assert r.aktenzeichen not in seen, f"Duplicate: {r.aktenzeichen}"
             seen.add(r.aktenzeichen)
 
-    def test_results_have_valid_metadata(self, require_qdrant, settings):
+    def test_results_have_valid_metadata(self, require_qdrant, store):
         """Every result should have basic metadata fields."""
-        results = find_similar_documents(AZ_WD3, top_k=5, settings=settings)
+        results = find_similar_documents(AZ_WD3, top_k=5, store=store)
         for r in results:
             assert r.aktenzeichen, "Missing aktenzeichen"
             assert r.title, "Missing title"
             assert r.fachbereich, "Missing fachbereich"
             assert 0 < r.relevance_score <= 1.0, f"Score {r.relevance_score} out of range"
 
-    def test_sorted_by_similarity(self, require_qdrant, settings):
-        results = find_similar_documents(AZ_WD3, top_k=16, settings=settings)
+    def test_sorted_by_similarity(self, require_qdrant, store):
+        results = find_similar_documents(AZ_WD3, top_k=16, store=store)
         scores = [r.relevance_score for r in results]
         for i in range(len(scores) - 1):
             assert scores[i] >= scores[i + 1], (
@@ -68,10 +68,10 @@ class TestSimilarDocumentsBasic:
 class TestSimilarDocumentsThematic:
     """Documents from the same Fachbereich should tend to be more similar."""
 
-    def test_same_fachbereich_ranks_higher(self, require_qdrant, settings):
+    def test_same_fachbereich_ranks_higher(self, require_qdrant, store):
         """For WD 9-068-23, the other WD 9 doc (WD 9-100-21) should be
         relatively highly ranked (both are health-related)."""
-        results = find_similar_documents(AZ_WD9_A, top_k=16, settings=settings)
+        results = find_similar_documents(AZ_WD9_A, top_k=16, store=store)
         az_list = [r.aktenzeichen for r in results]
         if AZ_WD9_B in az_list:
             position = az_list.index(AZ_WD9_B)
@@ -81,12 +81,12 @@ class TestSimilarDocumentsThematic:
                 f"expected in top half"
             )
 
-    def test_wd8_pair_are_mutual_neighbors(self, require_qdrant, settings):
+    def test_wd8_pair_are_mutual_neighbors(self, require_qdrant, store):
         """The two WD 8 docs (environment) should appear in each other's similar results."""
-        results_a = find_similar_documents(AZ_WD8_A, top_k=10, settings=settings)
+        results_a = find_similar_documents(AZ_WD8_A, top_k=10, store=store)
         az_set_a = {r.aktenzeichen for r in results_a}
 
-        results_b = find_similar_documents(AZ_WD8_B, top_k=10, settings=settings)
+        results_b = find_similar_documents(AZ_WD8_B, top_k=10, store=store)
         az_set_b = {r.aktenzeichen for r in results_b}
 
         # At least one direction should hold
@@ -94,7 +94,7 @@ class TestSimilarDocumentsThematic:
             f"WD 8 docs don't appear in each other's top 10 similar results"
         )
 
-    def test_nonexistent_az_returns_empty(self, require_qdrant, settings):
+    def test_nonexistent_az_returns_empty(self, require_qdrant, store):
         """Looking up a non-existent Aktenzeichen should return empty, not crash."""
-        results = find_similar_documents("WD 99 - 3000 - 999/99", top_k=5, settings=settings)
+        results = find_similar_documents("WD 99 - 3000 - 999/99", top_k=5, store=store)
         assert results == []

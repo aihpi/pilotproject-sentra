@@ -1,13 +1,11 @@
 import type {
-  QueryRequest,
-  SourceResponse,
-  IngestResponse,
   DocumentInfo,
   FeedbackRequest,
   HealthResponse,
   DocumentResult,
   GeneratedAnswerResult,
   ExternalSourceResult,
+  IngestionStatus,
 } from "@/types";
 
 export const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
@@ -27,82 +25,7 @@ export function formatDate(dateStr: string): string {
   });
 }
 
-export async function streamQuery(
-  request: QueryRequest,
-  callbacks: {
-    onToken: (token: string) => void;
-    onSources: (sources: SourceResponse[]) => void;
-    onDone: () => void;
-    onError: (error: string) => void;
-  },
-): Promise<void> {
-  const response = await fetch(`${API_BASE}/query`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "text/event-stream",
-    },
-    body: JSON.stringify({
-      question: request.question,
-      fachbereich: request.fachbereich || undefined,
-      document_type: request.document_type || undefined,
-      top_k: request.top_k || 10,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Anfrage fehlgeschlagen (HTTP ${response.status})`);
-  }
-
-  const reader = response.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const messages = buffer.split("\n\n");
-      buffer = messages.pop() || "";
-
-      for (const message of messages) {
-        if (!message.trim()) continue;
-
-        const lines = message.split("\n");
-        let eventType = "";
-        let data = "";
-
-        for (const line of lines) {
-          if (line.startsWith("event:")) {
-            eventType = line.substring(6).trim();
-          } else if (line.startsWith("data:")) {
-            data = line.substring(5).trim();
-          }
-        }
-
-        if (!eventType || !data) continue;
-
-        switch (eventType) {
-          case "sources":
-            callbacks.onSources(JSON.parse(data));
-            break;
-          case "token": {
-            const { text } = JSON.parse(data);
-            callbacks.onToken(text);
-            break;
-          }
-          case "done":
-            callbacks.onDone();
-            return;
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
+// ── Document management ─────────────────────────────────────────────
 
 export async function fetchDocuments(): Promise<DocumentInfo[]> {
   const response = await fetch(`${API_BASE}/documents`);
@@ -112,13 +35,27 @@ export async function fetchDocuments(): Promise<DocumentInfo[]> {
   return response.json();
 }
 
-export async function ingestDocuments(): Promise<IngestResponse> {
-  const response = await fetch(`${API_BASE}/ingest`, { method: "POST" });
+export async function startIngestion(force = false): Promise<{ status: string }> {
+  const url = force ? `${API_BASE}/ingest?force=true` : `${API_BASE}/ingest`;
+  const response = await fetch(url, { method: "POST" });
+  if (response.status === 409) {
+    throw new Error("Ingestion läuft bereits");
+  }
   if (!response.ok) {
     throw new Error(`Ingestion fehlgeschlagen (HTTP ${response.status})`);
   }
   return response.json();
 }
+
+export async function getIngestionStatus(): Promise<IngestionStatus> {
+  const response = await fetch(`${API_BASE}/ingest/status`);
+  if (!response.ok) {
+    throw new Error(`Status konnte nicht abgerufen werden (HTTP ${response.status})`);
+  }
+  return response.json();
+}
+
+// ── Feedback ────────────────────────────────────────────────────────
 
 export async function submitFeedback(feedback: FeedbackRequest): Promise<void> {
   const response = await fetch(`${API_BASE}/feedback`, {
@@ -130,6 +67,8 @@ export async function submitFeedback(feedback: FeedbackRequest): Promise<void> {
     throw new Error(`Feedback fehlgeschlagen (HTTP ${response.status})`);
   }
 }
+
+// ── Health ──────────────────────────────────────────────────────────
 
 export async function checkHealth(): Promise<HealthResponse> {
   const response = await fetch(`${API_BASE}/health`);
