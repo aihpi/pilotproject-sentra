@@ -40,7 +40,7 @@ def parsed_docs():
     """Parse all test PDFs once for the entire module."""
     if not DATA_DIR.is_dir():
         pytest.skip(f"Test data directory not found: {DATA_DIR}")
-    docs = parse_pdfs(str(DATA_DIR))
+    docs = list(parse_pdfs(str(DATA_DIR)))
     assert len(docs) > 0, "Docling returned no parsed documents"
     return docs
 

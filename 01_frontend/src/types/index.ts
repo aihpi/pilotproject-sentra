@@ -1,31 +1,3 @@
-export interface QueryRequest {
-  question: string;
-  fachbereich?: string | null;
-  document_type?: string | null;
-  top_k?: number;
-}
-
-export interface SourceResponse {
-  aktenzeichen: string;
-  title: string;
-  section_title: string;
-  fachbereich: string;
-  score: number;
-  text_preview: string;
-  source_file: string;
-}
-
-export interface QueryResponse {
-  answer: string;
-  sources: SourceResponse[];
-}
-
-export interface IngestResponse {
-  documents_processed: number;
-  chunks_created: number;
-  errors: string[];
-}
-
 export interface DocumentInfo {
   aktenzeichen: string;
   title: string;
@@ -82,4 +54,18 @@ export interface ExternalSourceResult {
     aktenzeichen: string;
     title: string;
   }[];
+}
+
+// --- Ingestion types ---
+
+export interface IngestionStatus {
+  status: "idle" | "running" | "completed" | "failed";
+  total_files: number;
+  processed: number;
+  skipped: number;
+  chunks_created: number;
+  errors: string[];
+  current_file: string;
+  started_at: string | null;
+  completed_at: string | null;
 }

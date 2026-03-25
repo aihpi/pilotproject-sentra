@@ -10,7 +10,6 @@ Run:  uv run pytest tests/test_search_relevance.py -v -m integration
 
 import pytest
 
-from sentra.config import Settings
 from sentra.services.explorer import search_documents_by_topic
 
 pytestmark = pytest.mark.integration
@@ -19,14 +18,15 @@ pytestmark = pytest.mark.integration
 # ── Helpers ─────────────────────────────────────────────────────────
 
 
-def _search(query: str, settings: Settings, top_k: int = 10, **filters):
+def _search(query: str, store, embedder, top_k: int = 10, **filters):
     """Shortcut: run a topic search and return DocumentSearchResult list."""
     return search_documents_by_topic(
         query=query,
         date_from=filters.get("date_from"),
         date_to=filters.get("date_to"),
         top_k=top_k,
-        settings=settings,
+        store=store,
+        embedder=embedder,
         fachbereich=filters.get("fachbereich"),
         document_type=filters.get("document_type"),
     )
@@ -43,9 +43,9 @@ def _fachbereich_set(results) -> set[str]:
 class TestTopicRelevance:
     """Each test asserts that a topically obvious query surfaces the expected document."""
 
-    def test_visa_query_finds_wd3(self, require_qdrant, settings):
+    def test_visa_query_finds_wd3(self, require_qdrant, store, embedder):
         """WD 3-029-23 is about visa exemptions (Ausnahmen von der Visumspflicht)."""
-        results = _search("Visumspflicht Visum Aufenthaltserlaubnis", settings)
+        results = _search("Visumspflicht Visum Aufenthaltserlaubnis", store, embedder)
         assert len(results) > 0, "No results for visa query"
         fb_set = _fachbereich_set(results[:5])
         assert "WD 3" in fb_set, (
@@ -53,9 +53,9 @@ class TestTopicRelevance:
             f"{[r.aktenzeichen for r in results[:5]]}"
         )
 
-    def test_health_query_finds_wd9(self, require_qdrant, settings):
+    def test_health_query_finds_wd9(self, require_qdrant, store, embedder):
         """WD 9 handles Gesundheit, Familie, Senioren, Frauen und Jugend."""
-        results = _search("Gesundheit Krankenversicherung Pflege", settings)
+        results = _search("Gesundheit Krankenversicherung Pflege", store, embedder)
         assert len(results) > 0
         fb_set = _fachbereich_set(results[:5])
         assert "WD 9" in fb_set, (
@@ -63,9 +63,9 @@ class TestTopicRelevance:
             f"{[r.aktenzeichen for r in results[:5]]}"
         )
 
-    def test_eu_query_finds_eu6(self, require_qdrant, settings):
+    def test_eu_query_finds_eu6(self, require_qdrant, store, embedder):
         """EU 6 handles European affairs."""
-        results = _search("Europäische Union EU-Recht", settings)
+        results = _search("Europäische Union EU-Recht", store, embedder)
         assert len(results) > 0
         fb_set = _fachbereich_set(results[:5])
         assert "EU 6" in fb_set, (
@@ -73,9 +73,9 @@ class TestTopicRelevance:
             f"{[r.aktenzeichen for r in results[:5]]}"
         )
 
-    def test_environment_query_finds_wd8(self, require_qdrant, settings):
+    def test_environment_query_finds_wd8(self, require_qdrant, store, embedder):
         """WD 8 handles Umwelt, Naturschutz, Reaktorsicherheit, Bildung und Forschung."""
-        results = _search("Umweltschutz Klimaschutz Naturschutz", settings)
+        results = _search("Umweltschutz Klimaschutz Naturschutz", store, embedder)
         assert len(results) > 0
         fb_set = _fachbereich_set(results[:5])
         assert "WD 8" in fb_set, (
@@ -83,9 +83,9 @@ class TestTopicRelevance:
             f"{[r.aktenzeichen for r in results[:5]]}"
         )
 
-    def test_labor_social_query_finds_wd6(self, require_qdrant, settings):
+    def test_labor_social_query_finds_wd6(self, require_qdrant, store, embedder):
         """WD 6 handles Arbeit und Soziales."""
-        results = _search("Arbeitsrecht Sozialversicherung Rente", settings)
+        results = _search("Arbeitsrecht Sozialversicherung Rente", store, embedder)
         assert len(results) > 0
         fb_set = _fachbereich_set(results[:5])
         assert "WD 6" in fb_set, (
@@ -93,9 +93,9 @@ class TestTopicRelevance:
             f"{[r.aktenzeichen for r in results[:5]]}"
         )
 
-    def test_budget_finance_query_finds_wd4(self, require_qdrant, settings):
+    def test_budget_finance_query_finds_wd4(self, require_qdrant, store, embedder):
         """WD 4 handles Haushalt und Finanzen."""
-        results = _search("Bundeshaushalt Steuern Finanzen", settings)
+        results = _search("Bundeshaushalt Steuern Finanzen", store, embedder)
         assert len(results) > 0
         fb_set = _fachbereich_set(results[:5])
         assert "WD 4" in fb_set, (
@@ -110,8 +110,8 @@ class TestTopicRelevance:
 class TestResultOrdering:
     """Users scan results top-to-bottom. Results must be sorted by relevance."""
 
-    def test_sorted_by_descending_relevance(self, require_qdrant, settings):
-        results = _search("Gesetzgebung Bundestag", settings, top_k=17)
+    def test_sorted_by_descending_relevance(self, require_qdrant, store, embedder):
+        results = _search("Gesetzgebung Bundestag", store, embedder, top_k=17)
         assert len(results) >= 2, "Need at least 2 results to test ordering"
         scores = [r.relevance_score for r in results]
         for i in range(len(scores) - 1):
@@ -120,16 +120,16 @@ class TestResultOrdering:
                 f"position {i+1} has {scores[i+1]}"
             )
 
-    def test_relevance_scores_in_valid_range(self, require_qdrant, settings):
-        results = _search("Recht und Gesetz", settings, top_k=17)
+    def test_relevance_scores_in_valid_range(self, require_qdrant, store, embedder):
+        results = _search("Recht und Gesetz", store, embedder, top_k=17)
         for r in results:
             assert 0.0 <= r.relevance_score <= 1.0, (
                 f"{r.aktenzeichen}: score {r.relevance_score} outside [0, 1]"
             )
 
-    def test_no_duplicate_documents(self, require_qdrant, settings):
+    def test_no_duplicate_documents(self, require_qdrant, store, embedder):
         """Chunk aggregation should produce unique documents, not duplicates."""
-        results = _search("Deutschland Politik Recht", settings, top_k=17)
+        results = _search("Deutschland Politik Recht", store, embedder, top_k=17)
         seen = set()
         for r in results:
             assert r.aktenzeichen not in seen, (
@@ -145,16 +145,16 @@ class TestBroadQuery:
     """A broad query about German law/policy should surface documents from
     multiple Fachbereiche, not just one."""
 
-    def test_broad_query_finds_multiple_fachbereiche(self, require_qdrant, settings):
-        results = _search("Recht Gesetzgebung Deutschland Bundestag", settings, top_k=17)
+    def test_broad_query_finds_multiple_fachbereiche(self, require_qdrant, store, embedder):
+        results = _search("Recht Gesetzgebung Deutschland Bundestag", store, embedder, top_k=17)
         fb_set = _fachbereich_set(results)
         assert len(fb_set) >= 3, (
             f"Broad query should find docs from >= 3 Fachbereiche, got {len(fb_set)}: {fb_set}"
         )
 
-    def test_high_topk_returns_all_docs(self, require_qdrant, settings):
+    def test_high_topk_returns_all_docs(self, require_qdrant, store, embedder):
         """With top_k=17 (total PDFs) and a broad query, we should get most documents."""
-        results = _search("Wissenschaftliche Dienste Bundestag", settings, top_k=17)
+        results = _search("Wissenschaftliche Dienste Bundestag", store, embedder, top_k=17)
         # With only 17 docs, a very broad query should return at least ~10
         assert len(results) >= 10, (
             f"Broad query with top_k=17 returned only {len(results)} results"

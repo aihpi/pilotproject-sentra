@@ -1,5 +1,4 @@
 import logging
-from collections.abc import Iterator
 
 from openai import OpenAI
 
@@ -82,13 +81,6 @@ class AnswerGenerator:
             f"Kontext:\n{context}\n\nFrage: {question}",
         )
 
-    def generate_stream(self, question: str, context: str) -> Iterator[str]:
-        """Generate an answer with streaming (yields text chunks)."""
-        return self._stream(
-            SYSTEM_PROMPT,
-            f"Kontext:\n{context}\n\nFrage: {question}",
-        )
-
     def generate_answer(
         self, question: str, context: str, system_prompt: str | None = None,
     ) -> str:
@@ -98,30 +90,11 @@ class AnswerGenerator:
             f"Kontext:\n{context}\n\nFrage: {question}",
         )
 
-    def generate_answer_stream(
-        self, question: str, context: str, system_prompt: str | None = None,
-    ) -> Iterator[str]:
-        """Stream a focused answer for a Fachfrage (UC#10)."""
-        return self._stream(
-            system_prompt or FACHFRAGE_PROMPT,
-            f"Kontext:\n{context}\n\nFrage: {question}",
-        )
-
     def generate_overview(
         self, topic: str, context: str, system_prompt: str | None = None,
     ) -> str:
         """Generate a structured topic overview (UC#2)."""
         return self._complete(
-            system_prompt or OVERVIEW_PROMPT,
-            f"Kontext:\n{context}\n\nThema: {topic}",
-            max_tokens=3072,
-        )
-
-    def generate_overview_stream(
-        self, topic: str, context: str, system_prompt: str | None = None,
-    ) -> Iterator[str]:
-        """Stream a structured topic overview (UC#2)."""
-        return self._stream(
             system_prompt or OVERVIEW_PROMPT,
             f"Kontext:\n{context}\n\nThema: {topic}",
             max_tokens=3072,
@@ -140,21 +113,3 @@ class AnswerGenerator:
             max_tokens=max_tokens,
         )
         return response.choices[0].message.content or ""
-
-    def _stream(
-        self, system_prompt: str, user_message: str, max_tokens: int = 2048,
-    ) -> Iterator[str]:
-        stream = self._client.chat.completions.create(
-            model=self._model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
-            temperature=0.1,
-            max_tokens=max_tokens,
-            stream=True,
-        )
-        for chunk in stream:
-            delta = chunk.choices[0].delta.content
-            if delta:
-                yield delta

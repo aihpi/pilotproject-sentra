@@ -16,6 +16,9 @@ import pytest
 from qdrant_client import QdrantClient
 
 from sentra.config import Settings
+from sentra.rag.embeddings import EmbeddingClient
+from sentra.rag.generator import AnswerGenerator
+from sentra.rag.store import VectorStore
 
 # ── Constants ───────────────────────────────────────────────────────
 
@@ -177,6 +180,24 @@ def require_qdrant(qdrant_available: bool):
 
 
 # ── Markers ─────────────────────────────────────────────────────────
+
+
+@pytest.fixture(scope="session")
+def store(settings: Settings) -> VectorStore:
+    """Shared VectorStore instance for integration tests."""
+    return VectorStore(settings)
+
+
+@pytest.fixture(scope="session")
+def embedder(settings: Settings) -> EmbeddingClient:
+    """Shared EmbeddingClient instance for integration tests."""
+    return EmbeddingClient(settings)
+
+
+@pytest.fixture(scope="session")
+def generator(settings: Settings) -> AnswerGenerator:
+    """Shared AnswerGenerator instance for integration tests."""
+    return AnswerGenerator(settings)
 
 
 def pytest_configure(config):

@@ -1,32 +1,20 @@
 from pydantic import BaseModel
 
 
-class QueryRequest(BaseModel):
-    question: str
-    fachbereich: str | None = None
-    document_type: str | None = None
-    top_k: int = 10
+class IngestStartResponse(BaseModel):
+    status: str
 
 
-class SourceResponse(BaseModel):
-    aktenzeichen: str
-    title: str
-    section_title: str
-    fachbereich: str
-    score: float
-    text_preview: str
-    source_file: str
-
-
-class QueryResponse(BaseModel):
-    answer: str
-    sources: list[SourceResponse]
-
-
-class IngestResponse(BaseModel):
-    documents_processed: int
+class IngestionStatusResponse(BaseModel):
+    status: str  # idle | running | completed | failed
+    total_files: int
+    processed: int
+    skipped: int
     chunks_created: int
     errors: list[str]
+    current_file: str
+    started_at: str | None = None
+    completed_at: str | None = None
 
 
 class DocumentInfo(BaseModel):

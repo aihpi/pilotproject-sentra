@@ -8,7 +8,6 @@ UC#10 answer_question             chunk search → LLM focused answer
 """
 
 import logging
-from collections.abc import Iterator
 from dataclasses import dataclass
 
 from sentra.api.models import (
@@ -18,7 +17,6 @@ from sentra.api.models import (
     DocumentSearchResult,
     ExternalSourceResult,
 )
-from sentra.config import Settings
 from sentra.rag.embeddings import EmbeddingClient
 from sentra.rag.generator import (
     FACHFRAGE_PROMPT,
@@ -95,7 +93,8 @@ def search_documents_by_topic(
     date_from: str | None,
     date_to: str | None,
     top_k: int,
-    settings: Settings,
+    store: VectorStore,
+    embedder: EmbeddingClient,
     fachbereich: str | None = None,
     document_type: str | None = None,
 ) -> list[DocumentSearchResult]:
@@ -104,10 +103,7 @@ def search_documents_by_topic(
     Searches at chunk level (3x top_k for coverage) then aggregates
     to unique documents by highest chunk score.
     """
-    embedder = EmbeddingClient(settings)
     query_embedding = embedder.embed_query(query)
-
-    store = VectorStore(settings)
     results = store.search(
         query_embedding=query_embedding,
         top_k=top_k * 3,
@@ -126,13 +122,12 @@ def search_documents_by_topic(
 def find_similar_documents(
     aktenzeichen: str,
     top_k: int,
-    settings: Settings,
+    store: VectorStore,
 ) -> list[DocumentSearchResult]:
     """Find documents similar to the given Aktenzeichen.
 
     Uses the document-level embedding collection.
     """
-    store = VectorStore(settings)
     results = store.search_similar_docs(aktenzeichen, top_k=top_k)
 
     return [
@@ -156,7 +151,8 @@ def find_external_sources(
     query: str,
     date_from: str | None,
     date_to: str | None,
-    settings: Settings,
+    store: VectorStore,
+    embedder: EmbeddingClient,
     fachbereich: str | None = None,
     document_type: str | None = None,
 ) -> list[ExternalSourceResult]:
@@ -165,10 +161,7 @@ def find_external_sources(
     Flow: chunk search → get matching Aktenzeichen → look up URLs from
     doc collection → aggregate and deduplicate.
     """
-    embedder = EmbeddingClient(settings)
     query_embedding = embedder.embed_query(query)
-
-    store = VectorStore(settings)
     results = store.search(
         query_embedding=query_embedding,
         top_k=30,
@@ -199,7 +192,6 @@ def find_external_sources(
         for u in doc.get("urls", []):
             url = u["url"]
             if url in url_map:
-                # Add this doc as another citing source
                 existing_az = {c.aktenzeichen for c in url_map[url].cited_in}
                 if az not in existing_az:
                     url_map[url].cited_in.append(
@@ -232,19 +224,19 @@ def _generate(
     date_from: str | None,
     date_to: str | None,
     top_k: int,
-    settings: Settings,
+    store: VectorStore,
+    embedder: EmbeddingClient,
+    generator: AnswerGenerator,
     default_prompt: str,
     generator_method: str,
     fachbereich: str | None = None,
     document_type: str | None = None,
     system_prompt: str | None = None,
 ) -> AnswerResult:
-    embedder = EmbeddingClient(settings)
     query_embedding = embedder.embed_query(query)
 
     effective_prompt = system_prompt or default_prompt
 
-    store = VectorStore(settings)
     results = store.search(
         query_embedding=query_embedding,
         top_k=top_k,
@@ -263,50 +255,9 @@ def _generate(
 
     sources = _build_source_refs(results)
     context = format_context(results)
-    generator = AnswerGenerator(settings)
     text = getattr(generator, generator_method)(query, context, system_prompt=system_prompt)
 
     return AnswerResult(text=text, sources=sources, system_prompt=effective_prompt)
-
-
-def _generate_stream(
-    query: str,
-    date_from: str | None,
-    date_to: str | None,
-    top_k: int,
-    settings: Settings,
-    default_prompt: str,
-    generator_method: str,
-    fachbereich: str | None = None,
-    document_type: str | None = None,
-    system_prompt: str | None = None,
-) -> tuple[Iterator[str], list[AnswerSourceRef], str]:
-    embedder = EmbeddingClient(settings)
-    query_embedding = embedder.embed_query(query)
-
-    effective_prompt = system_prompt or default_prompt
-
-    store = VectorStore(settings)
-    results = store.search(
-        query_embedding=query_embedding,
-        top_k=top_k,
-        date_from=date_from,
-        date_to=date_to,
-        fachbereich=fachbereich,
-        document_type=document_type,
-    )
-
-    if not results:
-        def empty() -> Iterator[str]:
-            yield "Es wurden keine relevanten Dokumente gefunden."
-        return empty(), [], effective_prompt
-
-    sources = _build_source_refs(results)
-    context = format_context(results)
-    generator = AnswerGenerator(settings)
-    stream = getattr(generator, generator_method)(query, context, system_prompt=system_prompt)
-
-    return stream, sources, effective_prompt
 
 
 # ── UC#10: Answer question ──────────────────────────────────────────
@@ -314,25 +265,14 @@ def _generate_stream(
 
 def answer_question(
     query: str, date_from: str | None, date_to: str | None, top_k: int,
-    settings: Settings, fachbereich: str | None = None,
+    store: VectorStore, embedder: EmbeddingClient, generator: AnswerGenerator,
+    fachbereich: str | None = None,
     document_type: str | None = None, system_prompt: str | None = None,
 ) -> AnswerResult:
     """Answer a specific Fachfrage with source citations."""
     return _generate(
-        query, date_from, date_to, top_k, settings, FACHFRAGE_PROMPT,
-        "generate_answer", fachbereich, document_type, system_prompt,
-    )
-
-
-def answer_question_stream(
-    query: str, date_from: str | None, date_to: str | None, top_k: int,
-    settings: Settings, fachbereich: str | None = None,
-    document_type: str | None = None, system_prompt: str | None = None,
-) -> tuple[Iterator[str], list[AnswerSourceRef], str]:
-    """Stream a Fachfrage answer. Returns (token_stream, sources, system_prompt)."""
-    return _generate_stream(
-        query, date_from, date_to, top_k, settings, FACHFRAGE_PROMPT,
-        "generate_answer_stream", fachbereich, document_type, system_prompt,
+        query, date_from, date_to, top_k, store, embedder, generator,
+        FACHFRAGE_PROMPT, "generate_answer", fachbereich, document_type, system_prompt,
     )
 
 
@@ -341,23 +281,12 @@ def answer_question_stream(
 
 def generate_overview(
     query: str, date_from: str | None, date_to: str | None, top_k: int,
-    settings: Settings, fachbereich: str | None = None,
+    store: VectorStore, embedder: EmbeddingClient, generator: AnswerGenerator,
+    fachbereich: str | None = None,
     document_type: str | None = None, system_prompt: str | None = None,
 ) -> AnswerResult:
     """Generate a structured topic overview."""
     return _generate(
-        query, date_from, date_to, top_k, settings, OVERVIEW_PROMPT,
-        "generate_overview", fachbereich, document_type, system_prompt,
-    )
-
-
-def generate_overview_stream(
-    query: str, date_from: str | None, date_to: str | None, top_k: int,
-    settings: Settings, fachbereich: str | None = None,
-    document_type: str | None = None, system_prompt: str | None = None,
-) -> tuple[Iterator[str], list[AnswerSourceRef], str]:
-    """Stream a structured topic overview. Returns (token_stream, sources, system_prompt)."""
-    return _generate_stream(
-        query, date_from, date_to, top_k, settings, OVERVIEW_PROMPT,
-        "generate_overview_stream", fachbereich, document_type, system_prompt,
+        query, date_from, date_to, top_k, store, embedder, generator,
+        OVERVIEW_PROMPT, "generate_overview", fachbereich, document_type, system_prompt,
     )

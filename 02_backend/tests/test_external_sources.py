@@ -21,13 +21,13 @@ BROAD_QUERY = "Recht Gesetzgebung Deutschland"
 
 
 class TestExternalSourcesBasic:
-    def test_returns_results_for_broad_query(self, require_qdrant, settings):
+    def test_returns_results_for_broad_query(self, require_qdrant, store, embedder):
         """A broad query against 17 docs should find at least some external URLs."""
         results = find_external_sources(
             query=BROAD_QUERY,
             date_from=None,
             date_to=None,
-            settings=settings,
+            store=store, embedder=embedder,
         )
         # Some documents may not have external URLs — this is acceptable.
         # But with 17 docs, at least a few should.
@@ -35,16 +35,16 @@ class TestExternalSourcesBasic:
         # would correctly fail and signal a data/extraction problem.
         assert len(results) > 0, "Broad query against 17 docs should find external URLs"
 
-    def test_urls_are_valid_format(self, require_qdrant, settings):
+    def test_urls_are_valid_format(self, require_qdrant, store, embedder):
         results = find_external_sources(
-            query=BROAD_QUERY, date_from=None, date_to=None, settings=settings,
+            query=BROAD_QUERY, date_from=None, date_to=None, store=store, embedder=embedder,
         )
         for r in results:
             assert r.url.startswith("http://") or r.url.startswith("https://"), (
                 f"Invalid URL: '{r.url}'"
             )
 
-    def test_urls_have_real_domain(self, require_qdrant, settings):
+    def test_urls_have_real_domain(self, require_qdrant, store, embedder):
         """Every URL must contain a domain with at least one dot.
 
         This catches the truncation bug where 'https://www.example.com'
@@ -52,7 +52,7 @@ class TestExternalSourcesBasic:
         """
         domain_re = re.compile(r"^https?://([^/:]+)")
         results = find_external_sources(
-            query=BROAD_QUERY, date_from=None, date_to=None, settings=settings,
+            query=BROAD_QUERY, date_from=None, date_to=None, store=store, embedder=embedder,
         )
         for r in results:
             m = domain_re.match(r.url)
@@ -62,21 +62,21 @@ class TestExternalSourcesBasic:
                 f"URL has no real domain (truncated?): '{r.url}' — domain='{domain}'"
             )
 
-    def test_urls_have_no_backslash_escapes(self, require_qdrant, settings):
+    def test_urls_have_no_backslash_escapes(self, require_qdrant, store, embedder):
         r"""URLs should not contain Docling markdown artifacts like \_."""
         results = find_external_sources(
-            query=BROAD_QUERY, date_from=None, date_to=None, settings=settings,
+            query=BROAD_QUERY, date_from=None, date_to=None, store=store, embedder=embedder,
         )
         for r in results:
             assert "\\_" not in r.url, (
                 f"URL contains backslash-escaped underscore: '{r.url}'"
             )
 
-    def test_no_internal_bundestag_urls(self, require_qdrant, settings):
+    def test_no_internal_bundestag_urls(self, require_qdrant, store, embedder):
         """URLs from bundestag.de/dserver.bundestag.de should be filtered out during ingestion."""
         excluded = {"bundestag.de", "dserver.bundestag.de", "dip.bundestag.de", "www.bundestag.de"}
         results = find_external_sources(
-            query=BROAD_QUERY, date_from=None, date_to=None, settings=settings,
+            query=BROAD_QUERY, date_from=None, date_to=None, store=store, embedder=embedder,
         )
         for r in results:
             domain_match = re.match(r"https?://([^/:]+)", r.url)
@@ -86,21 +86,21 @@ class TestExternalSourcesBasic:
                     f"Internal URL leaked through: '{r.url}'"
                 )
 
-    def test_every_source_has_citing_docs(self, require_qdrant, settings):
+    def test_every_source_has_citing_docs(self, require_qdrant, store, embedder):
         """Every URL must be cited by at least one document."""
         results = find_external_sources(
-            query=BROAD_QUERY, date_from=None, date_to=None, settings=settings,
+            query=BROAD_QUERY, date_from=None, date_to=None, store=store, embedder=embedder,
         )
         for r in results:
             assert len(r.cited_in) >= 1, (
                 f"URL '{r.url}' has zero citing documents"
             )
 
-    def test_citing_docs_have_valid_aktenzeichen(self, require_qdrant, settings):
+    def test_citing_docs_have_valid_aktenzeichen(self, require_qdrant, store, embedder):
         """Every citing document should have a valid Aktenzeichen."""
         az_pattern = re.compile(r"^(WD|EU)\s+\d+\s+-\s+3000\s+-\s+\d+/\d+$")
         results = find_external_sources(
-            query=BROAD_QUERY, date_from=None, date_to=None, settings=settings,
+            query=BROAD_QUERY, date_from=None, date_to=None, store=store, embedder=embedder,
         )
         for r in results:
             for doc in r.cited_in:
@@ -111,10 +111,10 @@ class TestExternalSourcesBasic:
 
 
 class TestExternalSourcesSorting:
-    def test_sorted_by_citation_count(self, require_qdrant, settings):
+    def test_sorted_by_citation_count(self, require_qdrant, store, embedder):
         """Results should be sorted by number of citing documents (descending)."""
         results = find_external_sources(
-            query=BROAD_QUERY, date_from=None, date_to=None, settings=settings,
+            query=BROAD_QUERY, date_from=None, date_to=None, store=store, embedder=embedder,
         )
         if len(results) < 2:
             pytest.skip("Not enough URLs to test sorting")
@@ -127,11 +127,11 @@ class TestExternalSourcesSorting:
 
 
 class TestExternalSourcesFiltered:
-    def test_filters_apply_to_source_search(self, require_qdrant, settings):
+    def test_filters_apply_to_source_search(self, require_qdrant, store, embedder):
         """Filtering by fachbereich should limit which documents' URLs are returned."""
         results = find_external_sources(
             query=BROAD_QUERY, date_from=None, date_to=None,
-            settings=settings, fachbereich="WD 8",
+            store=store, embedder=embedder, fachbereich="WD 8",
         )
         # Every citing document should be from WD 8
         for r in results:
