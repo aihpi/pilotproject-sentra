@@ -1,11 +1,15 @@
 import logging
+from datetime import date
 from uuid import NAMESPACE_URL, uuid5
 
+import numpy as np
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
+    DatetimeRange,
     Distance,
     FieldCondition,
     Filter,
+    HasIdCondition,
     MatchValue,
     PayloadSchemaType,
     PointStruct,
@@ -27,6 +31,7 @@ class VectorStore:
     def __init__(self, settings: Settings) -> None:
         self._client = QdrantClient(url=settings.qdrant_url)
         self._collection = settings.collection_name
+        self._doc_collection = settings.doc_collection_name
 
     def ensure_collection(self) -> None:
         """Create the collection if it doesn't exist."""
@@ -111,10 +116,13 @@ class VectorStore:
         fachbereich: str | None = None,
         document_type: str | None = None,
         language: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
     ) -> list[dict]:
         """Search for similar chunks with optional metadata filtering.
 
         Returns a list of dicts with 'score' and all payload fields.
+        date_from/date_to are year strings ("2023") converted to ISO range.
         """
         conditions = []
         if fachbereich:
@@ -138,6 +146,19 @@ class VectorStore:
                     match=MatchValue(value=language),
                 )
             )
+        if date_from or date_to:
+            try:
+                gte = date(int(date_from), 1, 1) if date_from else None
+                lte = date(int(date_to), 12, 31) if date_to else None
+            except (ValueError, TypeError):
+                logger.warning("Invalid date_from=%r / date_to=%r, skipping date filter", date_from, date_to)
+            else:
+                conditions.append(
+                    FieldCondition(
+                        key="completion_date",
+                        range=DatetimeRange(gte=gte, lte=lte),
+                    )
+                )
 
         query_filter = Filter(must=conditions) if conditions else None
 
@@ -168,3 +189,131 @@ class VectorStore:
             "indexed_vectors_count": info.indexed_vectors_count,
             "status": info.status.value,
         }
+
+    # ── Document-level collection ────────────────────────────────────
+
+    def ensure_doc_collection(self) -> None:
+        """Create the document-level collection if it doesn't exist."""
+        collections = self._client.get_collections().collections
+        if any(c.name == self._doc_collection for c in collections):
+            logger.info("Doc collection '%s' already exists", self._doc_collection)
+            return
+
+        self._client.create_collection(
+            collection_name=self._doc_collection,
+            vectors_config=VectorParams(
+                size=EMBEDDING_DIM,
+                distance=Distance.COSINE,
+            ),
+        )
+
+        for field, schema_type in [
+            ("aktenzeichen", PayloadSchemaType.KEYWORD),
+            ("fachbereich_number", PayloadSchemaType.KEYWORD),
+            ("document_type", PayloadSchemaType.KEYWORD),
+        ]:
+            self._client.create_payload_index(
+                collection_name=self._doc_collection,
+                field_name=field,
+                field_schema=schema_type,
+            )
+
+        logger.info("Created doc collection '%s'", self._doc_collection)
+
+    def upsert_doc_records(
+        self,
+        records: list[dict],
+        embeddings: list[list[float]],
+    ) -> int:
+        """Insert document-level records (one per document).
+
+        Each record dict must have at least 'aktenzeichen'.
+        Returns the number of points upserted.
+        """
+        points = [
+            PointStruct(
+                id=uuid5(NAMESPACE_URL, f"doc::{rec['aktenzeichen']}").hex,
+                vector=emb,
+                payload=rec,
+            )
+            for rec, emb in zip(records, embeddings)
+        ]
+
+        batch_size = 100
+        for i in range(0, len(points), batch_size):
+            batch = points[i : i + batch_size]
+            self._client.upsert(
+                collection_name=self._doc_collection,
+                wait=True,
+                points=batch,
+            )
+
+        logger.info("Upserted %d doc records into '%s'", len(points), self._doc_collection)
+        return len(points)
+
+    def search_similar_docs(
+        self,
+        aktenzeichen: str,
+        top_k: int = 10,
+    ) -> list[dict]:
+        """Find documents similar to the given Aktenzeichen.
+
+        Looks up the document embedding, then searches for nearest neighbors
+        (excluding itself).
+        """
+        point_id = uuid5(NAMESPACE_URL, f"doc::{aktenzeichen}").hex
+
+        # Retrieve the document's embedding
+        points = self._client.retrieve(
+            collection_name=self._doc_collection,
+            ids=[point_id],
+            with_vectors=True,
+            with_payload=True,
+        )
+        if not points:
+            logger.warning("Document '%s' not found in doc collection", aktenzeichen)
+            return []
+
+        doc_vector = points[0].vector
+
+        # Search for similar docs, excluding self
+        results = self._client.query_points(
+            collection_name=self._doc_collection,
+            query=doc_vector,
+            query_filter=Filter(
+                must_not=[HasIdCondition(has_id=[point_id])]
+            ),
+            with_payload=True,
+            limit=top_k,
+        ).points
+
+        return [
+            {"score": point.score, **point.payload}
+            for point in results
+        ]
+
+    def get_doc_records_by_aktenzeichen(
+        self, aktenzeichen_list: list[str]
+    ) -> list[dict]:
+        """Retrieve document records by their Aktenzeichen values."""
+        point_ids = [
+            uuid5(NAMESPACE_URL, f"doc::{az}").hex for az in aktenzeichen_list
+        ]
+        points = self._client.retrieve(
+            collection_name=self._doc_collection,
+            ids=point_ids,
+            with_vectors=False,
+            with_payload=True,
+        )
+        return [point.payload for point in points]
+
+    def delete_doc_collection(self) -> None:
+        """Delete the document-level collection."""
+        self._client.delete_collection(collection_name=self._doc_collection)
+        logger.info("Deleted doc collection '%s'", self._doc_collection)
+
+    @staticmethod
+    def mean_embedding(embeddings: list[list[float]]) -> list[float]:
+        """Compute the mean of a list of embeddings."""
+        arr = np.array(embeddings, dtype=np.float32)
+        return arr.mean(axis=0).tolist()

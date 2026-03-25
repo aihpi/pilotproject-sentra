@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     # Qdrant
     qdrant_url: str = "http://localhost:6333"
     collection_name: str = "bundestag_documents"
+    doc_collection_name: str = "bundestag_doc_summaries"
 
     # Ingestion
     documents_dir: str = "/data/Ausarbeitungen"

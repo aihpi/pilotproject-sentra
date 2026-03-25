@@ -49,3 +49,37 @@ export interface HealthResponse {
   qdrant: string;
   collection?: Record<string, unknown> | null;
 }
+
+// --- Explorer view types ---
+
+export interface DocumentResult {
+  aktenzeichen: string;
+  title: string;
+  fachbereich: string;
+  document_type: string;
+  completion_date: string;
+  relevance_score: number;
+  source_file?: string;
+}
+
+export interface GeneratedAnswerResult {
+  text: string;
+  sources: {
+    aktenzeichen: string;
+    title: string;
+    fachbereich: string;
+    completion_date: string;
+    source_file?: string;
+  }[];
+  system_prompt?: string | null;
+}
+
+export interface ExternalSourceResult {
+  url: string;
+  label: string;
+  context: string;
+  cited_in: {
+    aktenzeichen: string;
+    title: string;
+  }[];
+}

@@ -1,6 +1,7 @@
 import logging
 import re
 from dataclasses import dataclass
+from datetime import datetime
 
 from langdetect import DetectorFactory, detect
 
@@ -91,13 +92,14 @@ class DocumentMetadata:
 
 
 def extract_metadata(
-    markdown: str, furniture_text: str, source_file: str
+    markdown: str, furniture_text: str, source_file: str, pdf_metadata: dict | None = None
 ) -> DocumentMetadata:
     """Extract structured metadata from a Bundestag document.
 
     Uses a multi-source approach:
     - Body markdown labeled fields (e.g., "Aktenzeichen: ...") — used by longer documents
     - Furniture text (page headers/footers) — reliable for all document types
+    - PDF embedded metadata (CreationDate) — reliable primary source for dates
     - Filename as last-resort fallback for Aktenzeichen and language
     - Content-based language detection using langdetect
     """
@@ -107,7 +109,7 @@ def extract_metadata(
     )
     document_type = _extract_document_type(markdown)
     title = _extract_title(markdown)
-    completion_date = _extract_completion_date(markdown, furniture_text)
+    completion_date = _extract_completion_date(markdown, furniture_text, pdf_metadata or {})
     language = _detect_language(markdown, source_file)
 
     return DocumentMetadata(
@@ -227,21 +229,86 @@ def _extract_title(markdown: str) -> str:
     return "Unbekannter Titel"
 
 
-def _extract_completion_date(markdown: str, furniture_text: str) -> str:
-    """Extract completion date from body labels or furniture footer."""
-    # 1. Labeled field: "Abschluss der Arbeit: 3. Juli 2025"
+def _extract_completion_date(markdown: str, furniture_text: str, pdf_metadata: dict) -> str:
+    """Extract completion date, normalized to ISO format (YYYY-MM-DD).
+
+    Priority:
+    1. PDF embedded CreationDate (available in all documents)
+    2. Body label: "Abschluss der Arbeit: 3. Juli 2025"
+    3. Furniture: date after Aktenzeichen "(06.12.2023)"
+    """
+    # 1. PDF metadata CreationDate (most reliable, available everywhere)
+    creation_date = pdf_metadata.get("CreationDate", "")
+    if creation_date:
+        parsed = _parse_pdf_date(creation_date)
+        if parsed:
+            return parsed
+
+    # 2. Labeled field: "Abschluss der Arbeit: 3. Juli 2025"
     match = _DATE_LABELED_RE.search(markdown)
     if match:
         date_str = match.group(1).strip()
         date_str = re.sub(r"\s*\(.*$", "", date_str).strip()
-        return date_str
+        return _normalize_german_date(date_str)
 
-    # 2. Furniture: date after Aktenzeichen "(06.12.2023)"
+    # 3. Furniture: date after Aktenzeichen "(06.12.2023)"
     match = _FOOTER_DATE_RE.search(furniture_text)
     if match:
-        return match.group(1).strip()
+        return _normalize_german_date(match.group(1).strip())
 
     return ""
+
+
+# German month names to numbers
+_GERMAN_MONTHS: dict[str, int] = {
+    "januar": 1, "februar": 2, "märz": 3, "april": 4,
+    "mai": 5, "juni": 6, "juli": 7, "august": 8,
+    "september": 9, "oktober": 10, "november": 11, "dezember": 12,
+}
+
+
+def _parse_pdf_date(raw: str) -> str:
+    """Parse PDF date format 'D:YYYYMMDDHHmmSS+TZ' to ISO 'YYYY-MM-DD'."""
+    # Strip the "D:" prefix if present
+    s = raw.strip()
+    if s.startswith("D:"):
+        s = s[2:]
+    # We only need the first 8 chars: YYYYMMDD
+    if len(s) >= 8 and s[:8].isdigit():
+        try:
+            dt = datetime.strptime(s[:8], "%Y%m%d")
+            return dt.strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+    return ""
+
+
+def _normalize_german_date(date_str: str) -> str:
+    """Normalize a German date string to ISO format (YYYY-MM-DD).
+
+    Handles formats like:
+    - "06.12.2023" (DD.MM.YYYY)
+    - "3. Juli 2025" (D. MonthName YYYY)
+    - "28. Juli 2025"
+    """
+    # Try DD.MM.YYYY
+    match = re.match(r"(\d{1,2})\.(\d{1,2})\.(\d{4})", date_str)
+    if match:
+        day, month, year = int(match.group(1)), int(match.group(2)), int(match.group(3))
+        return f"{year:04d}-{month:02d}-{day:02d}"
+
+    # Try "D. MonthName YYYY"
+    match = re.match(r"(\d{1,2})\.\s*(\w+)\s+(\d{4})", date_str)
+    if match:
+        day = int(match.group(1))
+        month_name = match.group(2).lower()
+        year = int(match.group(3))
+        month = _GERMAN_MONTHS.get(month_name)
+        if month:
+            return f"{year:04d}-{month:02d}-{day:02d}"
+
+    # Already ISO or unrecognized — return as-is
+    return date_str
 
 
 def _detect_language(markdown: str, source_file: str) -> str:
