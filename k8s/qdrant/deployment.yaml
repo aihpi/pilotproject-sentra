@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentra-qdrant
+  labels:
+    app: sentra-qdrant
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sentra-qdrant
+  template:
+    metadata:
+      labels:
+        app: sentra-qdrant
+    spec:
+      containers:
+        - name: qdrant
+          image: qdrant/qdrant:v1.13.6
+          ports:
+            - containerPort: 6333
+              name: http
+            - containerPort: 6334
+              name: grpc
+          volumeMounts:
+            - name: qdrant-storage
+              mountPath: /qdrant/storage
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 6333
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 6333
+            periodSeconds: 15
+            timeoutSeconds: 5
+          resources:
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+      volumes:
+        - name: qdrant-storage
+          persistentVolumeClaim:
+            claimName: qdrant-storage

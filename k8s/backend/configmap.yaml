@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sentra-backend-config
+data:
+  # AI Model Hub
+  AI_HUB_BASE_URL: "https://api.aisc.hpi.de/v1"
+  EMBEDDING_MODEL: "octen-embedding-8b"
+  CHAT_MODEL: "llama-3-3-70b"
+
+  # Qdrant (uses k8s service DNS name)
+  QDRANT_URL: "http://qdrant:6333"
+  COLLECTION_NAME: "bundestag_documents"
+  DOC_COLLECTION_NAME: "bundestag_doc_summaries"
+
+  # Ingestion
+  DOCUMENTS_DIR: "/data/Ausarbeitungen"
+  CHUNK_MAX_TOKENS: "2048"
+  EMBEDDING_BATCH_SIZE: "32"
+
+  # RAG
+  RETRIEVAL_TOP_K: "10"
+
+  # Feedback
+  FEEDBACK_FILE: "/data/feedback.jsonl"

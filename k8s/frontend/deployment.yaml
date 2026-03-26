@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentra-frontend
+  labels:
+    app: sentra-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sentra-frontend
+  template:
+    metadata:
+      labels:
+        app: sentra-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/aihpi/pilotproject-sentra/frontend:latest
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            periodSeconds: 15
+            timeoutSeconds: 5
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
