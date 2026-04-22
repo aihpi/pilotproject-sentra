@@ -5,6 +5,7 @@ namespace: sentra
 
 resources:
   - namespace.yaml
+  - secrets/sealed-secret.yaml
   - storage/documents-pvc.yaml
   - qdrant/pvc.yaml
   - qdrant/deployment.yaml

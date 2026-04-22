@@ -7,25 +7,15 @@ cd "$SCRIPT_DIR"
 echo "=== Deploying Sentra to Kubernetes ==="
 
 # 1. Create namespace
-echo "[1/5] Creating namespace..."
+echo "[1/4] Creating namespace..."
 kubectl apply -f namespace.yaml
 
-# 2. Apply secrets (if present)
-if [ -f "secrets/secret.yaml" ]; then
-  echo "[2/5] Applying secrets..."
-  kubectl apply -f secrets/secret.yaml
-else
-  echo "[2/5] No secrets/secret.yaml found — skipping"
-  echo "  Create it: cp secrets/example-secret.yaml secrets/secret.yaml"
-  echo "  Then edit secrets/secret.yaml with your AI Hub API key"
-fi
-
-# 3. Apply all resources via Kustomize
-echo "[3/5] Applying Kustomize manifests..."
+# 2. Apply all resources via Kustomize
+echo "[2/4] Applying Kustomize manifests..."
 kubectl apply -k .
 
-# 4. Wait for pods
-echo "[4/5] Waiting for pods to be ready..."
+# 3. Wait for pods
+echo "[3/4] Waiting for pods to be ready..."
 
 echo "  Waiting for Qdrant..."
 kubectl wait --for=condition=ready pod -l app=sentra-qdrant -n sentra --timeout=120s
@@ -36,8 +26,8 @@ kubectl wait --for=condition=ready pod -l app=sentra-backend -n sentra --timeout
 echo "  Waiting for frontend..."
 kubectl wait --for=condition=ready pod -l app=sentra-frontend -n sentra --timeout=60s
 
-# 5. Status
-echo "[5/5] Checking status..."
+# 4. Status
+echo "[4/4] Checking status..."
 kubectl get pods -n sentra
 
 echo ""
