@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: ghcr.io/aihpi/pilotproject-sentra/frontend:sha-c94d1be
+          image: ghcr.io/aihpi/pilotproject-sentra/frontend:sha-fda3097
           ports:
             - containerPort: 80
           readinessProbe:
