@@ -343,7 +343,7 @@ class VectorStore:
         while True:
             points, offset = self._client.scroll(
                 collection_name=self._doc_collection,
-                limit=100,
+                limit=1000,
                 offset=offset,
                 with_payload=["aktenzeichen"],
                 with_vectors=False,
