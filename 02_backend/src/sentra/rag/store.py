@@ -70,11 +70,14 @@ class VectorStore:
 
         Returns the number of points upserted.
         """
+        # Point ID is derived from source_file (not aktenzeichen) because
+        # _Abstract pairs and multi-AZ documents can share an Aktenzeichen,
+        # but the filename is always unique on disk.
         points = [
             PointStruct(
                 id=uuid5(
                     NAMESPACE_URL,
-                    f"{chunk.metadata.aktenzeichen}::{chunk.chunk_index}",
+                    f"{chunk.metadata.source_file}::{chunk.chunk_index}",
                 ).hex,
                 vector=embedding,
                 payload={
@@ -176,7 +179,7 @@ class VectorStore:
         ]
 
     def scroll_all_documents(self) -> list[dict]:
-        """Scroll all points and return unique documents by aktenzeichen."""
+        """Scroll all points and return unique documents by source_file."""
         seen: set[str] = set()
         documents: list[dict] = []
         offset = None
@@ -189,9 +192,9 @@ class VectorStore:
                 with_vectors=False,
             )
             for point in points:
-                az = point.payload.get("aktenzeichen", "")
-                if az not in seen:
-                    seen.add(az)
+                sf = point.payload.get("source_file", "")
+                if sf and sf not in seen:
+                    seen.add(sf)
                     documents.append(point.payload)
             if offset is None:
                 break
@@ -249,12 +252,13 @@ class VectorStore:
     ) -> int:
         """Insert document-level records (one per document).
 
-        Each record dict must have at least 'aktenzeichen'.
+        Each record dict must have at least 'source_file' (used as unique ID)
+        and 'aktenzeichen' (kept for filtering).
         Returns the number of points upserted.
         """
         points = [
             PointStruct(
-                id=uuid5(NAMESPACE_URL, f"doc::{rec['aktenzeichen']}").hex,
+                id=uuid5(NAMESPACE_URL, f"doc::{rec['source_file']}").hex,
                 vector=emb,
                 payload=rec,
             )
@@ -280,30 +284,36 @@ class VectorStore:
     ) -> list[dict]:
         """Find documents similar to the given Aktenzeichen.
 
-        Looks up the document embedding, then searches for nearest neighbors
-        (excluding itself).
+        Looks up the document embedding via payload filter (since multiple
+        documents can share the same Aktenzeichen — e.g., Abstract pairs),
+        then searches for nearest neighbors (excluding itself).
         """
-        point_id = uuid5(NAMESPACE_URL, f"doc::{aktenzeichen}").hex
-
-        # Retrieve the document's embedding
-        points = self._client.retrieve(
+        # Find the source point by aktenzeichen field
+        matches, _ = self._client.scroll(
             collection_name=self._doc_collection,
-            ids=[point_id],
+            scroll_filter=Filter(
+                must=[FieldCondition(
+                    key="aktenzeichen",
+                    match=MatchValue(value=aktenzeichen),
+                )]
+            ),
+            limit=1,
             with_vectors=True,
             with_payload=True,
         )
-        if not points:
+        if not matches:
             logger.warning("Document '%s' not found in doc collection", aktenzeichen)
             return []
 
-        doc_vector = points[0].vector
+        doc_vector = matches[0].vector
+        self_id = matches[0].id
 
         # Search for similar docs, excluding self
         results = self._client.query_points(
             collection_name=self._doc_collection,
             query=doc_vector,
             query_filter=Filter(
-                must_not=[HasIdCondition(has_id=[point_id])]
+                must_not=[HasIdCondition(has_id=[self_id])]
             ),
             with_payload=True,
             limit=top_k,
@@ -317,13 +327,27 @@ class VectorStore:
     def get_doc_records_by_aktenzeichen(
         self, aktenzeichen_list: list[str]
     ) -> list[dict]:
-        """Retrieve document records by their Aktenzeichen values."""
-        point_ids = [
-            uuid5(NAMESPACE_URL, f"doc::{az}").hex for az in aktenzeichen_list
-        ]
-        points = self._client.retrieve(
+        """Retrieve document records by their Aktenzeichen values.
+
+        Uses a payload filter scroll because multiple documents may share
+        the same Aktenzeichen (e.g., the Ausarbeitung and its _Abstract
+        version share an AZ but live under different filenames).
+        """
+        if not aktenzeichen_list:
+            return []
+
+        points, _ = self._client.scroll(
             collection_name=self._doc_collection,
-            ids=point_ids,
+            scroll_filter=Filter(
+                should=[
+                    FieldCondition(
+                        key="aktenzeichen",
+                        match=MatchValue(value=az),
+                    )
+                    for az in aktenzeichen_list
+                ]
+            ),
+            limit=max(len(aktenzeichen_list) * 2, 100),
             with_vectors=False,
             with_payload=True,
         )
@@ -331,6 +355,19 @@ class VectorStore:
 
     def get_indexed_aktenzeichen(self) -> set[str]:
         """Get all aktenzeichen values from the doc collection."""
+        return self._scroll_doc_field("aktenzeichen")
+
+    def get_indexed_source_files(self) -> set[str]:
+        """Get all source_file values from the doc collection.
+
+        Used as the skip-filter signal during incremental ingestion: the
+        filename is the only intrinsically-unique identifier (Aktenzeichen
+        can collide across _Abstract pairs and multi-AZ documents).
+        """
+        return self._scroll_doc_field("source_file")
+
+    def _scroll_doc_field(self, field: str) -> set[str]:
+        """Scroll the doc collection and collect all values of one payload field."""
         result: set[str] = set()
         try:
             collections = self._client.get_collections().collections
@@ -345,13 +382,13 @@ class VectorStore:
                 collection_name=self._doc_collection,
                 limit=1000,
                 offset=offset,
-                with_payload=["aktenzeichen"],
+                with_payload=[field],
                 with_vectors=False,
             )
             for point in points:
-                az = point.payload.get("aktenzeichen", "")
-                if az:
-                    result.add(az)
+                value = point.payload.get(field, "")
+                if value:
+                    result.add(value)
             if offset is None:
                 break
         return result

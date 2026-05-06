@@ -1,5 +1,4 @@
 import logging
-import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -12,9 +11,6 @@ from sentra.rag.embeddings import EmbeddingClient
 from sentra.rag.store import VectorStore
 
 logger = logging.getLogger(__name__)
-
-# Filename pattern for quick AZ derivation (avoids Docling for skip check)
-_FILENAME_AZ_RE = re.compile(r"((?:WD|EU)\s*\d+)-(\d+)-(\d+)")
 
 
 @dataclass
@@ -39,15 +35,6 @@ _progress = IngestionProgress()
 def get_ingestion_progress() -> IngestionProgress:
     """Return the current ingestion progress (module-level singleton)."""
     return _progress
-
-
-def _az_from_filename(filename: str) -> str | None:
-    """Quickly derive aktenzeichen from filename without Docling."""
-    match = _FILENAME_AZ_RE.search(filename)
-    if match:
-        fb = re.sub(r"(WD|EU)(\d)", r"\1 \2", match.group(1).strip())
-        return f"{fb} - 3000 - {match.group(2)}/{match.group(3)}"
-    return None
 
 
 def run_ingestion(
@@ -97,12 +84,18 @@ def _run_ingestion_inner(
     force: bool,
 ) -> None:
     """Inner ingestion logic — processes documents one by one."""
-    # Load already-indexed aktenzeichen for incremental skip
-    indexed_az: set[str] = set()
+    # Load already-indexed source files for incremental skip.
+    # We key on filename (not Aktenzeichen) because:
+    # 1. Filename is intrinsically unique on disk; AZ can collide
+    #    (e.g. WD 6-004-25.pdf and WD 6-004-25_Abstract.pdf share the same AZ).
+    # 2. Some filenames carry a different first AZ than the body
+    #    (e.g. "WD 4-003-25; WD 3-003-25.pdf" has body AZ "WD 3 - 3000 - 003/25"),
+    #    so a filename-derived AZ wouldn't match what's stored.
+    indexed_files: set[str] = set()
     if not force:
-        indexed_az = store.get_indexed_aktenzeichen()
-        if indexed_az:
-            logger.info("Found %d already-indexed documents", len(indexed_az))
+        indexed_files = store.get_indexed_source_files()
+        if indexed_files:
+            logger.info("Found %d already-indexed documents", len(indexed_files))
 
     store.ensure_collection()
     store.ensure_doc_collection()
@@ -116,18 +109,14 @@ def _run_ingestion_inner(
         _progress.errors.append("No PDF files found")
         return
 
-    # Pre-filter: skip files whose AZ (derived from filename) is already indexed.
-    # This avoids expensive Docling parsing for already-indexed documents.
+    # Pre-filter: skip files already indexed (matched by filename).
     paths_to_process: list[Path] = []
-    filesystem_az: set[str] = set()
+    filesystem_files: set[str] = {p.name for p in all_pdf_paths}
 
     for p in all_pdf_paths:
-        az = _az_from_filename(p.name)
-        if az:
-            filesystem_az.add(az)
-        if not force and az and az in indexed_az:
+        if not force and p.name in indexed_files:
             _progress.skipped += 1
-            logger.info("Skipping %s (%s, already indexed)", p.name, az)
+            logger.info("Skipping %s (already indexed)", p.name)
         else:
             paths_to_process.append(p)
 
@@ -152,8 +141,6 @@ def _run_ingestion_inner(
             metadata = extract_metadata(
                 doc.markdown, doc.furniture_text, doc.source_file, doc.pdf_metadata
             )
-
-            filesystem_az.add(metadata.aktenzeichen)
 
             # Chunk
             chunks = chunk_document(doc.markdown, metadata)
@@ -194,9 +181,9 @@ def _run_ingestion_inner(
 
     _progress.current_file = ""
 
-    # Detect stale documents (in Qdrant but not on filesystem)
-    if indexed_az and filesystem_az:
-        stale = indexed_az - filesystem_az
+    # Detect stale documents (in Qdrant but not on filesystem), keyed by filename.
+    if indexed_files and filesystem_files:
+        stale = indexed_files - filesystem_files
         if stale:
             _progress.stale_documents = sorted(stale)
             logger.warning(
