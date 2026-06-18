@@ -4,7 +4,7 @@ WORKDIR /app
 
 # System dependencies for Docling PDF processing
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -16,6 +16,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy source code
+COPY README.md .
 COPY src/ src/
 
 # Install the project itself
