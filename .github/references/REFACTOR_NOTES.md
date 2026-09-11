@@ -1,6 +1,6 @@
-# Refactor — short
+# Refactor notes
 
-Full version: `REFACTOR.md`. Nothing here is broken, it is all "this will hurt later".
+Nothing here is broken, it is all "this will hurt later".
 
 ## Priority
 

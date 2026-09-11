@@ -1,6 +1,6 @@
-# Eval harness — short
+# Eval harness notes
 
-Implements `Vorlage_Strukturierte_Testverfahren_KISZ.md` v0.3. Full version: `EVAL_ARCHITECTURE.md`
+Implements `Vorlage_Strukturierte_Testverfahren_KISZ.md` v0.3, in this folder.
 
 ## Shape
 

@@ -9,6 +9,11 @@ body:
         full stop. It becomes the branch name, the PR title and the final squashed commit.
         No `[TASK]` prefix, the label already says what this is.
 
+        **Branch:** cut the task branch from the **feature branch**, not from `dev` or `main`.
+        The Create a branch dialog offers the repository default branch, so you have to change
+        the source every time. If this is wrong, squash-merging back into the feature branch
+        drags unrelated history along with it.
+
   - type: input
     id: parent
     attributes:

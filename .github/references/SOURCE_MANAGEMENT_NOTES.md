@@ -1,6 +1,6 @@
-# Source management — short
+# Source management notes
 
-Full version: `SOURCE_MANAGEMENT.md`. Consumers: SENTRA search + eval cases (same corpus).
+Consumers: SENTRA search and eval cases, the same corpus.
 
 ## The number
 

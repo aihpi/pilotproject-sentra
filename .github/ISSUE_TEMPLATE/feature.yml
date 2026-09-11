@@ -9,6 +9,9 @@ body:
         full stop. It becomes the branch name, the PR title and the final squashed commit.
         No `[FEATURE]` prefix, the label already says what this is.
 
+        **Branch:** cut the feature branch from `dev`. The Create a branch dialog offers the
+        repository default branch, so change the source if it is not already `dev`.
+
   - type: textarea
     id: what
     attributes:
