@@ -1,7 +1,7 @@
 import json
 import logging
 import threading
-
+from datetime import UTC
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -161,10 +161,10 @@ def submit_feedback(
     settings: Settings = Depends(get_settings),
 ) -> FeedbackResponse:
     """Record user feedback on an answer."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     feedback_entry = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "question": body.question,
         "answer": body.answer,
         "rating": body.rating,

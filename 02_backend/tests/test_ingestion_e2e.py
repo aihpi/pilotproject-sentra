@@ -12,7 +12,6 @@ Run:  uv run pytest tests/test_ingestion_e2e.py -v
 
 import re
 from datetime import date
-from pathlib import Path
 
 import pytest
 
@@ -30,7 +29,6 @@ from tests.conftest import (
     VALID_DOCUMENT_TYPES,
     VALID_FACHBEREICH_NUMBERS,
 )
-
 
 # ── Fixtures ────────────────────────────────────────────────────────
 

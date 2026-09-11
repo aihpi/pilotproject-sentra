@@ -91,7 +91,7 @@ class TestSimilarDocumentsThematic:
 
         # At least one direction should hold
         assert AZ_WD8_B in az_set_a or AZ_WD8_A in az_set_b, (
-            f"WD 8 docs don't appear in each other's top 10 similar results"
+            "WD 8 docs don't appear in each other's top 10 similar results"
         )
 
     def test_nonexistent_az_returns_empty(self, require_qdrant, store):

@@ -1,9 +1,7 @@
 """Tests for metadata extraction from Bundestag documents."""
 
-import pytest
 
 from sentra.ingestion.metadata import (
-    DocumentMetadata,
     _deduplicate_title,
     _extract_aktenzeichen,
     _extract_completion_date,
@@ -15,7 +13,6 @@ from sentra.ingestion.metadata import (
     _parse_pdf_date,
     extract_metadata,
 )
-
 
 # ---------------------------------------------------------------------------
 # Aktenzeichen extraction

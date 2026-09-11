@@ -1,7 +1,7 @@
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sentra.ingestion.chunker import Chunk, chunk_document
 from sentra.ingestion.metadata import extract_metadata
@@ -52,7 +52,7 @@ def run_ingestion(
     global _progress
     _progress = IngestionProgress(
         status="running",
-        started_at=datetime.now(timezone.utc).isoformat(),
+        started_at=datetime.now(UTC).isoformat(),
     )
 
     try:
@@ -62,11 +62,11 @@ def run_ingestion(
         logger.exception(msg)
         _progress.errors.append(msg)
         _progress.status = "failed"
-        _progress.completed_at = datetime.now(timezone.utc).isoformat()
+        _progress.completed_at = datetime.now(UTC).isoformat()
         return
 
     _progress.status = "completed"
-    _progress.completed_at = datetime.now(timezone.utc).isoformat()
+    _progress.completed_at = datetime.now(UTC).isoformat()
 
     logger.info(
         "Ingestion complete: %d processed, %d skipped, %d chunks, %d errors",

@@ -8,7 +8,6 @@ Requires: Qdrant running + data ingested (mark: integration).
 Run:  uv run pytest tests/test_filters.py -v -m integration
 """
 
-import re
 from datetime import date
 
 import pytest

@@ -1,9 +1,7 @@
 """Tests for document chunking logic."""
 
-import pytest
 
 from sentra.ingestion.chunker import (
-    Chunk,
     _split_into_sections,
     _split_on_paragraphs,
     _strip_boilerplate,
