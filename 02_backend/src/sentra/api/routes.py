@@ -283,7 +283,9 @@ def explorer_answer(
         system_prompt=body.system_prompt,
     )
     return GeneratedAnswerResponse(
-        text=result.text, sources=result.sources, system_prompt=result.system_prompt,
+        text=result.text,
+        sources=result.sources,
+        system_prompt=result.system_prompt,
     )
 
 
@@ -309,5 +311,7 @@ def explorer_overview(
         system_prompt=body.system_prompt,
     )
     return GeneratedAnswerResponse(
-        text=result.text, sources=result.sources, system_prompt=result.system_prompt,
+        text=result.text,
+        sources=result.sources,
+        system_prompt=result.system_prompt,
     )

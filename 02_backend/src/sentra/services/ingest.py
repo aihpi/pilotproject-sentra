@@ -102,6 +102,7 @@ def _run_ingestion_inner(
 
     # Count total files and pre-filter for incremental ingestion
     from pathlib import Path
+
     pdf_dir = Path(documents_dir)
     all_pdf_paths = sorted(pdf_dir.glob("*.pdf"))
 
@@ -205,9 +206,7 @@ def _store_doc_record(
     mean_emb = VectorStore.mean_embedding(embeddings)
 
     urls = extract_urls(markdown)
-    url_records = [
-        {"url": u.url, "label": u.label, "context": u.context} for u in urls
-    ]
+    url_records = [{"url": u.url, "label": u.label, "context": u.context} for u in urls]
 
     record = {
         "aktenzeichen": metadata.aktenzeichen,

@@ -49,9 +49,7 @@ class TestFachbereichFilter:
         assert len(results) > 0, "WD 6 filter returned no results"
         for r in results:
             fb_prefix = r.aktenzeichen.split(" - ")[0].strip()
-            assert fb_prefix == "WD 6", (
-                f"Filter was WD 6 but got document {r.aktenzeichen}"
-            )
+            assert fb_prefix == "WD 6", f"Filter was WD 6 but got document {r.aktenzeichen}"
 
     def test_wd6_filter_finds_both_docs(self, require_qdrant, store, embedder):
         results = _search(BROAD_QUERY, store, embedder, fachbereich="WD 6")
@@ -158,7 +156,9 @@ class TestCombinedFilters:
     def test_fachbereich_plus_date_narrows_results(self, require_qdrant, store, embedder):
         """WD 6 + year 2023 should return only WD 6-094-23 (not WD 6-052-24)."""
         results = _search(
-            BROAD_QUERY, store, embedder,
+            BROAD_QUERY,
+            store,
+            embedder,
             fachbereich="WD 6",
             date_from="2023",
             date_to="2023",
@@ -167,15 +167,15 @@ class TestCombinedFilters:
             fb_prefix = r.aktenzeichen.split(" - ")[0].strip()
             assert fb_prefix == "WD 6", f"Got non-WD6 doc: {r.aktenzeichen}"
             parsed = date.fromisoformat(r.completion_date)
-            assert parsed.year == 2023, (
-                f"Got non-2023 doc: {r.aktenzeichen} ({r.completion_date})"
-            )
+            assert parsed.year == 2023, f"Got non-2023 doc: {r.aktenzeichen} ({r.completion_date})"
 
     def test_impossible_filter_returns_empty(self, require_qdrant, store, embedder):
         """A filter combination that matches no documents should return empty."""
         # There's no WD 1 doc from 2021 in our dataset
         results = _search(
-            BROAD_QUERY, store, embedder,
+            BROAD_QUERY,
+            store,
+            embedder,
             fachbereich="WD 1",
             date_from="2021",
             date_to="2021",
@@ -187,7 +187,9 @@ class TestCombinedFilters:
     def test_combined_all_three(self, require_qdrant, store, embedder):
         """Triple filter: fachbereich + document_type + date_range."""
         results = _search(
-            BROAD_QUERY, store, embedder,
+            BROAD_QUERY,
+            store,
+            embedder,
             fachbereich="WD 9",
             document_type="Kurzinformation",
             date_from="2023",

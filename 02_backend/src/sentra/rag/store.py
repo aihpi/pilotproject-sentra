@@ -63,9 +63,7 @@ class VectorStore:
 
         logger.info("Created collection '%s' with payload indexes", self._collection)
 
-    def upsert_chunks(
-        self, chunks: list[Chunk], embeddings: list[list[float]]
-    ) -> int:
+    def upsert_chunks(self, chunks: list[Chunk], embeddings: list[list[float]]) -> int:
         """Insert chunk embeddings and metadata into Qdrant.
 
         Returns the number of points upserted.
@@ -296,10 +294,12 @@ class VectorStore:
         matches, _ = self._client.scroll(
             collection_name=self._doc_collection,
             scroll_filter=Filter(
-                must=[FieldCondition(
-                    key="aktenzeichen",
-                    match=MatchValue(value=aktenzeichen),
-                )]
+                must=[
+                    FieldCondition(
+                        key="aktenzeichen",
+                        match=MatchValue(value=aktenzeichen),
+                    )
+                ]
             ),
             limit=1,
             with_vectors=True,
@@ -316,9 +316,7 @@ class VectorStore:
         results = self._client.query_points(
             collection_name=self._doc_collection,
             query=doc_vector,  # type: ignore[arg-type]  # payload/vector Optional, see #9 typed-hit task
-            query_filter=Filter(
-                must_not=[HasIdCondition(has_id=[self_id])]
-            ),
+            query_filter=Filter(must_not=[HasIdCondition(has_id=[self_id])]),
             with_payload=True,
             limit=top_k,
         ).points
@@ -328,9 +326,7 @@ class VectorStore:
             for point in results
         ]
 
-    def get_doc_records_by_aktenzeichen(
-        self, aktenzeichen_list: list[str]
-    ) -> list[dict]:
+    def get_doc_records_by_aktenzeichen(self, aktenzeichen_list: list[str]) -> list[dict]:
         """Retrieve document records by their Aktenzeichen values.
 
         Uses a payload filter scroll because multiple documents may share

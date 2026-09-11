@@ -61,7 +61,7 @@ class TestSimilarDocumentsBasic:
         scores = [r.relevance_score for r in results]
         for i in range(len(scores) - 1):
             assert scores[i] >= scores[i + 1], (
-                f"Results not sorted: position {i} has {scores[i]}, {i+1} has {scores[i+1]}"
+                f"Results not sorted: position {i} has {scores[i]}, {i + 1} has {scores[i + 1]}"
             )
 
 

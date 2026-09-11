@@ -215,7 +215,7 @@ class TestTitleExtraction:
             words = meta.title.split()
             mid = len(words) // 2
             if mid > 2:
-                assert words[:mid] != words[mid:2 * mid], (
+                assert words[:mid] != words[mid : 2 * mid], (
                     f"{filename}: title '{meta.title}' appears to have Docling duplication"
                 )
 
@@ -312,13 +312,17 @@ class TestChunkingRealDocs:
 
     def test_every_doc_produces_chunks(self, parsed_docs):
         for doc in parsed_docs:
-            meta = extract_metadata(doc.markdown, doc.furniture_text, doc.source_file, doc.pdf_metadata)
+            meta = extract_metadata(
+                doc.markdown, doc.furniture_text, doc.source_file, doc.pdf_metadata
+            )
             chunks = chunk_document(doc.markdown, meta)
             assert len(chunks) > 0, f"{doc.source_file}: produced zero chunks"
 
     def test_chunk_text_not_empty(self, parsed_docs):
         for doc in parsed_docs:
-            meta = extract_metadata(doc.markdown, doc.furniture_text, doc.source_file, doc.pdf_metadata)
+            meta = extract_metadata(
+                doc.markdown, doc.furniture_text, doc.source_file, doc.pdf_metadata
+            )
             chunks = chunk_document(doc.markdown, meta)
             for i, chunk in enumerate(chunks):
                 assert len(chunk.text.strip()) > 10, (
@@ -328,7 +332,9 @@ class TestChunkingRealDocs:
     def test_chunk_metadata_attached(self, parsed_docs):
         """Every chunk should carry the document's metadata."""
         for doc in parsed_docs:
-            meta = extract_metadata(doc.markdown, doc.furniture_text, doc.source_file, doc.pdf_metadata)
+            meta = extract_metadata(
+                doc.markdown, doc.furniture_text, doc.source_file, doc.pdf_metadata
+            )
             chunks = chunk_document(doc.markdown, meta)
             for chunk in chunks:
                 assert chunk.metadata.aktenzeichen == meta.aktenzeichen
@@ -336,7 +342,9 @@ class TestChunkingRealDocs:
 
     def test_chunk_indices_sequential(self, parsed_docs):
         for doc in parsed_docs:
-            meta = extract_metadata(doc.markdown, doc.furniture_text, doc.source_file, doc.pdf_metadata)
+            meta = extract_metadata(
+                doc.markdown, doc.furniture_text, doc.source_file, doc.pdf_metadata
+            )
             chunks = chunk_document(doc.markdown, meta)
             indices = [c.chunk_index for c in chunks]
             assert indices == list(range(len(chunks))), (
@@ -383,9 +391,7 @@ class TestUrlExtractionRealDocs:
                 m = domain_re.match(u.url)
                 assert m, f"{doc.source_file}: cannot extract domain from '{u.url}'"
                 domain = m.group(1)
-                assert "." in domain, (
-                    f"{doc.source_file}: URL truncated at first dot: '{u.url}'"
-                )
+                assert "." in domain, f"{doc.source_file}: URL truncated at first dot: '{u.url}'"
 
     def test_urls_have_no_docling_escapes(self, parsed_docs):
         r"""URLs should not contain Docling markdown artifacts like \_ ."""
@@ -395,6 +401,4 @@ class TestUrlExtractionRealDocs:
                 assert "\\_" not in u.url, (
                     f"{doc.source_file}: escaped underscore in URL: '{u.url}'"
                 )
-                assert "&amp;" not in u.url, (
-                    f"{doc.source_file}: HTML entity in URL: '{u.url}'"
-                )
+                assert "&amp;" not in u.url, f"{doc.source_file}: HTML entity in URL: '{u.url}'"
