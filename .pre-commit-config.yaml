@@ -1,0 +1,46 @@
+# Python only, on purpose. The frontend has its own eslint setup and CI runs it;
+# a hook has to be fast and must not require a toolchain the committer may not
+# have, so a backend-only change never needs npm and vice versa.
+#
+#   uv tool install pre-commit     (or pipx install pre-commit)
+#   pre-commit install
+#   pre-commit run --all-files     to check everything once
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        # Two or more trailing spaces are a hard line break in markdown, and the
+        # PR template relies on them. Without this the hook silently reflows it.
+        args: [--markdown-linebreak-ext=md]
+        exclude: ^references/
+      - id: end-of-file-fixer
+        # references/ holds documents we received rather than source we own.
+        exclude: ^references/
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-toml
+      # No check-added-large-files: the PDF corpus is tracked deliberately and
+      # five tracked files are already over 1 MB.
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.0
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+        files: ^02_backend/
+      - id: ruff-format
+        files: ^02_backend/
+
+  # mypy needs the project's own dependencies to resolve imports, so it runs
+  # inside the backend's uv environment rather than an isolated hook env.
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (02_backend)
+        entry: bash -c 'cd 02_backend && uv run mypy'
+        language: system
+        types: [python]
+        files: ^02_backend/src/
+        pass_filenames: false
