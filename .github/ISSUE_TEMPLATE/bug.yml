@@ -1,0 +1,99 @@
+name: Bug
+description: Something behaves differently than it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Title:** write it like a commit message title. Capital letter, imperative verb, no
+        full stop. It becomes the branch name, the PR title and the final squashed commit.
+        No `[BUG]` prefix, the label already says what this is.
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
+    attributes:
+      label: Current behaviour
+      description: Screenshots and log output help a lot here.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - frontend
+        - api
+        - ingestion
+        - retrieval
+        - generation
+        - explorer
+        - evaluation
+        - sources
+        - infra
+        - docs
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Commit sha, image tag or branch. And browser plus OS if it is a frontend bug.
+      placeholder: "dev @ 92d7354, Firefox 141 on Ubuntu"
+    validations:
+      required: false
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Possible solution
+      description: Optional.
+    validations:
+      required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        Only fill the rest in if this came out of a structured evaluation round.
+
+  - type: input
+    id: test_id
+    attributes:
+      label: Test-ID
+      description: The eval test case this was found in.
+      placeholder: "TF-GO-014"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: schweregrad
+    attributes:
+      label: Schweregrad
+      description: Per the KISZ Testverfahren. 3 and 4 get reported to KISZ separately.
+      options:
+        - "1 - geringfügig"
+        - "2 - moderat"
+        - "3 - erheblich"
+        - "4 - kritisch"
+    validations:
+      required: false

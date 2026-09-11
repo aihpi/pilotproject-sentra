@@ -1,0 +1,67 @@
+name: Task
+description: One unit of work belonging to a feature
+labels: ["task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Title:** write it like a commit message title. Capital letter, imperative verb, no
+        full stop. It becomes the branch name, the PR title and the final squashed commit.
+        No `[TASK]` prefix, the label already says what this is.
+
+  - type: input
+    id: parent
+    attributes:
+      label: Parent feature
+      description: >-
+        The feature this belongs to. `#123` is enough, a full URL also works. If the org has
+        sub-issues enabled, set the parent there as well so progress rolls up.
+      placeholder: "#123"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What we want
+    validations:
+      required: true
+
+  - type: textarea
+    id: done
+    attributes:
+      label: Definition of done
+      description: >-
+        How a reviewer can tell this is finished. Be concrete: an endpoint that responds, a
+        test that passes, a screen that shows something.
+      placeholder: |
+        - ...
+        - ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - frontend
+        - api
+        - ingestion
+        - retrieval
+        - generation
+        - explorer
+        - evaluation
+        - sources
+        - infra
+        - docs
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: How to implement and other infos
+      description: Optional.
+    validations:
+      required: false

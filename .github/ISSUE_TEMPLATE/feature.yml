@@ -1,0 +1,68 @@
+name: Feature
+description: A piece of work that is made up of several tasks
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Title:** write it like a commit message title. Capital letter, imperative verb, no
+        full stop. It becomes the branch name, the PR title and the final squashed commit.
+        No `[FEATURE]` prefix, the label already says what this is.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What we want
+      description: The outcome, not the implementation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why we want it
+      description: Optional. Skip it if it is obvious.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Pick everything this touches.
+      multiple: true
+      options:
+        - frontend
+        - api
+        - ingestion
+        - retrieval
+        - generation
+        - explorer
+        - evaluation
+        - sources
+        - infra
+        - docs
+    validations:
+      required: true
+
+  - type: textarea
+    id: tasks
+    attributes:
+      label: Tasks
+      description: >-
+        Prefer real sub-issues if they are enabled on the org, they give progress rollup on
+        this issue. Otherwise list them here as a task list, GitHub tracks the references
+        and shows a counter.
+      value: |
+        - [ ] #
+        - [ ] #
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: How to implement, constraints, other infos
+      description: Optional. Link designs or drafts here.
+    validations:
+      required: false
