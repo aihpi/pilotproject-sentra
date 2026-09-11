@@ -21,6 +21,30 @@ dev = [
     "ruff>=0.8.0",
 ]
 
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# E/F pycodestyle + pyflakes, I import order, UP pyupgrade,
+# B bugbear, SIM flake8-simplify
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency injection is a function call in a default argument by
+# design, so B008 is a false positive on every route handler.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Header",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Long assertion messages and the ground-truth table read better unwrapped.
+"tests/**" = ["E501"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
