@@ -13,7 +13,10 @@ DetectorFactory.seed = 0
 # Mapping of WD/EU department numbers to full names
 FACHBEREICH_NAMES: dict[str, str] = {
     "WD 1": "Geschichte, Zeitgeschichte und Politik",
-    "WD 2": "Auswärtiges, Völkerrecht, wirtschaftliche Zusammenarbeit und Entwicklung, Verteidigung, Menschenrechte und humanitäre Hilfe",
+    "WD 2": (
+        "Auswärtiges, Völkerrecht, wirtschaftliche Zusammenarbeit und Entwicklung, "
+        "Verteidigung, Menschenrechte und humanitäre Hilfe"
+    ),
     "WD 3": "Verfassung und Verwaltung",
     "WD 4": "Haushalt und Finanzen",
     "WD 5": "Wirtschaft und Verkehr, Ernährung, Landwirtschaft und Verbraucherschutz",

@@ -95,7 +95,7 @@ class VectorStore:
                     "source_file": chunk.metadata.source_file,
                 },
             )
-            for chunk, embedding in zip(chunks, embeddings)
+            for chunk, embedding in zip(chunks, embeddings, strict=True)
         ]
 
         # Upsert in batches of 100
@@ -154,7 +154,11 @@ class VectorStore:
                 gte = date(int(date_from), 1, 1) if date_from else None
                 lte = date(int(date_to), 12, 31) if date_to else None
             except (ValueError, TypeError):
-                logger.warning("Invalid date_from=%r / date_to=%r, skipping date filter", date_from, date_to)
+                logger.warning(
+                    "Invalid date_from=%r / date_to=%r, skipping date filter",
+                    date_from,
+                    date_to,
+                )
             else:
                 conditions.append(
                     FieldCondition(
@@ -262,7 +266,7 @@ class VectorStore:
                 vector=emb,
                 payload=rec,
             )
-            for rec, emb in zip(records, embeddings)
+            for rec, emb in zip(records, embeddings, strict=True)
         ]
 
         batch_size = 100
