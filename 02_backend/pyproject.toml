@@ -19,6 +19,7 @@ dev = [
     "pytest>=8.0",
     "httpx>=0.27.0",
     "ruff>=0.8.0",
+    "mypy>=1.13",
 ]
 
 [tool.ruff]
@@ -44,6 +45,20 @@ extend-immutable-calls = [
 [tool.ruff.lint.per-file-ignores]
 # Long assertion messages and the ground-truth table read better unwrapped.
 "tests/**" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src/sentra"]
+plugins = ["pydantic.mypy"]
+warn_redundant_casts = true
+# Makes the deferred ignores below self-cleaning: once the underlying cause is
+# fixed, the now-pointless ignore fails the check instead of lingering.
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+# Neither ships type information or a py.typed marker.
+module = ["langdetect.*", "pypdfium2.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

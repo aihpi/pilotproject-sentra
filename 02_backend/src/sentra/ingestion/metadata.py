@@ -306,9 +306,9 @@ def _normalize_german_date(date_str: str) -> str:
         day = int(match.group(1))
         month_name = match.group(2).lower()
         year = int(match.group(3))
-        month = _GERMAN_MONTHS.get(month_name)
-        if month:
-            return f"{year:04d}-{month:02d}-{day:02d}"
+        month_from_name = _GERMAN_MONTHS.get(month_name)
+        if month_from_name:
+            return f"{year:04d}-{month_from_name:02d}-{day:02d}"
 
     # Already ISO or unrecognized — return as-is
     return date_str
