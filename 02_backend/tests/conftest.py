@@ -31,14 +31,26 @@ GROUND_TRUTH: dict[str, dict] = {
     "WD 3-029-23.pdf": {
         "aktenzeichen": "WD 3 - 3000 - 029/23",
         "fachbereich_number": "WD 3",
-        "document_type_in": ["Ausarbeitung", "Sachstand", "Kurzinformation", "Dokumentation", "Sonstiges"],
+        "document_type_in": [
+            "Ausarbeitung",
+            "Sachstand",
+            "Kurzinformation",
+            "Dokumentation",
+            "Sonstiges",
+        ],
         "language": "de",
         "year_hint": 2023,
     },
     "EU 6-012-25.pdf": {
         "aktenzeichen": "EU 6 - 3000 - 012/25",
         "fachbereich_number": "EU 6",
-        "document_type_in": ["Ausarbeitung", "Sachstand", "Kurzinformation", "Dokumentation", "Sonstiges"],
+        "document_type_in": [
+            "Ausarbeitung",
+            "Sachstand",
+            "Kurzinformation",
+            "Dokumentation",
+            "Sonstiges",
+        ],
         "language": "de",
         "year_hint": 2025,
     },
@@ -135,10 +147,25 @@ GROUND_TRUTH: dict[str, dict] = {
     },
 }
 
-VALID_DOCUMENT_TYPES = {"Ausarbeitung", "Sachstand", "Kurzinformation", "Dokumentation", "Sonstiges"}
+VALID_DOCUMENT_TYPES = {
+    "Ausarbeitung",
+    "Sachstand",
+    "Kurzinformation",
+    "Dokumentation",
+    "Sonstiges",
+}
 VALID_FACHBEREICH_NUMBERS = {
-    "WD 1", "WD 2", "WD 3", "WD 4", "WD 5",
-    "WD 6", "WD 7", "WD 8", "WD 9", "WD 10", "EU 6",
+    "WD 1",
+    "WD 2",
+    "WD 3",
+    "WD 4",
+    "WD 5",
+    "WD 6",
+    "WD 7",
+    "WD 8",
+    "WD 9",
+    "WD 10",
+    "EU 6",
 }
 
 TOTAL_PDFS = len(GROUND_TRUTH)  # 17
@@ -201,4 +228,6 @@ def generator(settings: Settings) -> AnswerGenerator:
 
 
 def pytest_configure(config):
-    config.addinivalue_line("markers", "integration: requires Qdrant + AI Hub (skip with -m 'not integration')")
+    config.addinivalue_line(
+        "markers", "integration: requires Qdrant + AI Hub (skip with -m 'not integration')"
+    )

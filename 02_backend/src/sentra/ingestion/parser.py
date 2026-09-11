@@ -65,7 +65,12 @@ def parse_pdfs(
                 furniture_text=furniture_text,
                 pdf_metadata=metadata_by_name.get(source, {}),
             )
-            logger.info("Parsed %s (%d chars body, %d chars furniture)", source, len(markdown), len(furniture_text))
+            logger.info(
+                "Parsed %s (%d chars body, %d chars furniture)",
+                source,
+                len(markdown),
+                len(furniture_text),
+            )
         except Exception:
             logger.exception("Failed to process %s", source)
 

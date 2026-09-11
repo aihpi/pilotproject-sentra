@@ -1,7 +1,7 @@
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sentra.ingestion.chunker import Chunk, chunk_document
 from sentra.ingestion.metadata import extract_metadata
@@ -52,7 +52,7 @@ def run_ingestion(
     global _progress
     _progress = IngestionProgress(
         status="running",
-        started_at=datetime.now(timezone.utc).isoformat(),
+        started_at=datetime.now(UTC).isoformat(),
     )
 
     try:
@@ -62,11 +62,11 @@ def run_ingestion(
         logger.exception(msg)
         _progress.errors.append(msg)
         _progress.status = "failed"
-        _progress.completed_at = datetime.now(timezone.utc).isoformat()
+        _progress.completed_at = datetime.now(UTC).isoformat()
         return
 
     _progress.status = "completed"
-    _progress.completed_at = datetime.now(timezone.utc).isoformat()
+    _progress.completed_at = datetime.now(UTC).isoformat()
 
     logger.info(
         "Ingestion complete: %d processed, %d skipped, %d chunks, %d errors",
@@ -102,6 +102,7 @@ def _run_ingestion_inner(
 
     # Count total files and pre-filter for incremental ingestion
     from pathlib import Path
+
     pdf_dir = Path(documents_dir)
     all_pdf_paths = sorted(pdf_dir.glob("*.pdf"))
 
@@ -205,9 +206,7 @@ def _store_doc_record(
     mean_emb = VectorStore.mean_embedding(embeddings)
 
     urls = extract_urls(markdown)
-    url_records = [
-        {"url": u.url, "label": u.label, "context": u.context} for u in urls
-    ]
+    url_records = [{"url": u.url, "label": u.label, "context": u.context} for u in urls]
 
     record = {
         "aktenzeichen": metadata.aktenzeichen,

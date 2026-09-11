@@ -69,8 +69,7 @@ class TestTopicRelevance:
         assert len(results) > 0
         fb_set = _fachbereich_set(results[:5])
         assert "EU 6" in fb_set, (
-            f"Expected EU 6 doc in top 5 for EU query, got: "
-            f"{[r.aktenzeichen for r in results[:5]]}"
+            f"Expected EU 6 doc in top 5 for EU query, got: {[r.aktenzeichen for r in results[:5]]}"
         )
 
     def test_environment_query_finds_wd8(self, require_qdrant, store, embedder):
@@ -117,7 +116,7 @@ class TestResultOrdering:
         for i in range(len(scores) - 1):
             assert scores[i] >= scores[i + 1], (
                 f"Results not sorted by relevance: position {i} has {scores[i]}, "
-                f"position {i+1} has {scores[i+1]}"
+                f"position {i + 1} has {scores[i + 1]}"
             )
 
     def test_relevance_scores_in_valid_range(self, require_qdrant, store, embedder):
@@ -132,9 +131,7 @@ class TestResultOrdering:
         results = _search("Deutschland Politik Recht", store, embedder, top_k=17)
         seen = set()
         for r in results:
-            assert r.aktenzeichen not in seen, (
-                f"Duplicate document in results: {r.aktenzeichen}"
-            )
+            assert r.aktenzeichen not in seen, f"Duplicate document in results: {r.aktenzeichen}"
             seen.add(r.aktenzeichen)
 
 
@@ -156,6 +153,4 @@ class TestBroadQuery:
         """With top_k=17 (total PDFs) and a broad query, we should get most documents."""
         results = _search("Wissenschaftliche Dienste Bundestag", store, embedder, top_k=17)
         # With only 17 docs, a very broad query should return at least ~10
-        assert len(results) >= 10, (
-            f"Broad query with top_k=17 returned only {len(results)} results"
-        )
+        assert len(results) >= 10, f"Broad query with top_k=17 returned only {len(results)} results"

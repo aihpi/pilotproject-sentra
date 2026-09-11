@@ -13,7 +13,10 @@ DetectorFactory.seed = 0
 # Mapping of WD/EU department numbers to full names
 FACHBEREICH_NAMES: dict[str, str] = {
     "WD 1": "Geschichte, Zeitgeschichte und Politik",
-    "WD 2": "Auswärtiges, Völkerrecht, wirtschaftliche Zusammenarbeit und Entwicklung, Verteidigung, Menschenrechte und humanitäre Hilfe",
+    "WD 2": (
+        "Auswärtiges, Völkerrecht, wirtschaftliche Zusammenarbeit und Entwicklung, "
+        "Verteidigung, Menschenrechte und humanitäre Hilfe"
+    ),
     "WD 3": "Verfassung und Verwaltung",
     "WD 4": "Haushalt und Finanzen",
     "WD 5": "Wirtschaft und Verkehr, Ernährung, Landwirtschaft und Verbraucherschutz",
@@ -38,31 +41,21 @@ DOCUMENT_TYPES = [
 _AZ_RE = re.compile(r"((?:WD|EU)\s+\d+)\s*-\s*3000\s*-\s*(\d+/\d+)")
 
 # Date in parentheses after Aktenzeichen: "(06.12.2023)" or "(28. Juli 2025)"
-_FOOTER_DATE_RE = re.compile(
-    r"(?:WD|EU)\s+\d+\s*-\s*3000\s*-\s*\d+/\d+\s*\(([^)]+)\)"
-)
+_FOOTER_DATE_RE = re.compile(r"(?:WD|EU)\s+\d+\s*-\s*3000\s*-\s*\d+/\d+\s*\(([^)]+)\)")
 
 # Fachbereich with full name: "Fachbereich WD 6 (Arbeit und Soziales)"
-_FB_FULL_RE = re.compile(
-    r"Fachbereich\s+((?:WD|EU)\s+\d+)\s*\(([^)]+)\)"
-)
+_FB_FULL_RE = re.compile(r"Fachbereich\s+((?:WD|EU)\s+\d+)\s*\(([^)]+)\)")
 
 # --- Regexes for body Markdown ---
 
 # Labeled Aktenzeichen: "Aktenzeichen: WD 2 - 3000 - 029/25"
-_AZ_LABELED_RE = re.compile(
-    r"Aktenzeichen:\s*((?:WD|EU)\s+\d+\s*-\s*3000\s*-\s*\d+/\d+)"
-)
+_AZ_LABELED_RE = re.compile(r"Aktenzeichen:\s*((?:WD|EU)\s+\d+\s*-\s*3000\s*-\s*\d+/\d+)")
 
 # Labeled completion date: "Abschluss der Arbeit: 3. Juli 2025"
-_DATE_LABELED_RE = re.compile(
-    r"Abschluss der Arbeit:\s*(.+?)(?=\s*(?:\(?zugleich|Fachbereich:|$))"
-)
+_DATE_LABELED_RE = re.compile(r"Abschluss der Arbeit:\s*(.+?)(?=\s*(?:\(?zugleich|Fachbereich:|$))")
 
 # Labeled Fachbereich: "Fachbereich: WD 9: Gesundheit, ..."
-_FB_LABELED_RE = re.compile(
-    r"Fachbereich:\s*((?:WD|EU)\s+\d+):\s*(.+?)(?:\n|$)"
-)
+_FB_LABELED_RE = re.compile(r"Fachbereich:\s*((?:WD|EU)\s+\d+):\s*(.+?)(?:\n|$)")
 
 # Dokumententyp label: "Dokumententyp: Kurzinformation"
 _DOKUMENTENTYP_RE = re.compile(r"Dokumententyp:\s*(.+?)(?:\s{2,}|\n|$)")
@@ -104,9 +97,7 @@ def extract_metadata(
     - Content-based language detection using langdetect
     """
     aktenzeichen = _extract_aktenzeichen(markdown, furniture_text, source_file)
-    fachbereich_number, fachbereich = _extract_fachbereich(
-        markdown, furniture_text, aktenzeichen
-    )
+    fachbereich_number, fachbereich = _extract_fachbereich(markdown, furniture_text, aktenzeichen)
     document_type = _extract_document_type(markdown)
     title = _extract_title(markdown)
     completion_date = _extract_completion_date(markdown, furniture_text, pdf_metadata or {})
@@ -124,9 +115,7 @@ def extract_metadata(
     )
 
 
-def _extract_aktenzeichen(
-    markdown: str, furniture_text: str, source_file: str
-) -> str:
+def _extract_aktenzeichen(markdown: str, furniture_text: str, source_file: str) -> str:
     """Extract Aktenzeichen from body labels, furniture, or filename."""
     # 1. Labeled field in body: "Aktenzeichen: WD 2 - 3000 - 029/25"
     match = _AZ_LABELED_RE.search(markdown)
@@ -151,9 +140,7 @@ def _extract_aktenzeichen(
     return ""
 
 
-def _extract_fachbereich(
-    markdown: str, furniture_text: str, aktenzeichen: str
-) -> tuple[str, str]:
+def _extract_fachbereich(markdown: str, furniture_text: str, aktenzeichen: str) -> tuple[str, str]:
     """Extract Fachbereich number and name. Returns (number, full_name)."""
     # 1. Labeled field in body: "Fachbereich: WD 9: Gesundheit, ..."
     match = _FB_LABELED_RE.search(markdown)
@@ -261,9 +248,18 @@ def _extract_completion_date(markdown: str, furniture_text: str, pdf_metadata: d
 
 # German month names to numbers
 _GERMAN_MONTHS: dict[str, int] = {
-    "januar": 1, "februar": 2, "märz": 3, "april": 4,
-    "mai": 5, "juni": 6, "juli": 7, "august": 8,
-    "september": 9, "oktober": 10, "november": 11, "dezember": 12,
+    "januar": 1,
+    "februar": 2,
+    "märz": 3,
+    "april": 4,
+    "mai": 5,
+    "juni": 6,
+    "juli": 7,
+    "august": 8,
+    "september": 9,
+    "oktober": 10,
+    "november": 11,
+    "dezember": 12,
 }
 
 
@@ -303,9 +299,9 @@ def _normalize_german_date(date_str: str) -> str:
         day = int(match.group(1))
         month_name = match.group(2).lower()
         year = int(match.group(3))
-        month = _GERMAN_MONTHS.get(month_name)
-        if month:
-            return f"{year:04d}-{month:02d}-{day:02d}"
+        month_from_name = _GERMAN_MONTHS.get(month_name)
+        if month_from_name:
+            return f"{year:04d}-{month_from_name:02d}-{day:02d}"
 
     # Already ISO or unrecognized — return as-is
     return date_str

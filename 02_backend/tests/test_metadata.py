@@ -1,9 +1,6 @@
 """Tests for metadata extraction from Bundestag documents."""
 
-import pytest
-
 from sentra.ingestion.metadata import (
-    DocumentMetadata,
     _deduplicate_title,
     _extract_aktenzeichen,
     _extract_completion_date,
@@ -15,7 +12,6 @@ from sentra.ingestion.metadata import (
     _parse_pdf_date,
     extract_metadata,
 )
-
 
 # ---------------------------------------------------------------------------
 # Aktenzeichen extraction
@@ -286,10 +282,7 @@ class TestExtractMetadata:
 
     def test_kurzinformation_from_furniture(self):
         md = "# Kurzinformation\n\nShort content about a topic that is relevant to parliament."
-        furniture = (
-            "Fachbereich WD 6 (Arbeit und Soziales) "
-            "WD 6 - 3000 - 052/24 (06.12.2023)"
-        )
+        furniture = "Fachbereich WD 6 (Arbeit und Soziales) WD 6 - 3000 - 052/24 (06.12.2023)"
         result = extract_metadata(md, furniture, "WD 6-052-24.pdf")
         assert result.aktenzeichen == "WD 6 - 3000 - 052/24"
         assert result.fachbereich_number == "WD 6"

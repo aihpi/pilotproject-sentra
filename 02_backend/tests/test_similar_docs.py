@@ -61,7 +61,7 @@ class TestSimilarDocumentsBasic:
         scores = [r.relevance_score for r in results]
         for i in range(len(scores) - 1):
             assert scores[i] >= scores[i + 1], (
-                f"Results not sorted: position {i} has {scores[i]}, {i+1} has {scores[i+1]}"
+                f"Results not sorted: position {i} has {scores[i]}, {i + 1} has {scores[i + 1]}"
             )
 
 
@@ -91,7 +91,7 @@ class TestSimilarDocumentsThematic:
 
         # At least one direction should hold
         assert AZ_WD8_B in az_set_a or AZ_WD8_A in az_set_b, (
-            f"WD 8 docs don't appear in each other's top 10 similar results"
+            "WD 8 docs don't appear in each other's top 10 similar results"
         )
 
     def test_nonexistent_az_returns_empty(self, require_qdrant, store):

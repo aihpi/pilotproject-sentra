@@ -1,7 +1,7 @@
 import json
 import logging
 import threading
-
+from datetime import UTC
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -161,10 +161,10 @@ def submit_feedback(
     settings: Settings = Depends(get_settings),
 ) -> FeedbackResponse:
     """Record user feedback on an answer."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     feedback_entry = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "question": body.question,
         "answer": body.answer,
         "rating": body.rating,
@@ -283,7 +283,9 @@ def explorer_answer(
         system_prompt=body.system_prompt,
     )
     return GeneratedAnswerResponse(
-        text=result.text, sources=result.sources, system_prompt=result.system_prompt,
+        text=result.text,
+        sources=result.sources,
+        system_prompt=result.system_prompt,
     )
 
 
@@ -309,5 +311,7 @@ def explorer_overview(
         system_prompt=body.system_prompt,
     )
     return GeneratedAnswerResponse(
-        text=result.text, sources=result.sources, system_prompt=result.system_prompt,
+        text=result.text,
+        sources=result.sources,
+        system_prompt=result.system_prompt,
     )

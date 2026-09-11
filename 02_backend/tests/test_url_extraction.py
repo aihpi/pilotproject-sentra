@@ -6,7 +6,6 @@ Run:  uv run pytest tests/test_url_extraction.py -v
 
 from sentra.ingestion.urls import _rejoin_broken_urls, extract_urls
 
-
 # ── _rejoin_broken_urls ─────────────────────────────────────────────
 
 
@@ -107,10 +106,7 @@ class TestRejoinRealWorldCases:
         assert "klima- " not in result
 
     def test_umweltbundesamt_daten(self):
-        text = (
-            "https://www.umweltbundesamt.de/da- "
-            "ten/klima/der-europaeische-emissionshandel"
-        )
+        text = "https://www.umweltbundesamt.de/da- ten/klima/der-europaeische-emissionshandel"
         result = _rejoin_broken_urls(text)
         assert "da-ten/klima" in result
         assert "da- " not in result
@@ -141,10 +137,7 @@ class TestRejoinRealWorldCases:
         assert "package-based-on" in result
 
     def test_vbw_freizugaengliche(self):
-        text = (
-            "https://www.vbw-bayern.de/Redaktion/Frei- "
-            "zugaengliche-Medien/Abteilungen-GS"
-        )
+        text = "https://www.vbw-bayern.de/Redaktion/Frei- zugaengliche-Medien/Abteilungen-GS"
         result = _rejoin_broken_urls(text)
         assert "Frei-zugaengliche-Medien" in result
 
@@ -206,10 +199,7 @@ class TestExtractUrls:
         assert "europa.eu" in urls[0].url
 
     def test_deduplicates_urls(self):
-        md = (
-            "First: https://example.de/page\n"
-            "Second: https://example.de/page\n"
-        )
+        md = "First: https://example.de/page\nSecond: https://example.de/page\n"
         urls = extract_urls(md)
         assert len(urls) == 1
 

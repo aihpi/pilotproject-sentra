@@ -82,7 +82,10 @@ class AnswerGenerator:
         )
 
     def generate_answer(
-        self, question: str, context: str, system_prompt: str | None = None,
+        self,
+        question: str,
+        context: str,
+        system_prompt: str | None = None,
     ) -> str:
         """Generate a focused answer for a Fachfrage (UC#10)."""
         return self._complete(
@@ -91,7 +94,10 @@ class AnswerGenerator:
         )
 
     def generate_overview(
-        self, topic: str, context: str, system_prompt: str | None = None,
+        self,
+        topic: str,
+        context: str,
+        system_prompt: str | None = None,
     ) -> str:
         """Generate a structured topic overview (UC#2)."""
         return self._complete(
@@ -101,7 +107,10 @@ class AnswerGenerator:
         )
 
     def _complete(
-        self, system_prompt: str, user_message: str, max_tokens: int = 2048,
+        self,
+        system_prompt: str,
+        user_message: str,
+        max_tokens: int = 2048,
     ) -> str:
         response = self._client.chat.completions.create(
             model=self._model,

@@ -19,7 +19,46 @@ dev = [
     "pytest>=8.0",
     "httpx>=0.27.0",
     "ruff>=0.8.0",
+    "mypy>=1.13",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# E/F pycodestyle + pyflakes, I import order, UP pyupgrade,
+# B bugbear, SIM flake8-simplify
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency injection is a function call in a default argument by
+# design, so B008 is a false positive on every route handler.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Header",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Long assertion messages and the ground-truth table read better unwrapped.
+"tests/**" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src/sentra"]
+plugins = ["pydantic.mypy"]
+warn_redundant_casts = true
+# Makes the deferred ignores below self-cleaning: once the underlying cause is
+# fixed, the now-pointless ignore fails the check instead of lingering.
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+# Neither ships type information or a py.typed marker.
+module = ["langdetect.*", "pypdfium2.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

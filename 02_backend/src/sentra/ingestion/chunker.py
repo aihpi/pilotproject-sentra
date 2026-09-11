@@ -101,7 +101,9 @@ def chunk_document(
                 chunks.append(
                     Chunk(
                         text=sub_text,
-                        section_title=f"{title} (Teil {sub_idx + 1})" if len(sub_chunks) > 1 else title,
+                        section_title=(
+                            f"{title} (Teil {sub_idx + 1})" if len(sub_chunks) > 1 else title
+                        ),
                         section_path=path,
                         chunk_index=idx,
                         metadata=metadata,

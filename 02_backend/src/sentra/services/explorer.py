@@ -194,9 +194,7 @@ def find_external_sources(
             if url in url_map:
                 existing_az = {c.aktenzeichen for c in url_map[url].cited_in}
                 if az not in existing_az:
-                    url_map[url].cited_in.append(
-                        CitedInDoc(aktenzeichen=az, title=title)
-                    )
+                    url_map[url].cited_in.append(CitedInDoc(aktenzeichen=az, title=title))
             else:
                 url_map[url] = ExternalSourceResult(
                     url=url,
@@ -264,15 +262,31 @@ def _generate(
 
 
 def answer_question(
-    query: str, date_from: str | None, date_to: str | None, top_k: int,
-    store: VectorStore, embedder: EmbeddingClient, generator: AnswerGenerator,
+    query: str,
+    date_from: str | None,
+    date_to: str | None,
+    top_k: int,
+    store: VectorStore,
+    embedder: EmbeddingClient,
+    generator: AnswerGenerator,
     fachbereich: str | None = None,
-    document_type: str | None = None, system_prompt: str | None = None,
+    document_type: str | None = None,
+    system_prompt: str | None = None,
 ) -> AnswerResult:
     """Answer a specific Fachfrage with source citations."""
     return _generate(
-        query, date_from, date_to, top_k, store, embedder, generator,
-        FACHFRAGE_PROMPT, "generate_answer", fachbereich, document_type, system_prompt,
+        query,
+        date_from,
+        date_to,
+        top_k,
+        store,
+        embedder,
+        generator,
+        FACHFRAGE_PROMPT,
+        "generate_answer",
+        fachbereich,
+        document_type,
+        system_prompt,
     )
 
 
@@ -280,13 +294,29 @@ def answer_question(
 
 
 def generate_overview(
-    query: str, date_from: str | None, date_to: str | None, top_k: int,
-    store: VectorStore, embedder: EmbeddingClient, generator: AnswerGenerator,
+    query: str,
+    date_from: str | None,
+    date_to: str | None,
+    top_k: int,
+    store: VectorStore,
+    embedder: EmbeddingClient,
+    generator: AnswerGenerator,
     fachbereich: str | None = None,
-    document_type: str | None = None, system_prompt: str | None = None,
+    document_type: str | None = None,
+    system_prompt: str | None = None,
 ) -> AnswerResult:
     """Generate a structured topic overview."""
     return _generate(
-        query, date_from, date_to, top_k, store, embedder, generator,
-        OVERVIEW_PROMPT, "generate_overview", fachbereich, document_type, system_prompt,
+        query,
+        date_from,
+        date_to,
+        top_k,
+        store,
+        embedder,
+        generator,
+        OVERVIEW_PROMPT,
+        "generate_overview",
+        fachbereich,
+        document_type,
+        system_prompt,
     )

@@ -1,9 +1,6 @@
 """Tests for document chunking logic."""
 
-import pytest
-
 from sentra.ingestion.chunker import (
-    Chunk,
     _split_into_sections,
     _split_on_paragraphs,
     _strip_boilerplate,
@@ -195,9 +192,7 @@ class TestChunkDocument:
         assert "Teil" in chunks[0].section_title or "Teil" in chunks[1].section_title
 
     def test_chunk_indices_sequential(self):
-        md = "\n\n".join(
-            [f"## Section {i}\n\n{'Text. ' * 20}" for i in range(4)]
-        )
+        md = "\n\n".join([f"## Section {i}\n\n{'Text. ' * 20}" for i in range(4)])
         meta = _make_metadata()
         chunks = chunk_document(md, meta)
         indices = [c.chunk_index for c in chunks]

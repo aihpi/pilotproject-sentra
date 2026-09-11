@@ -63,9 +63,7 @@ class VectorStore:
 
         logger.info("Created collection '%s' with payload indexes", self._collection)
 
-    def upsert_chunks(
-        self, chunks: list[Chunk], embeddings: list[list[float]]
-    ) -> int:
+    def upsert_chunks(self, chunks: list[Chunk], embeddings: list[list[float]]) -> int:
         """Insert chunk embeddings and metadata into Qdrant.
 
         Returns the number of points upserted.
@@ -95,7 +93,7 @@ class VectorStore:
                     "source_file": chunk.metadata.source_file,
                 },
             )
-            for chunk, embedding in zip(chunks, embeddings)
+            for chunk, embedding in zip(chunks, embeddings, strict=True)
         ]
 
         # Upsert in batches of 100
@@ -154,7 +152,11 @@ class VectorStore:
                 gte = date(int(date_from), 1, 1) if date_from else None
                 lte = date(int(date_to), 12, 31) if date_to else None
             except (ValueError, TypeError):
-                logger.warning("Invalid date_from=%r / date_to=%r, skipping date filter", date_from, date_to)
+                logger.warning(
+                    "Invalid date_from=%r / date_to=%r, skipping date filter",
+                    date_from,
+                    date_to,
+                )
             else:
                 conditions.append(
                     FieldCondition(
@@ -174,7 +176,7 @@ class VectorStore:
         ).points
 
         return [
-            {"score": point.score, **point.payload}
+            {"score": point.score, **point.payload}  # type: ignore[dict-item]  # payload/vector Optional, see #9 typed-hit task
             for point in results
         ]
 
@@ -192,10 +194,10 @@ class VectorStore:
                 with_vectors=False,
             )
             for point in points:
-                sf = point.payload.get("source_file", "")
+                sf = point.payload.get("source_file", "")  # type: ignore[union-attr]  # payload/vector Optional, see #9 typed-hit task
                 if sf and sf not in seen:
                     seen.add(sf)
-                    documents.append(point.payload)
+                    documents.append(point.payload)  # type: ignore[arg-type]  # payload/vector Optional, see #9 typed-hit task
             if offset is None:
                 break
         return documents
@@ -262,7 +264,7 @@ class VectorStore:
                 vector=emb,
                 payload=rec,
             )
-            for rec, emb in zip(records, embeddings)
+            for rec, emb in zip(records, embeddings, strict=True)
         ]
 
         batch_size = 100
@@ -292,10 +294,12 @@ class VectorStore:
         matches, _ = self._client.scroll(
             collection_name=self._doc_collection,
             scroll_filter=Filter(
-                must=[FieldCondition(
-                    key="aktenzeichen",
-                    match=MatchValue(value=aktenzeichen),
-                )]
+                must=[
+                    FieldCondition(
+                        key="aktenzeichen",
+                        match=MatchValue(value=aktenzeichen),
+                    )
+                ]
             ),
             limit=1,
             with_vectors=True,
@@ -311,22 +315,18 @@ class VectorStore:
         # Search for similar docs, excluding self
         results = self._client.query_points(
             collection_name=self._doc_collection,
-            query=doc_vector,
-            query_filter=Filter(
-                must_not=[HasIdCondition(has_id=[self_id])]
-            ),
+            query=doc_vector,  # type: ignore[arg-type]  # payload/vector Optional, see #9 typed-hit task
+            query_filter=Filter(must_not=[HasIdCondition(has_id=[self_id])]),
             with_payload=True,
             limit=top_k,
         ).points
 
         return [
-            {"score": point.score, **point.payload}
+            {"score": point.score, **point.payload}  # type: ignore[dict-item]  # payload/vector Optional, see #9 typed-hit task
             for point in results
         ]
 
-    def get_doc_records_by_aktenzeichen(
-        self, aktenzeichen_list: list[str]
-    ) -> list[dict]:
+    def get_doc_records_by_aktenzeichen(self, aktenzeichen_list: list[str]) -> list[dict]:
         """Retrieve document records by their Aktenzeichen values.
 
         Uses a payload filter scroll because multiple documents may share
@@ -351,7 +351,7 @@ class VectorStore:
             with_vectors=False,
             with_payload=True,
         )
-        return [point.payload for point in points]
+        return [point.payload for point in points]  # type: ignore[misc]  # payload/vector Optional, see #9 typed-hit task
 
     def get_indexed_aktenzeichen(self) -> set[str]:
         """Get all aktenzeichen values from the doc collection."""
@@ -386,7 +386,7 @@ class VectorStore:
                 with_vectors=False,
             )
             for point in points:
-                value = point.payload.get(field, "")
+                value = point.payload.get(field, "")  # type: ignore[union-attr]  # payload/vector Optional, see #9 typed-hit task
                 if value:
                     result.add(value)
             if offset is None:
