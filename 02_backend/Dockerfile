@@ -16,6 +16,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy source code
+COPY README.md .
 COPY src/ src/
 
 # Install the project itself

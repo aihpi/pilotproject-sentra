@@ -1,5 +1,7 @@
-**Issue** : [Provide the issue URL here]
-`https://github.com/aihpi/recreategoods/issues/___`   
+**Closes** : #___
+`https://github.com/aihpi/pilotproject-sentra/issues/___`   
+
+_(keep the `Closes #n` line, GitHub then closes the issue when this is merged)_
    
 **Description** :    
 (For instance : why, how, take care of, debt, compromise, package added, scenario, unhappy path, type feature or bug ...     
@@ -12,7 +14,7 @@
 ### Checklist when creating a review 
 1.  
 - [ ] The PR title is ok (see `Note & instructions` below)
-- [ ] I filled the urls in the section above  
+- [ ] I filled the urls in the section above, and the `Closes #n` line points at the right issue  
 - [ ] I filled the `Description` section above  
 2.  
 - [ ] The code is easy to understand : self-explanatory, or commented if necessary
