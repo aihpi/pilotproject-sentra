@@ -30,6 +30,14 @@ from sentra.rag.store import VectorStore
 # filenames.
 DATA_DIR = Path(__file__).resolve().parent / "fixtures" / "corpus"
 
+# The integration tier indexes the fixture corpus into collections of its own.
+# It must not read whatever the operator has ingested: assertions like "these two
+# documents are mutual top-10 neighbours" or "this Fachbereich is in the top 5"
+# are only meaningful against a known, bounded index. Against an operational
+# corpus of thousands they fail without anything being wrong.
+TEST_COLLECTION = "sentra_test_chunks"
+TEST_DOC_COLLECTION = "sentra_test_docs"
+
 # Ground-truth metadata for the 17 fixture PDFs.
 # Keyed by filename → expected fields (from manual inspection of the PDFs).
 # Fields left as None mean "don't assert exact value, but check it's non-empty".
@@ -182,28 +190,44 @@ TOTAL_PDFS = len(GROUND_TRUTH)  # 17
 
 @pytest.fixture(scope="session")
 def settings() -> Settings:
-    """Load settings from the backend .env file."""
+    """Backend settings, redirected at the test collections and fixture corpus.
+
+    Credentials and the Qdrant URL come from the real .env; everything that says
+    *which data* comes from here, so a test run can never touch the operator's
+    index or read their corpus.
+    """
     env_path = Path(__file__).resolve().parents[1] / ".env"
     if env_path.is_file():
         os.environ.setdefault("ENV_FILE", str(env_path))
-    return Settings(_env_file=str(env_path))
+    return Settings(
+        _env_file=str(env_path),
+        collection_name=TEST_COLLECTION,
+        doc_collection_name=TEST_DOC_COLLECTION,
+        documents_dir=str(DATA_DIR),
+    )
 
 
 @pytest.fixture(scope="session")
 def qdrant_available(settings: Settings) -> bool:
-    """Check whether Qdrant is reachable and contains data."""
+    """Whether the test index exists and holds something."""
     try:
         client = QdrantClient(url=settings.qdrant_url, timeout=5)
-        collections = client.get_collections().collections
-        names = {c.name for c in collections}
-        return settings.collection_name in names
+        names = {c.name for c in client.get_collections().collections}
+        if settings.collection_name not in names:
+            return False
+        return client.count(settings.collection_name).count > 0
     except Exception:
         return False
 
 
 def _skip_without_qdrant(qdrant_available: bool):
     if not qdrant_available:
-        pytest.skip("Qdrant not reachable or collection not indexed — skipping integration test")
+        pytest.skip(
+            f"Test index '{TEST_COLLECTION}' is missing or empty. Build it once with:\n"
+            f"    uv run python -m tests.prepare_index\n"
+            f"It indexes the {TOTAL_PDFS} fixture documents and leaves the "
+            f"operator's collections untouched."
+        )
 
 
 @pytest.fixture()
