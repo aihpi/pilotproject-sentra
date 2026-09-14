@@ -33,31 +33,41 @@ gates every push and pull request.
 
 ### Running the integration tier
 
-These are not in CI, and the reason is cost rather than difficulty. They assert
-against a corpus that is already indexed, so a fresh Qdrant is not enough:
-`conftest.py` checks that the collection exists and skips the whole tier if it
-does not, which would make a green run meaningless.
+These are not in CI, and the reason is cost rather than difficulty: every run
+embeds live queries and calls the chat model.
+
+The tier runs against **its own index**, built from the fixture corpus in
+`tests/fixtures/corpus`. It does not read whatever you have ingested, and it
+cannot modify it. That matters because several assertions only mean something
+against a known, bounded index: "these two documents are mutual top-10
+neighbours" is a reasonable claim among seventeen documents and close to
+meaningless among thousands.
 
 Prerequisites:
 
-1. **Qdrant reachable** at `QDRANT_URL`, with the collection named by
-   `COLLECTION_NAME` present.
-2. **The corpus ingested** into it. That means a full Docling parse of the PDFs
-   in `03_data/Ausarbeitungen` plus an embedding call per chunk, so it takes
-   minutes and consumes AI Hub quota.
-3. **Valid AI Hub credentials** in `.env`, since the search and answer tests
-   embed live queries and call the chat model.
+1. **Qdrant reachable** at `QDRANT_URL`.
+2. **Valid AI Hub credentials** in `.env`, for embedding and generation.
+
+Build the test index once, then run the tier as often as you like:
 
 ```bash
 docker compose up -d qdrant
-uv run uvicorn sentra.main:app --port 8001 &
-curl -X POST http://localhost:8001/api/ingest      # wait for /api/ingest/status
+uv run python -m tests.prepare_index     # a few minutes, 17 documents
 uv run pytest -m integration
 ```
 
+`prepare_index` writes to `sentra_test_chunks` and `sentra_test_docs`, separate
+from whatever `COLLECTION_NAME` points at. It skips the work if the index is
+already populated; `--force` drops and rebuilds. The collections are left in
+place, so later runs start immediately. Delete them whenever you want the space
+back.
+
+If the index is missing or empty the tier skips with a message telling you this,
+rather than failing or silently passing.
+
 The tier also asserts against a hand-maintained `GROUND_TRUTH` table in
-`tests/conftest.py`, keyed to the exact filenames of the 17 PDFs, so adding or
-renaming a document in that directory means updating the table.
+`tests/conftest.py`, keyed to the exact filenames of the 17 fixture PDFs, so
+changing that set means updating the table.
 
 ## Lint and type check
 
