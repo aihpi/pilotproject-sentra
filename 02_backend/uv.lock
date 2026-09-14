@@ -2492,10 +2492,14 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "docling" },
+    { name = "docling-core" },
     { name = "fastapi" },
     { name = "langdetect" },
+    { name = "numpy" },
     { name = "openai" },
+    { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "pypdfium2" },
     { name = "python-dotenv" },
     { name = "qdrant-client" },
     { name = "uvicorn", extra = ["standard"] },
@@ -2512,10 +2516,14 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "docling", specifier = ">=2.72.0" },
+    { name = "docling-core", specifier = ">=2.62.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "langdetect", specifier = ">=1.0.9" },
+    { name = "numpy", specifier = ">=1.26" },
     { name = "openai", specifier = ">=1.50.0" },
+    { name = "pydantic", specifier = ">=2.7.0" },
     { name = "pydantic-settings", specifier = ">=2.0.0" },
+    { name = "pypdfium2", specifier = ">=4.30.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "qdrant-client", specifier = ">=1.12.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30.0" },

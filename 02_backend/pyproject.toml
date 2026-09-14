@@ -12,6 +12,13 @@ dependencies = [
     "pydantic-settings>=2.0.0",
     "python-dotenv>=1.0.0",
     "langdetect>=1.0.9",
+    # Imported directly by our own modules, so declared even though they also
+    # arrive transitively. Floors match what the upstream packages already
+    # require, except numpy where nothing upstream constrains us.
+    "pydantic>=2.7.0",          # api/models.py
+    "docling-core>=2.62.0",     # ingestion/parser.py, ContentLayer
+    "pypdfium2>=4.30.0",        # ingestion/parser.py
+    "numpy>=1.26",              # rag/store.py
 ]
 
 [dependency-groups]
