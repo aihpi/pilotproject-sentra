@@ -22,9 +22,15 @@ from sentra.rag.store import VectorStore
 
 # ── Constants ───────────────────────────────────────────────────────
 
-DATA_DIR = Path(__file__).resolve().parents[2] / "03_data" / "Ausarbeitungen"
+# The fixture corpus, versioned alongside the tests. Deliberately not 03_data:
+# that holds whatever corpus the operator has ingested, which is thousands of
+# documents, and a module-scoped fixture parsing all of them through Docling
+# would take over an hour and exhaust memory. These 17 are a fixed set chosen to
+# cover every Fachbereich, one English document and both joint-Aktenzeichen
+# filenames.
+DATA_DIR = Path(__file__).resolve().parent / "fixtures" / "corpus"
 
-# Ground-truth metadata for the 17 test PDFs.
+# Ground-truth metadata for the 17 fixture PDFs.
 # Keyed by filename → expected fields (from manual inspection of the PDFs).
 # Fields left as None mean "don't assert exact value, but check it's non-empty".
 GROUND_TRUTH: dict[str, dict] = {
