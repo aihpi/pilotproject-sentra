@@ -3,6 +3,7 @@ import logging
 from openai import OpenAI
 
 from sentra.config import Settings
+from sentra.domain import Hit
 
 logger = logging.getLogger(__name__)
 
@@ -55,12 +56,17 @@ Regeln:
 """
 
 
-def format_context(results: list[dict]) -> str:
-    """Format retrieved chunks into a context string for the LLM."""
+def format_context(hits: list[Hit]) -> str:
+    """Format retrieved chunks into the context string the model sees.
+
+    This is the whole universe the model gets per hit: an Aktenzeichen, a section
+    title and the chunk text. There is no page or paragraph, which is why a
+    generated citation cannot be more precise than a section.
+    """
     parts = []
-    for r in results:
-        header = f"[Quelle: {r['aktenzeichen']}, Abschnitt: {r['section_title']}]"
-        parts.append(f"{header}\n{r['text']}")
+    for hit in hits:
+        header = f"[Quelle: {hit.aktenzeichen}, Abschnitt: {hit.section_title}]"
+        parts.append(f"{header}\n{hit.text}")
     return "\n\n---\n\n".join(parts)
 
 
