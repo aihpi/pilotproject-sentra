@@ -8,14 +8,13 @@ UC#10 answer_question             chunk search → LLM focused answer
 """
 
 import logging
-from dataclasses import dataclass
 
-from sentra.api.models import (
-    AnswerSourceRef,
-    CitedInDoc,
-    DateRange,
-    DocumentSearchResult,
-    ExternalSourceResult,
+from sentra.domain import (
+    AnswerResult,
+    DocumentRef,
+    ExternalSource,
+    ScoredDocument,
+    SourceRef,
 )
 from sentra.rag.embeddings import EmbeddingClient
 from sentra.rag.generator import (
@@ -32,16 +31,7 @@ logger = logging.getLogger(__name__)
 # ── Helpers ──────────────────────────────────────────────────────────
 
 
-def _date_range_params(
-    date_range: DateRange | None,
-) -> tuple[str | None, str | None]:
-    """Unpack a DateRange model into (date_from, date_to) strings."""
-    if date_range is None:
-        return None, None
-    return date_range.date_from, date_range.date_to
-
-
-def _aggregate_docs(results: list[dict], top_k: int) -> list[DocumentSearchResult]:
+def _aggregate_docs(results: list[dict], top_k: int) -> list[ScoredDocument]:
     """Aggregate chunk-level results into unique documents (best score wins)."""
     best: dict[str, dict] = {}
     for r in results:
@@ -51,7 +41,7 @@ def _aggregate_docs(results: list[dict], top_k: int) -> list[DocumentSearchResul
 
     sorted_docs = sorted(best.values(), key=lambda d: d["score"], reverse=True)
     return [
-        DocumentSearchResult(
+        ScoredDocument(
             aktenzeichen=d["aktenzeichen"],
             title=d["title"],
             fachbereich=d["fachbereich"],
@@ -64,17 +54,17 @@ def _aggregate_docs(results: list[dict], top_k: int) -> list[DocumentSearchResul
     ]
 
 
-def _build_source_refs(results: list[dict]) -> list[AnswerSourceRef]:
+def _build_source_refs(results: list[dict]) -> list[SourceRef]:
     """Build deduplicated source references from search results (ordered by first appearance)."""
     seen: set[str] = set()
-    refs: list[AnswerSourceRef] = []
+    refs: list[SourceRef] = []
     for r in results:
         az = r["aktenzeichen"]
         if az in seen:
             continue
         seen.add(az)
         refs.append(
-            AnswerSourceRef(
+            SourceRef(
                 aktenzeichen=az,
                 title=r["title"],
                 fachbereich=r["fachbereich"],
@@ -97,7 +87,7 @@ def search_documents_by_topic(
     embedder: EmbeddingClient,
     fachbereich: str | None = None,
     document_type: str | None = None,
-) -> list[DocumentSearchResult]:
+) -> list[ScoredDocument]:
     """Find documents matching a topic query.
 
     Searches at chunk level (3x top_k for coverage) then aggregates
@@ -123,7 +113,7 @@ def find_similar_documents(
     aktenzeichen: str,
     top_k: int,
     store: VectorStore,
-) -> list[DocumentSearchResult]:
+) -> list[ScoredDocument]:
     """Find documents similar to the given Aktenzeichen.
 
     Uses the document-level embedding collection.
@@ -131,7 +121,7 @@ def find_similar_documents(
     results = store.search_similar_docs(aktenzeichen, top_k=top_k)
 
     return [
-        DocumentSearchResult(
+        ScoredDocument(
             aktenzeichen=d["aktenzeichen"],
             title=d["title"],
             fachbereich=d["fachbereich"],
@@ -155,7 +145,7 @@ def find_external_sources(
     embedder: EmbeddingClient,
     fachbereich: str | None = None,
     document_type: str | None = None,
-) -> list[ExternalSourceResult]:
+) -> list[ExternalSource]:
     """Find external URLs cited in documents matching a topic query.
 
     Flow: chunk search → get matching Aktenzeichen → look up URLs from
@@ -185,7 +175,7 @@ def find_external_sources(
     doc_records = store.get_doc_records_by_aktenzeichen(list(az_set.keys()))
 
     # Aggregate URLs across documents
-    url_map: dict[str, ExternalSourceResult] = {}
+    url_map: dict[str, ExternalSource] = {}
     for doc in doc_records:
         az = doc["aktenzeichen"]
         title = doc.get("title", az_set.get(az, ""))
@@ -194,13 +184,13 @@ def find_external_sources(
             if url in url_map:
                 existing_az = {c.aktenzeichen for c in url_map[url].cited_in}
                 if az not in existing_az:
-                    url_map[url].cited_in.append(CitedInDoc(aktenzeichen=az, title=title))
+                    url_map[url].cited_in.append(DocumentRef(aktenzeichen=az, title=title))
             else:
-                url_map[url] = ExternalSourceResult(
+                url_map[url] = ExternalSource(
                     url=url,
                     label=u.get("label", ""),
                     context=u.get("context", ""),
-                    cited_in=[CitedInDoc(aktenzeichen=az, title=title)],
+                    cited_in=[DocumentRef(aktenzeichen=az, title=title)],
                 )
 
     # Sort by number of citing documents (descending)
@@ -208,13 +198,6 @@ def find_external_sources(
 
 
 # ── Answer / Overview generation (shared logic) ─────────────────────
-
-
-@dataclass
-class AnswerResult:
-    text: str
-    sources: list[AnswerSourceRef]
-    system_prompt: str | None = None
 
 
 def _generate(

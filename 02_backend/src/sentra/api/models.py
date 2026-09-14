@@ -1,5 +1,13 @@
 from pydantic import BaseModel
 
+from sentra import domain
+
+# The service layer returns domain dataclasses. Converting them into these
+# response models is the edge's job, which is why the from_domain constructors
+# live here and not in sentra.services. The mapping is written out field by
+# field on purpose: a rename on either side should show up as a type error here
+# rather than silently changing the API.
+
 
 class IngestStartResponse(BaseModel):
     status: str
@@ -53,6 +61,15 @@ class DateRange(BaseModel):
     date_to: str | None = None
 
 
+def date_range_params(
+    date_range: DateRange | None,
+) -> tuple[str | None, str | None]:
+    """Unpack an optional DateRange into the two strings the services take."""
+    if date_range is None:
+        return None, None
+    return date_range.date_from, date_range.date_to
+
+
 # UC#1 – Documents by topic
 class DocumentSearchRequest(BaseModel):
     query: str
@@ -70,6 +87,18 @@ class DocumentSearchResult(BaseModel):
     completion_date: str
     relevance_score: float
     source_file: str
+
+    @classmethod
+    def from_domain(cls, doc: domain.ScoredDocument) -> "DocumentSearchResult":
+        return cls(
+            aktenzeichen=doc.aktenzeichen,
+            title=doc.title,
+            fachbereich=doc.fachbereich,
+            document_type=doc.document_type,
+            completion_date=doc.completion_date,
+            relevance_score=doc.relevance_score,
+            source_file=doc.source_file,
+        )
 
 
 class DocumentSearchResponse(BaseModel):
@@ -97,12 +126,25 @@ class CitedInDoc(BaseModel):
     aktenzeichen: str
     title: str
 
+    @classmethod
+    def from_domain(cls, ref: domain.DocumentRef) -> "CitedInDoc":
+        return cls(aktenzeichen=ref.aktenzeichen, title=ref.title)
+
 
 class ExternalSourceResult(BaseModel):
     url: str
     label: str
     context: str
     cited_in: list[CitedInDoc]
+
+    @classmethod
+    def from_domain(cls, source: domain.ExternalSource) -> "ExternalSourceResult":
+        return cls(
+            url=source.url,
+            label=source.label,
+            context=source.context,
+            cited_in=[CitedInDoc.from_domain(r) for r in source.cited_in],
+        )
 
 
 class ExternalSourcesResponse(BaseModel):
@@ -125,6 +167,16 @@ class AnswerSourceRef(BaseModel):
     fachbereich: str
     completion_date: str
     source_file: str
+
+    @classmethod
+    def from_domain(cls, ref: domain.SourceRef) -> "AnswerSourceRef":
+        return cls(
+            aktenzeichen=ref.aktenzeichen,
+            title=ref.title,
+            fachbereich=ref.fachbereich,
+            completion_date=ref.completion_date,
+            source_file=ref.source_file,
+        )
 
 
 class GeneratedAnswerResponse(BaseModel):

@@ -8,9 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from sentra.api.models import (
     AnswerRequest,
+    AnswerSourceRef,
     DocumentInfo,
     DocumentSearchRequest,
     DocumentSearchResponse,
+    DocumentSearchResult,
+    ExternalSourceResult,
     ExternalSourcesRequest,
     ExternalSourcesResponse,
     FeedbackRequest,
@@ -20,6 +23,7 @@ from sentra.api.models import (
     IngestionStatusResponse,
     IngestStartResponse,
     SimilarDocumentsRequest,
+    date_range_params,
 )
 from sentra.config import Settings, get_settings
 from sentra.rag.embeddings import EmbeddingClient
@@ -213,7 +217,7 @@ def explorer_documents(
     embedder: EmbeddingClient = Depends(get_embedder),
 ) -> DocumentSearchResponse:
     """UC#1: Find documents by topic."""
-    date_from, date_to = explorer._date_range_params(body.date_range)
+    date_from, date_to = date_range_params(body.date_range)
     docs = explorer.search_documents_by_topic(
         query=body.query,
         date_from=date_from,
@@ -224,7 +228,7 @@ def explorer_documents(
         fachbereich=body.fachbereich,
         document_type=body.document_type,
     )
-    return DocumentSearchResponse(documents=docs)
+    return DocumentSearchResponse(documents=[DocumentSearchResult.from_domain(d) for d in docs])
 
 
 @router.post("/explorer/similar", response_model=DocumentSearchResponse)
@@ -238,7 +242,7 @@ def explorer_similar(
         top_k=body.top_k,
         store=store,
     )
-    return DocumentSearchResponse(documents=docs)
+    return DocumentSearchResponse(documents=[DocumentSearchResult.from_domain(d) for d in docs])
 
 
 @router.post("/explorer/sources", response_model=ExternalSourcesResponse)
@@ -248,7 +252,7 @@ def explorer_sources(
     embedder: EmbeddingClient = Depends(get_embedder),
 ) -> ExternalSourcesResponse:
     """UC#6: Find external sources cited in documents matching a topic."""
-    date_from, date_to = explorer._date_range_params(body.date_range)
+    date_from, date_to = date_range_params(body.date_range)
     sources = explorer.find_external_sources(
         query=body.query,
         date_from=date_from,
@@ -258,7 +262,7 @@ def explorer_sources(
         fachbereich=body.fachbereich,
         document_type=body.document_type,
     )
-    return ExternalSourcesResponse(sources=sources)
+    return ExternalSourcesResponse(sources=[ExternalSourceResult.from_domain(s) for s in sources])
 
 
 @router.post("/explorer/answer", response_model=GeneratedAnswerResponse)
@@ -269,7 +273,7 @@ def explorer_answer(
     generator: AnswerGenerator = Depends(get_generator),
 ) -> GeneratedAnswerResponse:
     """UC#10: Answer a specific Fachfrage."""
-    date_from, date_to = explorer._date_range_params(body.date_range)
+    date_from, date_to = date_range_params(body.date_range)
     result = explorer.answer_question(
         query=body.query,
         date_from=date_from,
@@ -284,7 +288,7 @@ def explorer_answer(
     )
     return GeneratedAnswerResponse(
         text=result.text,
-        sources=result.sources,
+        sources=[AnswerSourceRef.from_domain(s) for s in result.sources],
         system_prompt=result.system_prompt,
     )
 
@@ -297,7 +301,7 @@ def explorer_overview(
     generator: AnswerGenerator = Depends(get_generator),
 ) -> GeneratedAnswerResponse:
     """UC#2: Generate a structured topic overview."""
-    date_from, date_to = explorer._date_range_params(body.date_range)
+    date_from, date_to = date_range_params(body.date_range)
     result = explorer.generate_overview(
         query=body.query,
         date_from=date_from,
@@ -312,6 +316,6 @@ def explorer_overview(
     )
     return GeneratedAnswerResponse(
         text=result.text,
-        sources=result.sources,
+        sources=[AnswerSourceRef.from_domain(s) for s in result.sources],
         system_prompt=result.system_prompt,
     )
