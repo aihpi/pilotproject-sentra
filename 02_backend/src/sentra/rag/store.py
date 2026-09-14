@@ -1,5 +1,7 @@
 import logging
+from collections.abc import Iterator
 from datetime import date
+from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
 import numpy as np
@@ -98,43 +100,138 @@ def _record_from_payload(payload: dict) -> DocumentRecord:
     )
 
 
+UPSERT_BATCH_SIZE = 100
+
+# The two collections are paged differently on purpose. A chunk payload carries
+# the full chunk text, so those pages are kept small; the doc-summary scans ask
+# for a single field, so they can be much larger.
+CHUNK_SCROLL_PAGE_SIZE = 100
+DOC_SCROLL_PAGE_SIZE = 1000
+
+CHUNK_INDEXED_FIELDS = (
+    "fachbereich_number",
+    "document_type",
+    "language",
+    "aktenzeichen",
+)
+DOC_INDEXED_FIELDS = (
+    "aktenzeichen",
+    "fachbereich_number",
+    "document_type",
+)
+
+
+class _Collection:
+    """One Qdrant collection, holding the mechanics both of ours shared.
+
+    VectorStore keeps two of these. What differs between the chunk collection and
+    the doc-summary collection stays in VectorStore; what was copied between them
+    lives here once.
+    """
+
+    def __init__(
+        self,
+        client: QdrantClient,
+        name: str,
+        indexed_fields: tuple[str, ...],
+    ) -> None:
+        self._client = client
+        self.name = name
+        self._indexed_fields = indexed_fields
+
+    def _names(self) -> set[str]:
+        return {c.name for c in self._client.get_collections().collections}
+
+    def exists(self) -> bool:
+        """Whether the collection is there, False if Qdrant cannot be reached.
+
+        Tolerant on purpose: callers use this to decide whether there is
+        anything to read yet, and "not reachable" and "not created" lead to the
+        same empty answer. `ensure` deliberately does not use it, so that a
+        startup against a dead Qdrant still fails loudly.
+        """
+        try:
+            return self.name in self._names()
+        except Exception:
+            return False
+
+    def ensure(self) -> None:
+        """Create the collection and its payload indexes if it is missing."""
+        if self.name in self._names():
+            logger.info("Collection '%s' already exists", self.name)
+            return
+
+        self._client.create_collection(
+            collection_name=self.name,
+            vectors_config=VectorParams(size=EMBEDDING_DIM, distance=Distance.COSINE),
+        )
+        for field in self._indexed_fields:
+            self._client.create_payload_index(
+                collection_name=self.name,
+                field_name=field,
+                field_schema=PayloadSchemaType.KEYWORD,
+            )
+        logger.info(
+            "Created collection '%s' with payload indexes on %s",
+            self.name,
+            ", ".join(self._indexed_fields),
+        )
+
+    def upsert(self, points: list[PointStruct]) -> int:
+        """Write points in batches. Returns how many were written."""
+        for i in range(0, len(points), UPSERT_BATCH_SIZE):
+            batch = points[i : i + UPSERT_BATCH_SIZE]
+            self._client.upsert(collection_name=self.name, wait=True, points=batch)
+            logger.debug("Upserted batch %d-%d / %d", i, i + len(batch), len(points))
+
+        logger.info("Upserted %d points into '%s'", len(points), self.name)
+        return len(points)
+
+    def scroll(
+        self,
+        *,
+        page_size: int,
+        with_payload: bool | list[str] = True,
+    ) -> Iterator[Any]:
+        """Yield every point, paging through the collection."""
+        offset = None
+        while True:
+            points, offset = self._client.scroll(
+                collection_name=self.name,
+                limit=page_size,
+                offset=offset,
+                with_payload=with_payload,
+                with_vectors=False,
+            )
+            yield from points
+            if offset is None:
+                return
+
+    def delete(self) -> None:
+        self._client.delete_collection(collection_name=self.name)
+        logger.info("Deleted collection '%s'", self.name)
+
+    def info(self) -> dict:
+        info = self._client.get_collection(collection_name=self.name)
+        return {
+            "name": self.name,
+            "points_count": info.points_count,
+            "indexed_vectors_count": info.indexed_vectors_count,
+            "status": info.status.value,
+        }
+
+
 class VectorStore:
     """Qdrant vector store for Bundestag document chunks."""
 
     def __init__(self, settings: Settings) -> None:
         self._client = QdrantClient(url=settings.qdrant_url)
-        self._collection = settings.collection_name
-        self._doc_collection = settings.doc_collection_name
+        self._chunks = _Collection(self._client, settings.collection_name, CHUNK_INDEXED_FIELDS)
+        self._docs = _Collection(self._client, settings.doc_collection_name, DOC_INDEXED_FIELDS)
 
     def ensure_collection(self) -> None:
-        """Create the collection if it doesn't exist."""
-        collections = self._client.get_collections().collections
-        if any(c.name == self._collection for c in collections):
-            logger.info("Collection '%s' already exists", self._collection)
-            return
-
-        self._client.create_collection(
-            collection_name=self._collection,
-            vectors_config=VectorParams(
-                size=EMBEDDING_DIM,
-                distance=Distance.COSINE,
-            ),
-        )
-
-        # Create payload indexes for filtered search
-        for field, schema_type in [
-            ("fachbereich_number", PayloadSchemaType.KEYWORD),
-            ("document_type", PayloadSchemaType.KEYWORD),
-            ("language", PayloadSchemaType.KEYWORD),
-            ("aktenzeichen", PayloadSchemaType.KEYWORD),
-        ]:
-            self._client.create_payload_index(
-                collection_name=self._collection,
-                field_name=field,
-                field_schema=schema_type,
-            )
-
-        logger.info("Created collection '%s' with payload indexes", self._collection)
+        """Create the chunk collection if it doesn't exist."""
+        self._chunks.ensure()
 
     def upsert_chunks(self, chunks: list[Chunk], embeddings: list[list[float]]) -> int:
         """Insert chunk embeddings and metadata into Qdrant.
@@ -169,19 +266,7 @@ class VectorStore:
             for chunk, embedding in zip(chunks, embeddings, strict=True)
         ]
 
-        # Upsert in batches of 100
-        batch_size = 100
-        for i in range(0, len(points), batch_size):
-            batch = points[i : i + batch_size]
-            self._client.upsert(
-                collection_name=self._collection,
-                wait=True,
-                points=batch,
-            )
-            logger.debug("Upserted batch %d-%d / %d", i, i + len(batch), len(points))
-
-        logger.info("Upserted %d points into '%s'", len(points), self._collection)
-        return len(points)
+        return self._chunks.upsert(points)
 
     def search(
         self,
@@ -198,28 +283,17 @@ class VectorStore:
         Returns a list of dicts with 'score' and all payload fields.
         date_from/date_to are year strings ("2023") converted to ISO range.
         """
-        conditions = []
-        if fachbereich:
-            conditions.append(
-                FieldCondition(
-                    key="fachbereich_number",
-                    match=MatchValue(value=fachbereich),
-                )
+        # The three keyword filters differ only in which payload key they match,
+        # so they are one loop. Each is applied only when a value was given.
+        conditions: list[FieldCondition] = [
+            FieldCondition(key=key, match=MatchValue(value=value))
+            for key, value in (
+                ("fachbereich_number", fachbereich),
+                ("document_type", document_type),
+                ("language", language),
             )
-        if document_type:
-            conditions.append(
-                FieldCondition(
-                    key="document_type",
-                    match=MatchValue(value=document_type),
-                )
-            )
-        if language:
-            conditions.append(
-                FieldCondition(
-                    key="language",
-                    match=MatchValue(value=language),
-                )
-            )
+            if value
+        ]
         if date_from or date_to:
             try:
                 gte = date(int(date_from), 1, 1) if date_from else None
@@ -241,7 +315,7 @@ class VectorStore:
         query_filter = Filter(must=conditions) if conditions else None
 
         results = self._client.query_points(
-            collection_name=self._collection,
+            collection_name=self._chunks.name,
             query=query_embedding,
             query_filter=query_filter,
             with_payload=True,
@@ -254,69 +328,27 @@ class VectorStore:
         """Scroll all chunks and return each document once, by source_file."""
         seen: set[str] = set()
         documents: list[DocumentMetadata] = []
-        offset = None
-        while True:
-            points, offset = self._client.scroll(
-                collection_name=self._collection,
-                limit=100,
-                offset=offset,
-                with_payload=True,
-                with_vectors=False,
-            )
-            for point in points:
-                payload = _payload_of(point)
-                sf = payload.get("source_file", "")
-                if sf and sf not in seen:
-                    seen.add(sf)
-                    documents.append(_metadata_from_payload(payload))
-            if offset is None:
-                break
+        for point in self._chunks.scroll(page_size=CHUNK_SCROLL_PAGE_SIZE):
+            payload = _payload_of(point)
+            source_file = payload.get("source_file", "")
+            if source_file and source_file not in seen:
+                seen.add(source_file)
+                documents.append(_metadata_from_payload(payload))
         return documents
 
     def delete_collection(self) -> None:
         """Delete the collection (useful for re-ingestion)."""
-        self._client.delete_collection(collection_name=self._collection)
-        logger.info("Deleted collection '%s'", self._collection)
+        self._chunks.delete()
 
     def collection_info(self) -> dict:
         """Get collection statistics."""
-        info = self._client.get_collection(collection_name=self._collection)
-        return {
-            "name": self._collection,
-            "points_count": info.points_count,
-            "indexed_vectors_count": info.indexed_vectors_count,
-            "status": info.status.value,
-        }
+        return self._chunks.info()
 
     # ── Document-level collection ────────────────────────────────────
 
     def ensure_doc_collection(self) -> None:
         """Create the document-level collection if it doesn't exist."""
-        collections = self._client.get_collections().collections
-        if any(c.name == self._doc_collection for c in collections):
-            logger.info("Doc collection '%s' already exists", self._doc_collection)
-            return
-
-        self._client.create_collection(
-            collection_name=self._doc_collection,
-            vectors_config=VectorParams(
-                size=EMBEDDING_DIM,
-                distance=Distance.COSINE,
-            ),
-        )
-
-        for field, schema_type in [
-            ("aktenzeichen", PayloadSchemaType.KEYWORD),
-            ("fachbereich_number", PayloadSchemaType.KEYWORD),
-            ("document_type", PayloadSchemaType.KEYWORD),
-        ]:
-            self._client.create_payload_index(
-                collection_name=self._doc_collection,
-                field_name=field,
-                field_schema=schema_type,
-            )
-
-        logger.info("Created doc collection '%s'", self._doc_collection)
+        self._docs.ensure()
 
     def upsert_doc_records(
         self,
@@ -338,17 +370,7 @@ class VectorStore:
             for rec, emb in zip(records, embeddings, strict=True)
         ]
 
-        batch_size = 100
-        for i in range(0, len(points), batch_size):
-            batch = points[i : i + batch_size]
-            self._client.upsert(
-                collection_name=self._doc_collection,
-                wait=True,
-                points=batch,
-            )
-
-        logger.info("Upserted %d doc records into '%s'", len(points), self._doc_collection)
-        return len(points)
+        return self._docs.upsert(points)
 
     def search_similar_docs(
         self,
@@ -363,7 +385,7 @@ class VectorStore:
         """
         # Find the source point by aktenzeichen field
         matches, _ = self._client.scroll(
-            collection_name=self._doc_collection,
+            collection_name=self._docs.name,
             scroll_filter=Filter(
                 must=[
                     FieldCondition(
@@ -394,7 +416,7 @@ class VectorStore:
 
         # Search for similar docs, excluding self
         results = self._client.query_points(
-            collection_name=self._doc_collection,
+            collection_name=self._docs.name,
             query=doc_vector,
             query_filter=Filter(must_not=[HasIdCondition(has_id=[self_id])]),
             with_payload=True,
@@ -420,7 +442,7 @@ class VectorStore:
             return []
 
         points, _ = self._client.scroll(
-            collection_name=self._doc_collection,
+            collection_name=self._docs.name,
             scroll_filter=Filter(
                 should=[
                     FieldCondition(
@@ -451,35 +473,21 @@ class VectorStore:
 
     def _scroll_doc_field(self, field: str) -> set[str]:
         """Scroll the doc collection and collect all values of one payload field."""
-        result: set[str] = set()
-        try:
-            collections = self._client.get_collections().collections
-            if not any(c.name == self._doc_collection for c in collections):
-                return result
-        except Exception:
-            return result
+        if not self._docs.exists():
+            # Nothing ingested yet, or Qdrant is unreachable. Either way there
+            # is nothing to skip, which is what an empty set means here.
+            return set()
 
-        offset = None
-        while True:
-            points, offset = self._client.scroll(
-                collection_name=self._doc_collection,
-                limit=1000,
-                offset=offset,
-                with_payload=[field],
-                with_vectors=False,
-            )
-            for point in points:
-                value = _payload_of(point).get(field, "")
-                if value:
-                    result.add(value)
-            if offset is None:
-                break
-        return result
+        values: set[str] = set()
+        for point in self._docs.scroll(page_size=DOC_SCROLL_PAGE_SIZE, with_payload=[field]):
+            value = _payload_of(point).get(field, "")
+            if value:
+                values.add(value)
+        return values
 
     def delete_doc_collection(self) -> None:
         """Delete the document-level collection."""
-        self._client.delete_collection(collection_name=self._doc_collection)
-        logger.info("Deleted doc collection '%s'", self._doc_collection)
+        self._docs.delete()
 
     @staticmethod
     def mean_embedding(embeddings: list[list[float]]) -> list[float]:
