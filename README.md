@@ -3,6 +3,8 @@
 <h1>Sentra – RAG for Wissenschaftliche Dienste</h1>
 </div>
 
+[![CI](https://github.com/aihpi/pilotproject-sentra/actions/workflows/ci.yml/badge.svg)](https://github.com/aihpi/pilotproject-sentra/actions/workflows/ci.yml)
+
 A Retrieval-Augmented Generation (RAG) prototype that enables semantic search and question-answering over documents from the Wissenschaftliche Dienste des Deutschen Bundestages.
 
 ## Architecture
