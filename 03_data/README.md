@@ -17,6 +17,14 @@ DOCUMENTS_DIR=/data/Ausarbeitungen          # inside the container, set by compo
 above point at the same files. The feedback log is written here too, as
 `feedback.jsonl`, for the same reason.
 
+## Only PDFs are ingested
+
+Ingestion globs `*.pdf`. There are also `.docx` files here, mostly abstracts of
+documents that are already indexed as PDFs, and they are skipped on purpose.
+Docling could read them; the open question is how an abstract and its parent
+should relate, since they share an Aktenzeichen. See
+`references/SOURCE_MANAGEMENT_NOTES.md`.
+
 ## This is not the test corpus
 
 Tests read `02_backend/tests/fixtures/corpus`, seventeen documents versioned with
