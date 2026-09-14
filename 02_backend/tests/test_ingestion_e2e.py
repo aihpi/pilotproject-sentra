@@ -58,7 +58,7 @@ def extracted_metadata(parsed_docs):
 
 class TestAllPdfsParsed:
     def test_all_pdfs_found(self, parsed_docs):
-        """Every PDF in 03_data/Ausarbeitungen should be parsed successfully."""
+        """Every PDF in the fixture corpus should be parsed successfully."""
         parsed_names = {doc.source_file for doc in parsed_docs}
         expected_names = set(GROUND_TRUTH.keys())
         missing = expected_names - parsed_names

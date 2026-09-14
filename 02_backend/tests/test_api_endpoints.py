@@ -90,12 +90,19 @@ class TestDocumentListEndpoint:
             missing = required_fields - set(doc.keys())
             assert not missing, f"Document {doc.get('aktenzeichen', '?')} missing fields: {missing}"
 
-    def test_returns_expected_count(self, client, require_qdrant):
-        """We have 17 PDFs; after ingestion, all should be listed."""
-        from tests.conftest import TOTAL_PDFS
+    def test_returns_each_document_once(self, client, require_qdrant):
+        """The endpoint deduplicates chunks back into documents.
 
+        This used to assert an exact count against the fixture corpus, which
+        only held while the index and the fixtures were the same seventeen
+        files. The index now holds whatever the operator ingested, so the
+        invariant worth testing is the one the code actually promises:
+        scroll_all_documents collapses many chunks into one row per document.
+        """
         data = client.get("/api/documents").json()
-        assert len(data) == TOTAL_PDFS, f"Expected {TOTAL_PDFS} documents, got {len(data)}"
+        source_files = [doc["source_file"] for doc in data]
+        duplicates = {sf for sf in source_files if source_files.count(sf) > 1}
+        assert not duplicates, f"Documents listed more than once: {sorted(duplicates)[:5]}"
 
 
 # ── Document serving endpoint ──────────────────────────────────────
