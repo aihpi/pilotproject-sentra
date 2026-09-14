@@ -44,3 +44,10 @@ repos:
         types: [python]
         files: ^02_backend/src/
         pass_filenames: false
+      - id: import-linter
+        name: import-linter (02_backend)
+        entry: bash -c 'cd 02_backend && uv run lint-imports'
+        language: system
+        types: [python]
+        files: ^02_backend/src/
+        pass_filenames: false
