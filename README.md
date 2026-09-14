@@ -12,13 +12,29 @@ A Retrieval-Augmented Generation (RAG) prototype that enables semantic search an
 ```
 ┌──────────┐      ┌──────────┐      ┌──────────┐
 │ Frontend │─────▶│ Backend  │─────▶│  Qdrant  │
-│ React    │ :3000│ FastAPI  │ :8000│ VectorDB │ :6333
+│ React    │ :5173│ FastAPI  │ :8001│ VectorDB │ :6333
 └──────────┘      └──────────┘      └──────────┘
                         │
                    AI Hub API
                   (Embeddings +
                    Generation)
 ```
+
+### Ports
+
+One set of numbers, used everywhere. Host ports are what you open in a browser;
+container ports are what `nginx.conf`, the Dockerfiles and the Kubernetes
+manifests talk to.
+
+| Service | Host | In container | Where the host port comes from |
+|---------|------|--------------|-------------------------------|
+| Frontend | 5173 | 80 | `docker compose` maps it, and `vite.config.ts` uses the same for `npm run dev` |
+| Backend | 8001 | 8000 | `docker compose` maps it; run `uvicorn --port 8001` locally to match |
+| Qdrant | 6333 / 6334 | 6333 / 6334 | mapped straight through |
+
+The backend only allows CORS from `http://localhost:5173`, since that is the one
+origin that calls it cross-origin. Under `docker compose` nothing does: nginx
+proxies `/api` to the backend, so the browser sees a single origin.
 
 - **Frontend** — React + Vite + Tailwind + shadcn/ui
 - **Backend** — FastAPI + Docling (PDF parsing) + OpenAI-compatible AI Hub
@@ -61,18 +77,21 @@ docker compose up --build
 This starts three services:
 | Service | URL | Description |
 |---------|-----|-------------|
-| Frontend | http://localhost:3000 | Search UI |
-| Backend | http://localhost:8000 | FastAPI + Swagger docs at `/docs` |
+| Frontend | http://localhost:5173 | Search UI |
+| Backend | http://localhost:8001 | FastAPI + Swagger docs at `/docs` |
 | Qdrant | http://localhost:6333 | Vector DB dashboard |
+
+Those are the host ports. Inside the container network the services listen on
+80, 8000 and 6333, which is what `nginx.conf` and the Kubernetes manifests use.
 
 ### 3. Ingest documents
 
-Open the frontend at http://localhost:3000, navigate to **Dokumente**, and click **Dokumente einlesen**. This parses all PDFs in `03_data/Ausarbeitungen/` and indexes them into Qdrant.
+Open the frontend at http://localhost:5173, navigate to **Dokumente**, and click **Dokumente einlesen**. This parses all PDFs in `03_data/Ausarbeitungen/` and indexes them into Qdrant.
 
 Alternatively, via API:
 
 ```bash
-curl -X POST http://localhost:8000/api/ingest
+curl -X POST http://localhost:8001/api/ingest
 ```
 
 ### 4. Search
@@ -115,17 +134,17 @@ cd 02_backend
 # Create and configure environment
 cp .env.example .env
 # Edit .env — set AI_HUB_BASE_URL, AI_HUB_API_KEY
-# Set DOCUMENTS_DIR to the absolute path of your PDFs:
-#   DOCUMENTS_DIR=/absolute/path/to/03_data/Ausarbeitungen
+# The example file already points DOCUMENTS_DIR at ../03_data/Ausarbeitungen,
+# which resolves correctly when you run the server from 02_backend.
 
 # Install dependencies
 uv sync
 
 # Run the server
-uv run uvicorn sentra.main:app --reload --host 0.0.0.0 --port 8000
+uv run uvicorn sentra.main:app --reload --host 0.0.0.0 --port 8001
 ```
 
-The backend is now at http://localhost:8000 (Swagger UI at http://localhost:8000/docs).
+The backend is now at http://localhost:8001 (Swagger UI at http://localhost:8001/docs).
 
 ### 3. Frontend
 
@@ -139,7 +158,7 @@ npm install
 npm run dev
 ```
 
-The frontend is now at http://localhost:3000 and proxies API calls to the backend at `localhost:8000`.
+The frontend is now at http://localhost:5173 and calls the backend at `localhost:8001`, which is what `01_frontend/.env.development` sets.
 
 ### 4. Ingest & search
 

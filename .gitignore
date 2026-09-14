@@ -146,6 +146,9 @@ venv.bak/
 # mkdocs documentation
 /site
 
+# Runtime feedback log, written into the data bind mount
+03_data/feedback.jsonl
+
 # mypy
 .mypy_cache/
 .dmypy.json
