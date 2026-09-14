@@ -17,7 +17,7 @@ from qdrant_client.models import (
 )
 
 from sentra.config import Settings
-from sentra.ingestion.chunker import Chunk
+from sentra.domain import Chunk
 
 logger = logging.getLogger(__name__)
 

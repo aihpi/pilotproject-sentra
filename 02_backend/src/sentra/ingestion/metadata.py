@@ -1,9 +1,10 @@
 import logging
 import re
-from dataclasses import dataclass
 from datetime import datetime
 
 from langdetect import DetectorFactory, detect
+
+from sentra.domain import DocumentMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -68,20 +69,6 @@ _FILENAME_RE = re.compile(r"((?:WD|EU)\s*\d+)-(\d+)-(\d+)")
 
 # Filename language hint: "_EN.pdf" or "_DE.pdf"
 _FILENAME_LANG_RE = re.compile(r"_([A-Z]{2})\.pdf$", re.IGNORECASE)
-
-
-@dataclass
-class DocumentMetadata:
-    """Structured metadata extracted from a Bundestag WD document."""
-
-    aktenzeichen: str
-    fachbereich_number: str
-    fachbereich: str
-    document_type: str
-    title: str
-    completion_date: str
-    language: str
-    source_file: str
 
 
 def extract_metadata(

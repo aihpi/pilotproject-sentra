@@ -1,8 +1,7 @@
 import logging
 import re
-from dataclasses import dataclass
 
-from sentra.ingestion.metadata import DocumentMetadata
+from sentra.domain import Chunk, DocumentMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -31,17 +30,6 @@ _BOILERPLATE_PATTERNS = [
 
 # Markdown header pattern
 _SECTION_HEADER_RE = re.compile(r"^(#{1,4})\s+(.+)$", re.MULTILINE)
-
-
-@dataclass
-class Chunk:
-    """A text chunk from a Bundestag document, ready for embedding."""
-
-    text: str
-    section_title: str
-    section_path: str
-    chunk_index: int
-    metadata: DocumentMetadata
 
 
 def chunk_document(
