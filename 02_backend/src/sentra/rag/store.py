@@ -17,12 +17,85 @@ from qdrant_client.models import (
 )
 
 from sentra.config import Settings
-from sentra.domain import Chunk
+from sentra.domain import (
+    Chunk,
+    DocumentMetadata,
+    DocumentRecord,
+    ExternalUrl,
+    Hit,
+    ScoredDocumentRecord,
+)
 
 logger = logging.getLogger(__name__)
 
 # Octen-Embedding-8B embedding dimension
 EMBEDDING_DIM = 4096
+
+
+def _payload_of(point: object) -> dict:
+    """The payload of a Qdrant point, as a dict.
+
+    The client types `payload` as optional because a point can be stored without
+    one. Ours never are: every upsert here writes a payload. Rather than
+    scattering that assumption across the module as None checks or ignores, it is
+    made once here, and a point that really has no payload degrades to empty
+    rather than raising deep inside a comprehension.
+    """
+    return getattr(point, "payload", None) or {}
+
+
+def _metadata_from_payload(payload: dict) -> DocumentMetadata:
+    """Read document metadata out of a payload.
+
+    This function and the two below are the only places that decide what happens
+    when a field is missing, which is why the defaults live here and nowhere
+    else. Missing strings become empty, which is what every consumer already
+    assumed when it called `.get(key, "")`.
+    """
+    return DocumentMetadata(
+        aktenzeichen=payload.get("aktenzeichen", ""),
+        fachbereich_number=payload.get("fachbereich_number", ""),
+        fachbereich=payload.get("fachbereich", ""),
+        document_type=payload.get("document_type", ""),
+        title=payload.get("title", ""),
+        completion_date=payload.get("completion_date", ""),
+        language=payload.get("language", ""),
+        source_file=payload.get("source_file", ""),
+    )
+
+
+def _hit_from_point(point: object, payload: dict) -> Hit:
+    """Build a Hit from a scored chunk point."""
+    return Hit(
+        score=getattr(point, "score", 0.0),
+        text=payload.get("text", ""),
+        section_title=payload.get("section_title", ""),
+        section_path=payload.get("section_path", ""),
+        chunk_index=payload.get("chunk_index", 0),
+        aktenzeichen=payload.get("aktenzeichen", ""),
+        fachbereich_number=payload.get("fachbereich_number", ""),
+        fachbereich=payload.get("fachbereich", ""),
+        document_type=payload.get("document_type", ""),
+        title=payload.get("title", ""),
+        completion_date=payload.get("completion_date", ""),
+        language=payload.get("language", ""),
+        source_file=payload.get("source_file", ""),
+    )
+
+
+def _record_from_payload(payload: dict) -> DocumentRecord:
+    """Build a DocumentRecord from a doc-summary payload."""
+    return DocumentRecord(
+        metadata=_metadata_from_payload(payload),
+        urls=[
+            ExternalUrl(
+                url=u.get("url", ""),
+                label=u.get("label", ""),
+                context=u.get("context", ""),
+            )
+            for u in payload.get("urls", [])
+        ],
+    )
 
 
 class VectorStore:
@@ -119,7 +192,7 @@ class VectorStore:
         language: str | None = None,
         date_from: str | None = None,
         date_to: str | None = None,
-    ) -> list[dict]:
+    ) -> list[Hit]:
         """Search for similar chunks with optional metadata filtering.
 
         Returns a list of dicts with 'score' and all payload fields.
@@ -175,15 +248,12 @@ class VectorStore:
             limit=top_k,
         ).points
 
-        return [
-            {"score": point.score, **point.payload}  # type: ignore[dict-item]  # payload/vector Optional, see #9 typed-hit task
-            for point in results
-        ]
+        return [_hit_from_point(point, _payload_of(point)) for point in results]
 
-    def scroll_all_documents(self) -> list[dict]:
-        """Scroll all points and return unique documents by source_file."""
+    def scroll_all_documents(self) -> list[DocumentMetadata]:
+        """Scroll all chunks and return each document once, by source_file."""
         seen: set[str] = set()
-        documents: list[dict] = []
+        documents: list[DocumentMetadata] = []
         offset = None
         while True:
             points, offset = self._client.scroll(
@@ -194,10 +264,11 @@ class VectorStore:
                 with_vectors=False,
             )
             for point in points:
-                sf = point.payload.get("source_file", "")  # type: ignore[union-attr]  # payload/vector Optional, see #9 typed-hit task
+                payload = _payload_of(point)
+                sf = payload.get("source_file", "")
                 if sf and sf not in seen:
                     seen.add(sf)
-                    documents.append(point.payload)  # type: ignore[arg-type]  # payload/vector Optional, see #9 typed-hit task
+                    documents.append(_metadata_from_payload(payload))
             if offset is None:
                 break
         return documents
@@ -283,7 +354,7 @@ class VectorStore:
         self,
         aktenzeichen: str,
         top_k: int = 10,
-    ) -> list[dict]:
+    ) -> list[ScoredDocumentRecord]:
         """Find documents similar to the given Aktenzeichen.
 
         Looks up the document embedding via payload filter (since multiple
@@ -311,22 +382,34 @@ class VectorStore:
 
         doc_vector = matches[0].vector
         self_id = matches[0].id
+        if not isinstance(doc_vector, list):
+            # The client allows a named-vector mapping or no vector at all; this
+            # collection is created with a single unnamed vector, so anything
+            # else means the point was not written by us.
+            logger.warning(
+                "Document '%s' has no single unnamed vector to compare against",
+                aktenzeichen,
+            )
+            return []
 
         # Search for similar docs, excluding self
         results = self._client.query_points(
             collection_name=self._doc_collection,
-            query=doc_vector,  # type: ignore[arg-type]  # payload/vector Optional, see #9 typed-hit task
+            query=doc_vector,
             query_filter=Filter(must_not=[HasIdCondition(has_id=[self_id])]),
             with_payload=True,
             limit=top_k,
         ).points
 
         return [
-            {"score": point.score, **point.payload}  # type: ignore[dict-item]  # payload/vector Optional, see #9 typed-hit task
+            ScoredDocumentRecord(
+                score=point.score,
+                record=_record_from_payload(_payload_of(point)),
+            )
             for point in results
         ]
 
-    def get_doc_records_by_aktenzeichen(self, aktenzeichen_list: list[str]) -> list[dict]:
+    def get_doc_records_by_aktenzeichen(self, aktenzeichen_list: list[str]) -> list[DocumentRecord]:
         """Retrieve document records by their Aktenzeichen values.
 
         Uses a payload filter scroll because multiple documents may share
@@ -351,7 +434,7 @@ class VectorStore:
             with_vectors=False,
             with_payload=True,
         )
-        return [point.payload for point in points]  # type: ignore[misc]  # payload/vector Optional, see #9 typed-hit task
+        return [_record_from_payload(_payload_of(point)) for point in points]
 
     def get_indexed_aktenzeichen(self) -> set[str]:
         """Get all aktenzeichen values from the doc collection."""
@@ -386,7 +469,7 @@ class VectorStore:
                 with_vectors=False,
             )
             for point in points:
-                value = point.payload.get(field, "")  # type: ignore[union-attr]  # payload/vector Optional, see #9 typed-hit task
+                value = _payload_of(point).get(field, "")
                 if value:
                     result.add(value)
             if offset is None:

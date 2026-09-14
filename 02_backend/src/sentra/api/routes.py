@@ -118,14 +118,14 @@ def list_documents(
     raw_docs = store.scroll_all_documents()
     return [
         DocumentInfo(
-            aktenzeichen=d.get("aktenzeichen", ""),
-            title=d.get("title", ""),
-            fachbereich_number=d.get("fachbereich_number", ""),
-            fachbereich=d.get("fachbereich", ""),
-            document_type=d.get("document_type", ""),
-            completion_date=d.get("completion_date", ""),
-            language=d.get("language", ""),
-            source_file=d.get("source_file", ""),
+            aktenzeichen=d.aktenzeichen,
+            title=d.title,
+            fachbereich_number=d.fachbereich_number,
+            fachbereich=d.fachbereich,
+            document_type=d.document_type,
+            completion_date=d.completion_date,
+            language=d.language,
+            source_file=d.source_file,
         )
         for d in raw_docs
     ]

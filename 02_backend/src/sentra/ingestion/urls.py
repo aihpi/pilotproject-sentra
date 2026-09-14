@@ -1,7 +1,8 @@
 """Extract external URLs from Bundestag document Markdown."""
 
 import re
-from dataclasses import dataclass
+
+from sentra.domain import ExternalUrl
 
 # Markdown link: [label](url)
 _MD_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^)]+)\)")
@@ -20,15 +21,6 @@ _EXCLUDE_DOMAINS = {
     "dserver.bundestag.de",
     "dip.bundestag.de",
 }
-
-
-@dataclass
-class ExtractedUrl:
-    """A URL extracted from a document with context."""
-
-    url: str
-    label: str
-    context: str
 
 
 def _rejoin_broken_urls(text: str) -> str:
@@ -84,13 +76,13 @@ def _rejoin_broken_urls(text: str) -> str:
     return text
 
 
-def extract_urls(markdown: str) -> list[ExtractedUrl]:
+def extract_urls(markdown: str) -> list[ExternalUrl]:
     """Extract external URLs from a Markdown document.
 
     Returns deduplicated URLs with labels and surrounding context.
     """
     seen: set[str] = set()
-    results: list[ExtractedUrl] = []
+    results: list[ExternalUrl] = []
 
     # Pre-process: rejoin URLs broken across lines by Docling
     markdown = _rejoin_broken_urls(markdown)
@@ -103,7 +95,7 @@ def extract_urls(markdown: str) -> list[ExtractedUrl]:
             continue
         seen.add(url)
         context = _extract_context(markdown, match.start(), match.end())
-        results.append(ExtractedUrl(url=url, label=label, context=context))
+        results.append(ExternalUrl(url=url, label=label, context=context))
 
     # 2. Bare URLs not already captured
     for match in _BARE_URL_RE.finditer(markdown):
@@ -112,7 +104,7 @@ def extract_urls(markdown: str) -> list[ExtractedUrl]:
             continue
         seen.add(url)
         context = _extract_context(markdown, match.start(), match.end())
-        results.append(ExtractedUrl(url=url, label="", context=context))
+        results.append(ExternalUrl(url=url, label="", context=context))
 
     return results
 

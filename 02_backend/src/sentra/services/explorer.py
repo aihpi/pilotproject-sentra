@@ -13,6 +13,7 @@ from sentra.domain import (
     AnswerResult,
     DocumentRef,
     ExternalSource,
+    Hit,
     ScoredDocument,
     SourceRef,
 )
@@ -31,45 +32,49 @@ logger = logging.getLogger(__name__)
 # ── Helpers ──────────────────────────────────────────────────────────
 
 
-def _aggregate_docs(results: list[dict], top_k: int) -> list[ScoredDocument]:
-    """Aggregate chunk-level results into unique documents (best score wins)."""
-    best: dict[str, dict] = {}
-    for r in results:
-        az = r["aktenzeichen"]
-        if az not in best or r["score"] > best[az]["score"]:
-            best[az] = r
+def _aggregate_docs(hits: list[Hit], top_k: int) -> list[ScoredDocument]:
+    """Aggregate chunk-level hits into unique documents (best score wins)."""
+    best: dict[str, Hit] = {}
+    for hit in hits:
+        current = best.get(hit.aktenzeichen)
+        if current is None or hit.score > current.score:
+            best[hit.aktenzeichen] = hit
 
-    sorted_docs = sorted(best.values(), key=lambda d: d["score"], reverse=True)
+    ranked = sorted(best.values(), key=lambda h: h.score, reverse=True)
     return [
         ScoredDocument(
-            aktenzeichen=d["aktenzeichen"],
-            title=d["title"],
-            fachbereich=d["fachbereich"],
-            document_type=d.get("document_type", ""),
-            completion_date=d.get("completion_date", ""),
-            relevance_score=round(d["score"], 4),
-            source_file=d.get("source_file", ""),
+            aktenzeichen=hit.aktenzeichen,
+            title=hit.title,
+            fachbereich=hit.fachbereich,
+            document_type=hit.document_type,
+            completion_date=hit.completion_date,
+            relevance_score=round(hit.score, 4),
+            source_file=hit.source_file,
         )
-        for d in sorted_docs[:top_k]
+        for hit in ranked[:top_k]
     ]
 
 
-def _build_source_refs(results: list[dict]) -> list[SourceRef]:
-    """Build deduplicated source references from search results (ordered by first appearance)."""
+def _build_source_refs(hits: list[Hit]) -> list[SourceRef]:
+    """Deduplicate hits into source references, ordered by first appearance.
+
+    The order matters: the prompts tell the model that [n] refers to the nth
+    source in order of first appearance, so this is what the numbering in a
+    generated answer is supposed to line up with.
+    """
     seen: set[str] = set()
     refs: list[SourceRef] = []
-    for r in results:
-        az = r["aktenzeichen"]
-        if az in seen:
+    for hit in hits:
+        if hit.aktenzeichen in seen:
             continue
-        seen.add(az)
+        seen.add(hit.aktenzeichen)
         refs.append(
             SourceRef(
-                aktenzeichen=az,
-                title=r["title"],
-                fachbereich=r["fachbereich"],
-                completion_date=r.get("completion_date", ""),
-                source_file=r.get("source_file", ""),
+                aktenzeichen=hit.aktenzeichen,
+                title=hit.title,
+                fachbereich=hit.fachbereich,
+                completion_date=hit.completion_date,
+                source_file=hit.source_file,
             )
         )
     return refs
@@ -122,15 +127,15 @@ def find_similar_documents(
 
     return [
         ScoredDocument(
-            aktenzeichen=d["aktenzeichen"],
-            title=d["title"],
-            fachbereich=d["fachbereich"],
-            document_type=d.get("document_type", ""),
-            completion_date=d.get("completion_date", ""),
-            relevance_score=round(d["score"], 4),
-            source_file=d.get("source_file", ""),
+            aktenzeichen=scored.record.metadata.aktenzeichen,
+            title=scored.record.metadata.title,
+            fachbereich=scored.record.metadata.fachbereich,
+            document_type=scored.record.metadata.document_type,
+            completion_date=scored.record.metadata.completion_date,
+            relevance_score=round(scored.score, 4),
+            source_file=scored.record.metadata.source_file,
         )
-        for d in results
+        for scored in results
     ]
 
 
@@ -166,10 +171,9 @@ def find_external_sources(
 
     # Collect unique Aktenzeichen with their titles
     az_set: dict[str, str] = {}
-    for r in results:
-        az = r["aktenzeichen"]
-        if az not in az_set:
-            az_set[az] = r["title"]
+    for hit in results:
+        if hit.aktenzeichen not in az_set:
+            az_set[hit.aktenzeichen] = hit.title
 
     # Look up doc records to get URLs
     doc_records = store.get_doc_records_by_aktenzeichen(list(az_set.keys()))
@@ -177,10 +181,10 @@ def find_external_sources(
     # Aggregate URLs across documents
     url_map: dict[str, ExternalSource] = {}
     for doc in doc_records:
-        az = doc["aktenzeichen"]
-        title = doc.get("title", az_set.get(az, ""))
-        for u in doc.get("urls", []):
-            url = u["url"]
+        az = doc.metadata.aktenzeichen
+        title = doc.metadata.title or az_set.get(az, "")
+        for u in doc.urls:
+            url = u.url
             if url in url_map:
                 existing_az = {c.aktenzeichen for c in url_map[url].cited_in}
                 if az not in existing_az:
@@ -188,8 +192,8 @@ def find_external_sources(
             else:
                 url_map[url] = ExternalSource(
                     url=url,
-                    label=u.get("label", ""),
-                    context=u.get("context", ""),
+                    label=u.label,
+                    context=u.context,
                     cited_in=[DocumentRef(aktenzeichen=az, title=title)],
                 )
 

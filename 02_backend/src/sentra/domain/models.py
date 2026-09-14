@@ -41,6 +41,31 @@ class Chunk:
 
 
 @dataclass
+class ExternalUrl:
+    """An external URL found in a document, with the text around it."""
+
+    url: str
+    label: str
+    context: str
+
+
+@dataclass
+class DocumentRecord:
+    """One document in the doc-summary collection: its metadata and its links."""
+
+    metadata: DocumentMetadata
+    urls: list[ExternalUrl] = field(default_factory=list)
+
+
+@dataclass
+class ScoredDocumentRecord:
+    """A document record returned by a similarity search."""
+
+    score: float
+    record: DocumentRecord
+
+
+@dataclass
 class DocumentRef:
     """The least you need to point at a document."""
 
@@ -55,9 +80,10 @@ class DocumentRef:
 class Hit:
     """One chunk returned by a similarity search, with its score.
 
-    The store still returns dictionaries today. Adopting this type there, and in
-    every consumer, is the typed-hit task; it lives here now so that task has
-    somewhere to put it and so the shape is agreed in one place first.
+    Flat rather than nesting the document metadata, because every consumer reads
+    a mix of chunk fields and document fields and the extra hop buys nothing.
+    The store is the only place that builds these, in `_hit_from_point`, so the
+    question of which payload fields may be absent is answered once there.
     """
 
     score: float
