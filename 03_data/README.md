@@ -1,0 +1,24 @@
+# Document corpus
+
+The PDFs SENTRA indexes. **Nothing in this directory is tracked** apart from this
+file: the contents are operational data, different on every machine, and
+currently hundreds of megabytes.
+
+Put the documents you want indexed in a subdirectory here, then point
+`DOCUMENTS_DIR` at it. Ingestion reads a single directory and does **not** recurse,
+so every PDF has to sit directly inside the one you name.
+
+```
+DOCUMENTS_DIR=../03_data/Ausarbeitungen     # running the backend locally
+DOCUMENTS_DIR=/data/Ausarbeitungen          # inside the container, set by compose
+```
+
+`docker-compose.yml` bind-mounts this directory to `/data`, so the two settings
+above point at the same files. The feedback log is written here too, as
+`feedback.jsonl`, for the same reason.
+
+## This is not the test corpus
+
+Tests read `02_backend/tests/fixtures/corpus`, seventeen documents versioned with
+the code. They deliberately do not read this directory: it holds whatever has
+been ingested, and a test fixture that parses all of it takes over an hour.
