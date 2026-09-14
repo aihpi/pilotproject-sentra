@@ -27,6 +27,7 @@ dev = [
     "httpx>=0.27.0",
     "ruff>=0.8.0",
     "mypy>=1.13",
+    "import-linter>=2.0",
 ]
 
 [tool.ruff]
@@ -72,6 +73,37 @@ testpaths = ["tests"]
 markers = [
     "integration: requires Qdrant + AI Hub with ingested data",
 ]
+
+[tool.importlinter]
+root_package = "sentra"
+
+[[tool.importlinter.contracts]]
+# Higher layers may import lower ones, never the reverse.
+#
+#   "a | b"   siblings that may NOT import each other
+#   "(a)"     optional: the contract holds whether or not the module exists
+#
+# evaluation sits just above domain on purpose. The harness talks to SENTRA over
+# HTTP and works from stored responses, so it has no reason to import the system
+# under test; putting it here means the layers contract restricts it to domain
+# and config on its own, while main is still allowed to import it in order to
+# mount its router. The module does not exist yet, hence the parentheses: a
+# forbidden-type contract naming a missing module is a hard error, an optional
+# layer is not.
+name = "Layered architecture"
+type = "layers"
+containers = ["sentra"]
+layers = [
+    "main",
+    "api",
+    "services",
+    "rag | ingestion",
+    "(evaluation)",
+    "domain",
+    "config",
+]
+# Fail if a new top-level module appears and nobody adds it here.
+exhaustive = true
 
 [build-system]
 requires = ["uv_build>=0.8.17,<0.9.0"]
