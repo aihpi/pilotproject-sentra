@@ -146,9 +146,6 @@ venv.bak/
 # mkdocs documentation
 /site
 
-# Runtime feedback log, written into the data bind mount
-03_data/feedback.jsonl
-
 # mypy
 .mypy_cache/
 .dmypy.json
@@ -199,4 +196,10 @@ cython_debug/
 .DS_Store
 
 # Data
-03_data/Extra/
+
+# Document corpus. Operational data rather than source: the contents are whatever
+# has been ingested on a given machine, currently hundreds of megabytes. The test
+# fixtures are versioned separately, in 02_backend/tests/fixtures/corpus.
+# See 03_data/README.md.
+03_data/*
+!03_data/README.md

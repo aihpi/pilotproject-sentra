@@ -86,7 +86,12 @@ Those are the host ports. Inside the container network the services listen on
 
 ### 3. Ingest documents
 
-Open the frontend at http://localhost:5173, navigate to **Dokumente**, and click **Dokumente einlesen**. This parses all PDFs in `03_data/Ausarbeitungen/` and indexes them into Qdrant.
+Put the PDFs you want indexed in `03_data/Ausarbeitungen/`. That directory is not
+tracked, so a fresh clone starts empty, and ingestion reads one directory without
+recursing. See `03_data/README.md`.
+
+Then open the frontend at http://localhost:5173, navigate to **Dokumente**, and click
+**Dokumente einlesen**. This parses those PDFs and indexes them into Qdrant.
 
 Alternatively, via API:
 
@@ -183,7 +188,7 @@ Same as Docker — navigate to **Dokumente** → **Dokumente einlesen**, then sw
 │   │   ├── rag/          # Embeddings, vector store, answer generation
 │   │   └── services/     # Ingestion and query orchestration
 │   └── Dockerfile
-├── 03_data/              # Sample PDF documents
+├── 03_data/              # Document corpus, not tracked. See 03_data/README.md
 │   └── Ausarbeitungen/
 └── docker-compose.yml
 ```

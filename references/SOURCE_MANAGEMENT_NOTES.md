@@ -25,6 +25,40 @@ All of `03_data/Extra/ab_2023/` (~1950 files, Fachbereich × year tree) is invis
 | `list_documents` → `scroll_all_documents()`, dedupe by `aktenzeichen` | AZ-less docs **all collapse into one row**; failed docs invisible |
 | no per-document delete anywhere (`store.py` only has collection nukes) | deleting a PDF leaves chunks searchable + citable forever |
 | `stale_documents` computed in `ingest.py`, only logged | drift already detected, never surfaced |
+| 23 `.docx` alongside the PDFs, both globs are `*.pdf` | silently skipped. Docling accepts docx already, so only the glob stops them |
+
+## The docx abstracts, deliberately not ingested
+
+23 `.docx` files sit next to the PDFs and are skipped, because `parse_pdfs` and
+the pre-filter in `ingest.py` both glob `*.pdf`. `DocumentConverter()` already
+accepts `docx` with no configuration, so the parser is not the obstacle.
+
+What they are:
+
+- 22 of 23 are named `*_Abstract.docx` or `* Abstract.docx`
+- **21 of 23 have their parent PDF already in the corpus**, sharing its Aktenzeichen
+- 1 standalone: `AB Europa Franz-Ratspräsidentschaft - RED final.docx`
+
+**The storage layer was already prepared for them and the ingestion layer never
+was.** `store.py` names `_Abstract` pairs in three comments, and commit `a913c3f`
+re-keyed Qdrant points by `source_file` precisely because an abstract and its
+parent share an Aktenzeichen. Someone hit this collision, fixed identity, and left
+the glob alone.
+
+Left out on purpose for now, because widening the glob decides something that has
+not been decided:
+
+- `/api/documents` dedupes by **source_file** → an abstract and its parent are two rows
+- `/explorer/documents` dedupes by **aktenzeichen** → the same pair is one row
+
+So the Dokumente tab and the search results would disagree about how many
+documents exist. Retrieval would also surface a short abstract competing with the
+full document it summarises, for the same query.
+
+Also: `DOCUMENT_TYPES` has no `Abstract`, so all 22 would extract as `Sonstiges`.
+
+Deciding this is part of the registry work below, where a document can have a
+relationship to another document rather than merely colliding with it.
 
 ## Core move: document registry
 
