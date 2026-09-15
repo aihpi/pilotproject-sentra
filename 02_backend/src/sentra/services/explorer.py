@@ -22,6 +22,7 @@ from sentra.rag.generator import (
     FACHFRAGE_PROMPT,
     OVERVIEW_PROMPT,
     AnswerGenerator,
+    AnswerMethod,
     format_context,
 )
 from sentra.rag.store import VectorStore
@@ -211,9 +212,8 @@ def _generate(
     top_k: int,
     store: VectorStore,
     embedder: EmbeddingClient,
-    generator: AnswerGenerator,
+    generate: AnswerMethod,
     default_prompt: str,
-    generator_method: str,
     fachbereich: str | None = None,
     document_type: str | None = None,
     system_prompt: str | None = None,
@@ -240,7 +240,7 @@ def _generate(
 
     sources = _build_source_refs(results)
     context = format_context(results)
-    text = getattr(generator, generator_method)(query, context, system_prompt=system_prompt)
+    text = generate(query, context, system_prompt=system_prompt)
 
     return AnswerResult(text=text, sources=sources, system_prompt=effective_prompt)
 
@@ -268,9 +268,8 @@ def answer_question(
         top_k,
         store,
         embedder,
-        generator,
+        generator.generate_answer,
         FACHFRAGE_PROMPT,
-        "generate_answer",
         fachbereich,
         document_type,
         system_prompt,
@@ -300,9 +299,8 @@ def generate_overview(
         top_k,
         store,
         embedder,
-        generator,
+        generator.generate_overview,
         OVERVIEW_PROMPT,
-        "generate_overview",
         fachbereich,
         document_type,
         system_prompt,

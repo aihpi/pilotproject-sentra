@@ -1,4 +1,5 @@
 import logging
+from typing import Protocol
 
 from openai import OpenAI
 
@@ -42,6 +43,24 @@ Regeln:
 - Erfinde keine Informationen, die nicht im Kontext enthalten sind.
 - Antworte auf Deutsch.\
 """
+
+
+class AnswerMethod(Protocol):
+    """One of AnswerGenerator's generating methods, already bound.
+
+    generate_answer and generate_overview have the same shape, which is what
+    let the explorer service pick between them by name and hand the string to
+    getattr. This states the shape instead, so passing the wrong thing is a
+    type error and renaming a method updates its callers.
+
+    The first two parameters are positional-only here because the real methods
+    disagree on what to call the first one: a question for one, a topic for
+    the other.
+    """
+
+    def __call__(
+        self, question: str, context: str, /, *, system_prompt: str | None = None
+    ) -> str: ...
 
 
 # The prompt each question sub-mode starts from, served by GET /api/config so
