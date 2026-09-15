@@ -25,55 +25,75 @@ export function formatDate(dateStr: string): string {
   });
 }
 
+// ── The one request path ────────────────────────────────────────────
+
+interface RequestOptions {
+  /** Shown to the user when the request fails, with the status appended. */
+  label: string;
+  method?: "GET" | "POST";
+  /** Sent as JSON. Its presence is what adds the Content-Type header. */
+  body?: unknown;
+  /** Statuses that mean something specific, and say so in their own words
+   *  instead of the generic label. */
+  statusMessages?: Record<number, string>;
+}
+
+/** Every endpoint answers with a JSON body, including the ones whose body
+ *  the caller ignores, so this always parses one. A future 204 would need
+ *  handling here rather than at the call site. */
+async function request<T>(path: string, options: RequestOptions): Promise<T> {
+  const { label, method = "GET", body, statusMessages } = options;
+
+  const response = await fetch(`${API_BASE}${path}`, {
+    method,
+    ...(body === undefined
+      ? {}
+      : {
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      statusMessages?.[response.status] ?? `${label} (HTTP ${response.status})`,
+    );
+  }
+  return response.json();
+}
+
 // ── Document management ─────────────────────────────────────────────
 
-export async function fetchConfig(): Promise<AppConfig> {
-  const response = await fetch(`${API_BASE}/config`);
-  if (!response.ok) {
-    throw new Error(`Konfiguration konnte nicht geladen werden (HTTP ${response.status})`);
-  }
-  return response.json();
+export function fetchConfig(): Promise<AppConfig> {
+  return request("/config", { label: "Konfiguration konnte nicht geladen werden" });
 }
 
-export async function fetchDocuments(): Promise<DocumentInfo[]> {
-  const response = await fetch(`${API_BASE}/documents`);
-  if (!response.ok) {
-    throw new Error(`Dokumente konnten nicht geladen werden (HTTP ${response.status})`);
-  }
-  return response.json();
+export function fetchDocuments(): Promise<DocumentInfo[]> {
+  return request("/documents", { label: "Dokumente konnten nicht geladen werden" });
 }
 
-export async function startIngestion(force = false): Promise<{ status: string }> {
-  const url = force ? `${API_BASE}/ingest?force=true` : `${API_BASE}/ingest`;
-  const response = await fetch(url, { method: "POST" });
-  if (response.status === 409) {
-    throw new Error("Ingestion läuft bereits");
-  }
-  if (!response.ok) {
-    throw new Error(`Ingestion fehlgeschlagen (HTTP ${response.status})`);
-  }
-  return response.json();
+export function startIngestion(force = false): Promise<{ status: string }> {
+  return request(force ? "/ingest?force=true" : "/ingest", {
+    method: "POST",
+    label: "Ingestion fehlgeschlagen",
+    // The server says 409 when a run is already going. That is not a failure
+    // the user needs a status code for.
+    statusMessages: { 409: "Ingestion läuft bereits" },
+  });
 }
 
-export async function getIngestionStatus(): Promise<IngestionStatus> {
-  const response = await fetch(`${API_BASE}/ingest/status`);
-  if (!response.ok) {
-    throw new Error(`Status konnte nicht abgerufen werden (HTTP ${response.status})`);
-  }
-  return response.json();
+export function getIngestionStatus(): Promise<IngestionStatus> {
+  return request("/ingest/status", { label: "Status konnte nicht abgerufen werden" });
 }
 
 // ── Feedback ────────────────────────────────────────────────────────
 
 export async function submitFeedback(feedback: FeedbackRequest): Promise<void> {
-  const response = await fetch(`${API_BASE}/feedback`, {
+  await request("/feedback", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(feedback),
+    body: feedback,
+    label: "Feedback fehlgeschlagen",
   });
-  if (!response.ok) {
-    throw new Error(`Feedback fehlgeschlagen (HTTP ${response.status})`);
-  }
 }
 
 // ── Explorer API (v2) ──────────────────────────────────────────────
@@ -88,6 +108,23 @@ interface ExplorerFilters {
   document_type?: string | null;
 }
 
+/** The query-plus-filters shape the four search endpoints share. `||` rather
+ *  than `??` so an empty filter string keeps reaching the server as null. */
+function explorerBody(
+  query: string,
+  dateRange?: DateRange,
+  filters?: ExplorerFilters,
+  extra?: Record<string, unknown>,
+) {
+  return {
+    query,
+    date_range: dateRange || null,
+    fachbereich: filters?.fachbereich || null,
+    document_type: filters?.document_type || null,
+    ...extra,
+  };
+}
+
 /** UC#1: Find documents by topic */
 export async function searchDocumentsByTopic(
   query: string,
@@ -95,21 +132,11 @@ export async function searchDocumentsByTopic(
   topK: number = 20,
   filters?: ExplorerFilters,
 ): Promise<DocumentResult[]> {
-  const response = await fetch(`${API_BASE}/explorer/documents`, {
+  const data = await request<{ documents: DocumentResult[] }>("/explorer/documents", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      query,
-      date_range: dateRange || null,
-      top_k: topK,
-      fachbereich: filters?.fachbereich || null,
-      document_type: filters?.document_type || null,
-    }),
+    body: explorerBody(query, dateRange, filters, { top_k: topK }),
+    label: "Dokumentsuche fehlgeschlagen",
   });
-  if (!response.ok) {
-    throw new Error(`Dokumentsuche fehlgeschlagen (HTTP ${response.status})`);
-  }
-  const data = await response.json();
   return data.documents;
 }
 
@@ -118,15 +145,11 @@ export async function findSimilarDocuments(
   aktenzeichen: string,
   topK: number = 10,
 ): Promise<DocumentResult[]> {
-  const response = await fetch(`${API_BASE}/explorer/similar`, {
+  const data = await request<{ documents: DocumentResult[] }>("/explorer/similar", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ aktenzeichen, top_k: topK }),
+    body: { aktenzeichen, top_k: topK },
+    label: "Ähnliche Dokumente fehlgeschlagen",
   });
-  if (!response.ok) {
-    throw new Error(`Ähnliche Dokumente fehlgeschlagen (HTTP ${response.status})`);
-  }
-  const data = await response.json();
   return data.documents;
 }
 
@@ -136,71 +159,46 @@ export async function findExternalSources(
   dateRange?: DateRange,
   filters?: ExplorerFilters,
 ): Promise<ExternalSourceResult[]> {
-  const response = await fetch(`${API_BASE}/explorer/sources`, {
+  const data = await request<{ sources: ExternalSourceResult[] }>("/explorer/sources", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      query,
-      date_range: dateRange || null,
-      fachbereich: filters?.fachbereich || null,
-      document_type: filters?.document_type || null,
-    }),
+    body: explorerBody(query, dateRange, filters),
+    label: "Quellensuche fehlgeschlagen",
   });
-  if (!response.ok) {
-    throw new Error(`Quellensuche fehlgeschlagen (HTTP ${response.status})`);
-  }
-  const data = await response.json();
   return data.sources;
 }
 
 /** UC#10: Answer a Fachfrage */
-export async function answerQuestion(
+export function answerQuestion(
   query: string,
   dateRange?: DateRange,
   topK: number = 10,
   filters?: ExplorerFilters,
   systemPrompt?: string | null,
 ): Promise<GeneratedAnswerResult> {
-  const response = await fetch(`${API_BASE}/explorer/answer`, {
+  return request("/explorer/answer", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      query,
-      date_range: dateRange || null,
+    body: explorerBody(query, dateRange, filters, {
       top_k: topK,
-      fachbereich: filters?.fachbereich || null,
-      document_type: filters?.document_type || null,
       system_prompt: systemPrompt || null,
     }),
+    label: "Fachfrage fehlgeschlagen",
   });
-  if (!response.ok) {
-    throw new Error(`Fachfrage fehlgeschlagen (HTTP ${response.status})`);
-  }
-  return response.json();
 }
 
 /** UC#2: Generate topic overview */
-export async function generateOverview(
+export function generateOverview(
   query: string,
   dateRange?: DateRange,
   topK: number = 10,
   filters?: ExplorerFilters,
   systemPrompt?: string | null,
 ): Promise<GeneratedAnswerResult> {
-  const response = await fetch(`${API_BASE}/explorer/overview`, {
+  return request("/explorer/overview", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      query,
-      date_range: dateRange || null,
+    body: explorerBody(query, dateRange, filters, {
       top_k: topK,
-      fachbereich: filters?.fachbereich || null,
-      document_type: filters?.document_type || null,
       system_prompt: systemPrompt || null,
     }),
+    label: "Themenüberblick fehlgeschlagen",
   });
-  if (!response.ok) {
-    throw new Error(`Themenüberblick fehlgeschlagen (HTTP ${response.status})`);
-  }
-  return response.json();
 }
