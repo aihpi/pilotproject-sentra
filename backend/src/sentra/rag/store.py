@@ -524,10 +524,6 @@ class VectorStore:
         )
         return [_record_from_payload(_payload_of(point)) for point in points]
 
-    def get_indexed_aktenzeichen(self) -> set[str]:
-        """Get all aktenzeichen values from the doc collection."""
-        return self._scroll_doc_field("aktenzeichen")
-
     def get_indexed_source_files(self) -> set[str]:
         """Get all source_file values from the doc collection.
 
@@ -538,10 +534,20 @@ class VectorStore:
         return self._scroll_doc_field("source_file")
 
     def _scroll_doc_field(self, field: str) -> set[str]:
-        """Scroll the doc collection and collect all values of one payload field."""
-        if not self._docs.exists():
-            # Nothing ingested yet, or Qdrant is unreachable. Either way there
-            # is nothing to skip, which is what an empty set means here.
+        """Scroll the doc collection and collect all values of one payload field.
+
+        Strict about reaching Qdrant. An empty set here means "nothing is
+        indexed", and ingestion acts on that by processing every document it
+        finds. Returning it for a Qdrant we merely could not ask would re-parse
+        and re-embed the whole corpus, which is thousands of AI Hub calls, and
+        report the run as completed.
+
+        This used to tolerate an unreachable Qdrant, with a comment saying that
+        either way there is nothing to skip. That is true of a fresh index and
+        false of an outage, where there is plenty to skip and we just could not
+        find out.
+        """
+        if not self._docs.exists(tolerate_unreachable=False):
             return set()
 
         values: set[str] = set()
