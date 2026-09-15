@@ -1,9 +1,10 @@
 import json
 import logging
-from datetime import UTC
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import FileResponse
 
 from sentra.api.models import (
     AnswerRequest,
@@ -147,10 +148,8 @@ def list_documents(
 def serve_document(
     filename: str,
     settings: Settings = Depends(get_settings),
-):
+) -> FileResponse:
     """Serve a PDF document by filename."""
-    from fastapi.responses import FileResponse
-
     if "/" in filename or "\\" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Ungültiger Dateiname.")
     if not filename.lower().endswith(".pdf"):
@@ -177,8 +176,6 @@ def submit_feedback(
     settings: Settings = Depends(get_settings),
 ) -> FeedbackResponse:
     """Record user feedback on an answer."""
-    from datetime import datetime
-
     feedback_entry = {
         "timestamp": datetime.now(UTC).isoformat(),
         "question": body.question,

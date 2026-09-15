@@ -87,6 +87,8 @@ Seed stored on the run.
   the old `PdfViewer.tsx` modal was deleted as dead code; it duplicated `pdfUrl()`
   and a review screen wants a viewer shaped for its layout. recoverable from
   `git show 9bb439e:01_frontend/src/components/PdfViewer.tsx`
+  (the old path on purpose: that is what the path was in that commit,
+  before #55 renamed the folder, and git show needs it as it was)
 - right: the case, read only, the yardstick
 - tabs: 3 repeats + 3 variants
 - bottom: verdict form. 4.3a/b prefilled, 4.3c human only, Schweregrad, Reproduzierbar, Freitext
@@ -99,7 +101,8 @@ Seed stored on the run.
 1. `debug: true` → raw hits. already in `_generate` as `results`. **gates most of 4.3**
 2. `finish_reason` / `truncated`
 3. model id from the hub, per response
-4. `GET /api/prompts` (frontend has the same copy-paste problem)
+4. ~~`GET /api/prompts`~~ **done as `GET /api/config` (#37)**, which serves the
+   filter options too, since the UI needs all of it at mount
 5. delete-by-document before upsert
 6. page provenance through the chunker — only if WD requires it, expensive
 7. wire up `/api/feedback` → "Testfall aus Feedback erstellen"

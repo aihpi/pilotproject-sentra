@@ -42,6 +42,15 @@ manifests talk to.
 | Backend | 8001 | 8000 | `docker compose` maps it; run `uvicorn --port 8001` locally to match |
 | Qdrant | 6333 / 6334 | 6333 / 6334 | mapped straight through |
 
+### Timeouts
+
+Both AI Hub calls are bounded, and the numbers were measured rather than
+picked: embedding one query takes about 0.2 seconds, and generating an answer
+or an overview 20 to 29 seconds. `EMBEDDING_TIMEOUT_SECONDS` defaults to 60
+and `GENERATION_TIMEOUT_SECONDS` to 120, roughly four times the slowest
+observed. Raise them if your hub is slower; a request that exceeds one comes
+back as a 503.
+
 The backend only allows CORS from `http://localhost:5173`, since that is the one
 origin that calls it cross-origin. Under `docker compose` nothing does: nginx
 proxies `/api` to the backend, so the browser sees a single origin. Override with
@@ -191,7 +200,7 @@ As above: **Dokumente** → **Dokumente einlesen**, then **Suche**.
 
 ```bash
 cd backend
-uv run pytest -m "not integration"   # 274 tests, no services needed. This is what CI runs.
+uv run pytest -m "not integration"   # 287 tests, no services needed. This is what CI runs.
 uv run pytest -m integration         # 77 tests, needs Qdrant and the AI Hub
 
 cd frontend
@@ -282,6 +291,13 @@ why; anything unanticipated is a **500** and is a bug. So an empty result and a
 broken dependency are distinguishable, which they were not in earlier versions.
 
 ---
+
+## Design notes
+
+`docs/REFACTOR_NOTES.md` records what was refactored and why, including what
+is deliberately still open. `docs/EVAL_NOTES.md` and
+`docs/SOURCE_MANAGEMENT_NOTES.md` are designs for work not yet built: an
+evaluation harness and a mechanism for adding, editing and removing sources.
 
 ## Acknowledgements
 

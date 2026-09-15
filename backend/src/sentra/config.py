@@ -16,6 +16,21 @@ class Settings(BaseSettings):
     ai_hub_api_key: str
 
     # Model names (as shown in AI Hub)
+    # How long to wait on the AI Hub before giving up. Both were measured
+    # against the live hub rather than guessed: embedding one query takes about
+    # 0.2s, and generating an answer or an overview 20 to 29 seconds over six
+    # samples. The values leave roughly 4x headroom over the slowest.
+    #
+    # Generation had no value at all, which left the openai client's own
+    # default of 600 seconds for reads. That is ten minutes of a held worker
+    # for a request someone is watching a spinner for, and the frontend sets
+    # no timeout of its own, so the browser waits exactly as long as we do.
+    #
+    # A timeout that fires raises APITimeoutError, an OpenAIError, so the
+    # handler in api/errors.py already turns it into a 503.
+    embedding_timeout_seconds: float = 60.0
+    generation_timeout_seconds: float = 120.0
+
     embedding_model: str = "octen-embedding-8b"
     chat_model: str = "llama-3-3-70b"
 
