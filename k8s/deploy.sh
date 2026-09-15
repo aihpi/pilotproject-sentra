@@ -11,6 +11,11 @@ echo "[1/4] Creating namespace..."
 kubectl apply -f namespace.yaml
 
 # 2. Apply all resources via Kustomize
+#
+# First deploy after the Qdrant version pin: if the qdrant pod fails to start,
+# its volume may hold data written by the previous 1.13.6 image, which 1.19 will
+# not open. This is a prototype, so discard it and re-ingest:
+#   kubectl delete pvc qdrant-storage -n sentra && ./deploy.sh
 echo "[2/4] Applying Kustomize manifests..."
 kubectl apply -k .
 

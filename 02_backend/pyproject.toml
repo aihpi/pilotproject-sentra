@@ -5,7 +5,7 @@ description = "RAG prototype for the German Bundestag Wissenschaftliche Dienste"
 requires-python = ">=3.12"
 dependencies = [
     "docling>=2.72.0",
-    "qdrant-client>=1.12.0",
+    "qdrant-client>=1.19.0",  # keep within one minor of the server image, see docker-compose.yml
     "openai>=1.50.0",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
