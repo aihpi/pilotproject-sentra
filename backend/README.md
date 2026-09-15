@@ -23,7 +23,7 @@ Swagger UI is at `/docs`.
 Two tiers, separated by the `integration` marker.
 
 ```bash
-uv run pytest -m "not integration"    # offline, ~133 tests, no services needed
+uv run pytest -m "not integration"    # offline, 274 tests, no services needed
 uv run pytest -m integration          # needs Qdrant and the AI Hub, see below
 uv run pytest                         # everything
 ```
