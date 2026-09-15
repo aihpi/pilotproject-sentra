@@ -80,6 +80,10 @@ def ingest(
     left here is turning "no" into a status code.
     """
     if not job.start(store, embedder, settings, force):
+        # The one detail not in German. The frontend has its own wording for
+        # this status, so this string never reaches a user, and giving it a
+        # German twin here would put the same sentence in two places with
+        # nothing tying them together.
         raise HTTPException(status_code=409, detail="Ingestion already running")
 
     return IngestStartResponse(status="started")
@@ -148,13 +152,13 @@ def serve_document(
     from fastapi.responses import FileResponse
 
     if "/" in filename or "\\" in filename or ".." in filename:
-        raise HTTPException(status_code=400, detail="Invalid filename")
+        raise HTTPException(status_code=400, detail="Ungültiger Dateiname.")
     if not filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are served")
+        raise HTTPException(status_code=400, detail="Es werden nur PDF-Dateien ausgeliefert.")
 
     file_path = Path(settings.documents_dir) / filename
     if not file_path.is_file():
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(status_code=404, detail="Dokument nicht gefunden.")
 
     return FileResponse(
         path=str(file_path),

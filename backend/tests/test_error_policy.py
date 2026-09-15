@@ -193,22 +193,57 @@ class TestDocumentsTellsEmptyFromDown:
 
 
 class TestRequestErrorsStayRequestErrors:
-    """HTTPException passes through the handlers untouched."""
+    """HTTPException passes through the handlers untouched.
+
+    The detail is asserted as well as the status, because the frontend now
+    displays it rather than substituting a message of its own. That makes
+    these strings user-facing, and they are German for the same reason every
+    other message the user sees is.
+    """
 
     def test_dot_dot_in_the_name_is_400(self, client_factory):
         """Encoded slashes never reach the handler, they fail to match the
         route, so the guard that matters is the one on "..".
         """
-        assert client_factory().get("/api/documents/..evil.pdf").status_code == 400
+        response = client_factory().get("/api/documents/..evil.pdf")
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Ungültiger Dateiname."
 
     def test_non_pdf_is_400(self, client_factory):
-        assert client_factory().get("/api/documents/notes.txt").status_code == 400
+        response = client_factory().get("/api/documents/notes.txt")
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Es werden nur PDF-Dateien ausgeliefert."
 
     def test_missing_document_is_404(self, client_factory):
-        assert client_factory().get("/api/documents/nicht-vorhanden.pdf").status_code == 404
+        """Reachable from the UI: a document whose file was deleted is still
+        listed until something removes it from the index, so clicking its PDF
+        lands here.
+        """
+        response = client_factory().get("/api/documents/nicht-vorhanden.pdf")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Dokument nicht gefunden."
 
     def test_malformed_body_is_422(self, client_factory):
         assert client_factory().post("/api/explorer/documents", json={}).status_code == 422
+
+
+class TestDetailsAreGerman:
+    def test_every_user_reachable_detail(self, client_factory):
+        """One English detail is left on purpose, the ingest 409, because the
+        frontend overrides that status with its own wording and a German twin
+        here would be the same sentence in two places.
+        """
+        client = client_factory()
+        details = [
+            client.get("/api/documents/..evil.pdf").json()["detail"],
+            client.get("/api/documents/notes.txt").json()["detail"],
+            client.get("/api/documents/nicht-vorhanden.pdf").json()["detail"],
+            client_factory(store=Raises(qdrant_down()))
+            .post("/api/explorer/documents", json={"query": "x"})
+            .json()["detail"],
+        ]
+        english = [d for d in details if "not found" in d or "Invalid" in d or "only" in d.lower()]
+        assert not english, f"English text reaches the UI: {english}"
 
 
 class TestUnexpectedErrorsStay500:
