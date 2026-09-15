@@ -1,6 +1,5 @@
 import json
 import logging
-import threading
 from datetime import UTC
 from pathlib import Path
 
@@ -33,7 +32,8 @@ from sentra.rag.embeddings import EmbeddingClient
 from sentra.rag.generator import DEFAULT_PROMPTS, AnswerGenerator
 from sentra.rag.store import VectorStore
 from sentra.services import explorer
-from sentra.services.ingest import get_ingestion_progress, run_ingestion
+from sentra.services.ingest import get_ingestion_progress
+from sentra.services.jobs import IngestionJob
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,10 @@ def get_embedder(request: Request) -> EmbeddingClient:
     return request.app.state.embedder
 
 
+def get_ingestion_job(request: Request) -> IngestionJob:
+    return request.app.state.ingestion_job
+
+
 def get_generator(request: Request) -> AnswerGenerator:
     return request.app.state.generator
 
@@ -61,6 +65,7 @@ def get_generator(request: Request) -> AnswerGenerator:
 @router.post("/ingest", response_model=IngestStartResponse)
 def ingest(
     force: bool = False,
+    job: IngestionJob = Depends(get_ingestion_job),
     store: VectorStore = Depends(get_store),
     embedder: EmbeddingClient = Depends(get_embedder),
     settings: Settings = Depends(get_settings),
@@ -70,18 +75,12 @@ def ingest(
     Processes all PDFs in the configured documents directory.
     Use force=true to re-index already-indexed documents.
     Poll GET /api/ingest/status for progress.
-    """
-    progress = get_ingestion_progress()
-    if progress.status == "running":
-        raise HTTPException(status_code=409, detail="Ingestion already running")
 
-    logger.info("Ingestion triggered via API (force=%s)", force)
-    thread = threading.Thread(
-        target=run_ingestion,
-        args=(store, embedder, settings, force),
-        daemon=True,
-    )
-    thread.start()
+    The job decides whether a run can start, under its own lock. All that is
+    left here is turning "no" into a status code.
+    """
+    if not job.start(store, embedder, settings, force):
+        raise HTTPException(status_code=409, detail="Ingestion already running")
 
     return IngestStartResponse(status="started")
 

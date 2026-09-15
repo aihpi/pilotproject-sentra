@@ -10,6 +10,7 @@ from sentra.config import get_settings
 from sentra.rag.embeddings import EmbeddingClient
 from sentra.rag.generator import AnswerGenerator
 from sentra.rag.store import VectorStore
+from sentra.services.jobs import IngestionJob
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,6 +43,7 @@ async def lifespan(app: FastAPI):
     app.state.store = store
     app.state.embedder = embedder
     app.state.generator = generator
+    app.state.ingestion_job = IngestionJob()
 
     info = store.collection_info()
     logger.info("Qdrant ready — %d points indexed", info["points_count"])
