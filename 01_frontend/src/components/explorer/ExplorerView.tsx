@@ -341,7 +341,7 @@ function FilterBar({
 
 type ResultData =
   | { type: "documents"; documents: DocumentResult[]; referenceDoc?: string }
-  | { type: "answer"; result: GeneratedAnswerResult }
+  | { type: "answer"; result: GeneratedAnswerResult; query: string }
   | { type: "sources"; sources: ExternalSourceResult[] };
 
 // --- Main ExplorerView ---
@@ -429,12 +429,12 @@ export function ExplorerView() {
         }
         case "fachfrage": {
           const result = await answerQuestion(query, dateRange, 10, filters, customPrompts.fachfrage);
-          setResultData({ type: "answer", result });
+          setResultData({ type: "answer", result, query });
           break;
         }
         case "ueberblick": {
           const result = await generateOverview(query, dateRange, 10, filters, customPrompts.ueberblick);
-          setResultData({ type: "answer", result });
+          setResultData({ type: "answer", result, query });
           break;
         }
       }
@@ -484,7 +484,9 @@ export function ExplorerView() {
           />
         );
       case "answer":
-        return <GeneratedAnswer result={resultData.result} />;
+        return (
+          <GeneratedAnswer result={resultData.result} query={resultData.query} />
+        );
       case "sources":
         return <SourceUrlList sources={resultData.sources} />;
     }

@@ -16,12 +16,6 @@ export interface FeedbackRequest {
   comment?: string | null;
 }
 
-export interface HealthResponse {
-  status: string;
-  qdrant: string;
-  collection?: Record<string, unknown> | null;
-}
-
 // --- Explorer view types ---
 
 export interface DocumentResult {
@@ -68,4 +62,6 @@ export interface IngestionStatus {
   current_file: string;
   started_at: string | null;
   completed_at: string | null;
+  /** Indexed documents with no matching file on disk. */
+  stale_documents: string[];
 }

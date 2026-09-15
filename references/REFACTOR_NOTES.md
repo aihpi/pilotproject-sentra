@@ -59,7 +59,7 @@ Both system prompts copy-pasted into `ExplorerView.tsx:195` with a comment sayin
 ## 8. Dead code
 
 - `AnswerGenerator.generate()` + `SYSTEM_PROMPT` — unused
-- `PdfViewer.tsx` — imported by nobody
+- `PdfViewer.tsx` — imported by nobody, and duplicated `pdfUrl()` besides
 - `submitFeedback()`, `checkHealth()` — exported, never called. `/api/feedback` works, no UI
 - `IngestionProgress.stale_documents` — computed, logged, absent from the response model
 

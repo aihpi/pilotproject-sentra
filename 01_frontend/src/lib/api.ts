@@ -1,7 +1,6 @@
 import type {
   DocumentInfo,
   FeedbackRequest,
-  HealthResponse,
   DocumentResult,
   GeneratedAnswerResult,
   ExternalSourceResult,
@@ -66,16 +65,6 @@ export async function submitFeedback(feedback: FeedbackRequest): Promise<void> {
   if (!response.ok) {
     throw new Error(`Feedback fehlgeschlagen (HTTP ${response.status})`);
   }
-}
-
-// ── Health ──────────────────────────────────────────────────────────
-
-export async function checkHealth(): Promise<HealthResponse> {
-  const response = await fetch(`${API_BASE}/health`);
-  if (!response.ok) {
-    throw new Error(`Health-Check fehlgeschlagen (HTTP ${response.status})`);
-  }
-  return response.json();
 }
 
 // ── Explorer API (v2) ──────────────────────────────────────────────

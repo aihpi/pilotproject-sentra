@@ -67,10 +67,20 @@ export function DocumentsView() {
             message: `${status.processed} Dokumente verarbeitet, ${status.chunks_created} Chunks erstellt.${
               status.skipped > 0 ? ` ${status.skipped} übersprungen.` : ""
             }`,
-            details:
+            details: [
               status.errors.length > 0
                 ? `${status.errors.length} Fehler: ${status.errors.slice(0, 3).join(", ")}`
-                : undefined,
+                : null,
+              // Indexed but no longer on disk. The server has always computed
+              // this and only logged it, so it was invisible here.
+              status.stale_documents?.length
+                ? `${status.stale_documents.length} verwaiste Dokumente im Index: ${status.stale_documents
+                    .slice(0, 3)
+                    .join(", ")}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · ") || undefined,
           });
           loadDocuments();
         } else if (status.status === "failed") {

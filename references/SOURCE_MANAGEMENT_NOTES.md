@@ -172,7 +172,14 @@ GET    /api/documents/jobs
 ## Frontend
 
 `DocumentsView` → real management. drag-drop upload · status column · **`needs_review` filter as the primary view** ·
-row actions (edit / replace / reindex / withdraw) · `PdfViewer.tsx` finally used for preview-before-approve · drift panel.
+row actions (edit / replace / reindex / withdraw) · an inline PDF preview for
+preview-before-approve · drift panel.
+
+There was a `PdfViewer.tsx` modal, unused since it was written and deleted in
+the dead-code task. It duplicated `pdfUrl()` with its own base URL, and a
+review screen will want a viewer shaped for its own layout rather than a
+modal. `git show 9bb439e:01_frontend/src/components/PdfViewer.tsx` if the 39
+lines are worth starting from.
 `DocumentsTable` needs server-side pagination + search at 1966 rows.
 
 ## Open
