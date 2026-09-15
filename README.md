@@ -5,7 +5,7 @@
 
 [![CI](https://github.com/aihpi/pilotproject-sentra/actions/workflows/ci.yml/badge.svg)](https://github.com/aihpi/pilotproject-sentra/actions/workflows/ci.yml)
 
-A Retrieval-Augmented Generation (RAG) prototype that enables semantic search and question-answering over documents from the Wissenschaftliche Dienste des Deutschen Bundestages.
+A Retrieval-Augmented Generation (RAG) prototype for semantic search and question answering over documents of the Wissenschaftliche Dienste des Deutschen Bundestages.
 
 ## Architecture
 
@@ -19,6 +19,16 @@ A Retrieval-Augmented Generation (RAG) prototype that enables semantic search an
                   (Embeddings +
                    Generation)
 ```
+
+- **Frontend** — React + Vite + Tailwind + shadcn/ui
+- **Backend** — FastAPI + Docling (PDF parsing) + OpenAI-compatible AI Hub
+- **Vector DB** — Qdrant, cosine similarity, 4096-dimensional embeddings
+- **Models** — Octen-Embedding-8B (embeddings), llama-3-3-70b (generation)
+
+Qdrant holds **two** collections, both written by the same ingestion run:
+`bundestag_documents` has one point per chunk and answers search, while
+`bundestag_doc_summaries` has one point per document, carrying a mean embedding
+used for "find similar documents".
 
 ### Ports
 
@@ -34,162 +44,195 @@ manifests talk to.
 
 The backend only allows CORS from `http://localhost:5173`, since that is the one
 origin that calls it cross-origin. Under `docker compose` nothing does: nginx
-proxies `/api` to the backend, so the browser sees a single origin.
-
-- **Frontend** — React + Vite + Tailwind + shadcn/ui
-- **Backend** — FastAPI + Docling (PDF parsing) + OpenAI-compatible AI Hub
-- **Vector DB** — Qdrant (cosine similarity, 4096-dim embeddings)
-- **Models** — Octen-Embedding-8B (embeddings), llama-3-3-70b (generation)
+proxies `/api` to the backend, so the browser sees a single origin. Override with
+`CORS_ORIGINS` if you serve the frontend from somewhere else.
 
 ## Prerequisites
 
-- **Docker & Docker Compose** (for Docker setup)
-- **Node.js >= 20** and **Python >= 3.12 with [uv](https://docs.astral.sh/uv/)** (for local dev)
-- **AI Hub credentials** (base URL + API key)
+- **Docker & Docker Compose** (for the Docker setup)
+- **Node.js >= 20** and **Python >= 3.12 with [uv](https://docs.astral.sh/uv/)** (for local development)
+- **AI Hub credentials**: a base URL and an API key
 
 ---
 
-## Option 1: Docker (recommended)
+## Option 1: Docker
 
-The simplest way to run the full stack.
+The whole stack, including Qdrant.
 
-### 1. Configure environment
+### 1. Configure
 
 ```bash
-cp backend/.env.example .env
+cp backend/.env.example backend/.env
 ```
 
-Edit `.env` and set your AI Hub credentials:
+Then set your credentials in `backend/.env`:
 
 ```
 AI_HUB_BASE_URL=https://your-hub-url.example.com/v1
 AI_HUB_API_KEY=your-virtual-key-here
 ```
 
-The rest of the defaults work as-is for Docker.
+`backend/.env` is the only configuration file, shared by Docker, local runs and
+the tests. Compose reads it through `env_file` and overrides just the three
+values that differ inside a container: `QDRANT_URL`, `DOCUMENTS_DIR` and
+`FEEDBACK_FILE`. Everything else comes from that one file, so there is no second
+copy to keep in sync. A `.env` at the repository root is **not** read.
 
-### 2. Start all services
+### 2. Start
 
 ```bash
 docker compose up --build
 ```
 
-This starts three services:
-| Service | URL | Description |
-|---------|-----|-------------|
-| Frontend | http://localhost:5173 | Search UI |
-| Backend | http://localhost:8001 | FastAPI + Swagger docs at `/docs` |
-| Qdrant | http://localhost:6333 | Vector DB dashboard |
+| Service | URL | |
+|---------|-----|-|
+| Frontend | http://localhost:5173 | the UI |
+| Backend | http://localhost:8001 | Swagger UI at `/docs` |
+| Qdrant | http://localhost:6333/dashboard | vector DB dashboard |
 
-Those are the host ports. Inside the container network the services listen on
-80, 8000 and 6333, which is what `nginx.conf` and the Kubernetes manifests use.
+The Qdrant dashboard is unauthenticated and its ports are published to the host.
+That is fine on a laptop and is not suitable as-is for a shared machine.
 
 ### 3. Ingest documents
 
-Put the PDFs you want indexed in `data/Ausarbeitungen/`. That directory is not
-tracked, so a fresh clone starts empty, and ingestion reads one directory without
-recursing. See `data/README.md`.
+Put the PDFs in `data/Ausarbeitungen/`. That directory is not tracked, so a fresh
+clone starts empty, and ingestion reads that one directory without recursing into
+subdirectories. See [`data/README.md`](data/README.md).
 
-Then open the frontend at http://localhost:5173, navigate to **Dokumente**, and click
-**Dokumente einlesen**. This parses those PDFs and indexes them into Qdrant.
-
-Alternatively, via API:
+Open the frontend, go to **Dokumente**, and click **Dokumente einlesen**. Or:
 
 ```bash
 curl -X POST http://localhost:8001/api/ingest
 ```
 
+Ingestion runs in the background; poll `GET /api/ingest/status` for progress. It
+is **incremental**: a document already in the index is skipped, matched by
+filename, so re-running it costs nothing. Pass `?force=true` to re-index
+everything, which re-embeds every document and spends AI Hub quota accordingly.
+Only one run happens at a time; a second request while one is going gets a 409.
+
+The status also reports `stale_documents`, documents that are in the index with
+no matching file on disk. Nothing deletes those yet.
+
 ### 4. Search
 
-Go to the **Suche** tab and ask a question in German, e.g.:
+The **Suche** tab has two halves:
+
+- **Dokumente finden** — search by topic, find documents similar to a given one,
+  or list the external sources cited across the corpus.
+- **Fragen beantworten** — ask a question and get an answer with numbered
+  citations, or a structured overview of a topic. Both show the prompt they used
+  and let you edit it, and both take a thumbs up or down that is recorded to
+  `FEEDBACK_FILE`.
+
+Ask in German, for example:
 
 > Welche Regelungen gelten für die Immunität von Abgeordneten?
 
 ### Stop
 
 ```bash
-docker compose down
-```
-
-To also clear the vector database:
-
-```bash
-docker compose down -v
+docker compose down        # keep the index
+docker compose down -v     # also delete the vector database
 ```
 
 ---
 
-## Option 2: Local Development (without Docker)
+## Option 2: Local development
 
-Run each component separately for faster iteration.
+Faster to iterate on, and what the tests run against.
 
-### 1. Start Qdrant
-
-You still need Qdrant running. The easiest way is via Docker:
+### 1. Qdrant
 
 ```bash
-docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant:latest
+docker compose up -d qdrant
 ```
+
+Use compose rather than a bare `docker run`, so you get the pinned version. The
+server image, the `qdrant-client` floor in `backend/pyproject.toml` and the
+Kubernetes manifest are kept on one minor version deliberately; a mismatch
+between client and server logs an incompatibility warning and can fail in ways
+that look like data problems.
 
 ### 2. Backend
 
 ```bash
 cd backend
-
-# Create and configure environment
-cp .env.example .env
-# Edit .env — set AI_HUB_BASE_URL, AI_HUB_API_KEY
-# The example file already points DOCUMENTS_DIR at ../data/Ausarbeitungen,
-# which resolves correctly when you run the server from backend/.
-
-# Install dependencies
-uv sync
-
-# Run the server
-uv run uvicorn sentra.main:app --reload --host 0.0.0.0 --port 8001
+cp .env.example .env    # then fill in the AI Hub credentials
+uv sync --frozen
+uv run uvicorn sentra.main:app --reload --port 8001
 ```
 
-The backend is now at http://localhost:8001 (Swagger UI at http://localhost:8001/docs).
+Swagger UI at http://localhost:8001/docs. The example file points
+`DOCUMENTS_DIR` at `../data/Ausarbeitungen`, which resolves when you run the
+server from `backend/`.
+
+See [`backend/README.md`](backend/README.md) for the test tiers, the linters and
+how to build the integration index.
 
 ### 3. Frontend
 
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
-
-# Run dev server
 npm run dev
 ```
 
-The frontend is now at http://localhost:5173 and calls the backend at `localhost:8001`, which is what `frontend/.env.development` sets.
+At http://localhost:5173, calling the backend at `localhost:8001`, which is what
+`frontend/.env.development` sets.
 
-### 4. Ingest & search
+### 4. Ingest and search
 
-Same as Docker — navigate to **Dokumente** → **Dokumente einlesen**, then switch to **Suche**.
+As above: **Dokumente** → **Dokumente einlesen**, then **Suche**.
 
 ---
+
+## Tests and checks
+
+```bash
+cd backend
+uv run pytest -m "not integration"   # 274 tests, no services needed. This is what CI runs.
+uv run pytest -m integration         # 77 tests, needs Qdrant and the AI Hub
+
+cd frontend
+npm run build                        # tsc -b, then vite build
+npm run lint
+```
+
+```bash
+uvx pre-commit run --all-files       # ruff, mypy and the layering contract
+```
+
+The integration tier is not in CI, and the reason is cost rather than
+difficulty: every run embeds live queries and calls the chat model. It uses its
+own index built from `backend/tests/fixtures/corpus`, so it never reads whatever
+you have ingested.
+
+Note that `npx tsc --noEmit` checks **nothing** in this repository: the root
+`tsconfig.json` uses project references with `"files": []`, so it exits 0 without
+looking at any code. Use `tsc -b`, which is what `npm run build` does.
 
 ## Project Structure
 
 ```
 Ships:
 
-├── frontend/             # React frontend
+├── frontend/             # React + Vite single-page app
 │   ├── src/
-│   │   ├── components/   # UI components
+│   │   ├── components/   # UI, with the search screen under components/explorer/
 │   │   ├── lib/          # API client, utilities
 │   │   └── types/        # TypeScript interfaces
 │   └── Dockerfile
-├── backend/              # FastAPI backend
+├── backend/              # FastAPI application
 │   ├── src/sentra/
-│   │   ├── api/          # Routes, request/response models
-│   │   ├── services/     # Ingestion and query orchestration
+│   │   ├── main.py       # App, lifespan, error handlers
+│   │   ├── api/          # Routes, request and response models
+│   │   ├── services/     # Ingestion, explorer and job orchestration
 │   │   ├── rag/          # Embeddings, vector store, answer generation
 │   │   ├── ingestion/    # PDF parsing, metadata extraction, chunking
 │   │   ├── domain/       # Framework-free types the layers above share
-│   │   └── config.py
+│   │   └── config.py     # Settings, read from backend/.env
+│   ├── tests/
 │   └── Dockerfile
 ├── k8s/                  # Kubernetes manifests
 └── docker-compose.yml
@@ -198,19 +241,40 @@ Does not ship:
 
 ├── data/                 # Document corpus, not tracked. See data/README.md
 │   └── Ausarbeitungen/
-├── docs/                 # Design notes and received documents
-├── notebooks/            # Exploratory analysis, own dependencies
+├── docs/                 # Design notes, and documents we received
+├── notebooks/            # Exploratory analysis, its own dependencies
 └── brand/                # HPI/AISC logos
 ```
 
-## API Endpoints
+The backend modules are layered, and the layering is enforced rather than
+aspirational: `main → api → services → {rag | ingestion} → domain → config`,
+with nothing importing upwards and `rag` and `ingestion` not importing each
+other. An `import-linter` contract runs in pre-commit, so a violation fails
+before it is committed.
 
-| Method | Endpoint         | Description                             |
-| ------ | ---------------- | --------------------------------------- |
-| `POST` | `/api/query`     | Ask a question (supports SSE streaming) |
-| `POST` | `/api/ingest`    | Parse and index all PDFs                |
-| `GET`  | `/api/documents` | List indexed documents                  |
-| `GET`  | `/api/health`    | Health check + Qdrant status            |
+## API
+
+All paths are under `/api`. Swagger UI at `/docs` is the authoritative reference.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/config` | Default prompts and filter options the UI needs at start-up |
+| `GET` | `/health` | Status, plus Qdrant connectivity and point count |
+| `POST` | `/ingest` | Start a background ingestion run. `?force=true` re-indexes everything. 409 if one is already running |
+| `GET` | `/ingest/status` | Progress, errors, and stale documents |
+| `GET` | `/documents` | Metadata for every indexed document |
+| `GET` | `/documents/{filename}` | Serve one source PDF |
+| `POST` | `/explorer/documents` | Search documents by topic |
+| `POST` | `/explorer/similar` | Documents similar to a given Aktenzeichen |
+| `POST` | `/explorer/sources` | External sources cited across the corpus |
+| `POST` | `/explorer/answer` | Answer a question, with citations |
+| `POST` | `/explorer/overview` | Structured overview of a topic |
+| `POST` | `/feedback` | Record a thumbs up or down on an answer |
+
+Error responses follow one policy. A failure of something we depend on, Qdrant or
+the AI Hub, is a **503** with a German message; a bad request is a **4xx** saying
+why; anything unanticipated is a **500** and is a bug. So an empty result and a
+broken dependency are distinguishable, which they were not in earlier versions.
 
 ---
 
