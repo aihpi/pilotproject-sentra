@@ -23,6 +23,10 @@ class IngestionStatusResponse(BaseModel):
     current_file: str
     started_at: str | None = None
     completed_at: str | None = None
+    # Documents indexed in Qdrant with no matching file on disk. Computed on
+    # every run and previously only logged, so nobody outside the server ever
+    # saw the drift it detects.
+    stale_documents: list[str] = []
 
 
 class DocumentInfo(BaseModel):

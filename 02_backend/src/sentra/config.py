@@ -30,7 +30,11 @@ class Settings(BaseSettings):
     doc_collection_name: str = "bundestag_doc_summaries"
 
     # Ingestion
-    documents_dir: str = "/data/Ausarbeitungen"
+    # Paths default to what works when the app is run directly from
+    # 02_backend. compose and the k8s configmap both set the container
+    # paths explicitly, so a /data default here buys nothing and only
+    # breaks developer machines, where /data does not exist.
+    documents_dir: str = "../03_data/Ausarbeitungen"
     chunk_max_tokens: int = 2048
     embedding_batch_size: int = 32
 
@@ -48,7 +52,7 @@ class Settings(BaseSettings):
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
 
     # Feedback
-    feedback_file: str = "/data/feedback.jsonl"
+    feedback_file: str = "../03_data/feedback.jsonl"
 
     @field_validator("cors_origins", mode="before")
     @classmethod

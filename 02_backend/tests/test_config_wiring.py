@@ -32,19 +32,13 @@ class TestCorsOrigins:
         assert s.cors_origins == ["http://a.test", "http://b.test"]
 
     def test_json_array(self):
-        assert make_settings(cors_origins='["http://c.test"]').cors_origins == [
-            "http://c.test"
-        ]
+        assert make_settings(cors_origins='["http://c.test"]').cors_origins == ["http://c.test"]
 
     def test_a_real_list_passes_through(self):
-        assert make_settings(cors_origins=["http://d.test"]).cors_origins == [
-            "http://d.test"
-        ]
+        assert make_settings(cors_origins=["http://d.test"]).cors_origins == ["http://d.test"]
 
     def test_blank_entries_are_dropped(self):
-        assert make_settings(cors_origins="http://a.test,,  ").cors_origins == [
-            "http://a.test"
-        ]
+        assert make_settings(cors_origins="http://a.test,,  ").cors_origins == ["http://a.test"]
 
 
 class TestChunkMaxTokens:
@@ -139,6 +133,24 @@ class FakeClient:
 
 def collection(size: int | None, configured: int = 4096) -> _Collection:
     return _Collection(FakeClient(size), "chunks", ("aktenzeichen",), configured)  # type: ignore[arg-type]
+
+
+class TestPathDefaults:
+    """Defaults must suit a host; containers override them.
+
+    Both of these were container paths once, which made the feature fail
+    wherever the app was run directly: /data does not exist on a developer
+    machine, so the feedback endpoint answered 500 with a PermissionError.
+    """
+
+    @pytest.mark.parametrize("field", ["feedback_file", "documents_dir"])
+    def test_not_an_unwritable_container_path(self, field):
+        value = getattr(make_settings(), field)
+        assert not value.startswith("/data"), (
+            f"{field} defaults to {value!r}, a container path. compose and the "
+            f"k8s configmap override these, so the default should be the one "
+            f"that works when the app is run directly."
+        )
 
 
 class TestEmbeddingDimension:

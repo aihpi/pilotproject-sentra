@@ -7,18 +7,6 @@ from sentra.domain import Hit
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """\
-Du bist ein Assistent der Wissenschaftlichen Dienste des Deutschen Bundestages.
-
-Regeln:
-- Beantworte die Frage ausschließlich auf Basis der bereitgestellten Kontextauszüge.
-- Wenn der Kontext die Frage nicht ausreichend beantwortet, sage dies ehrlich.
-- Gib immer die Quellen (Aktenzeichen und Abschnittstitel) an, auf die du dich beziehst.
-- Antworte auf Deutsch, es sei denn, der Nutzer fragt auf Englisch.
-- Fasse die relevanten Informationen strukturiert zusammen.
-- Erfinde keine Informationen, die nicht im Kontext enthalten sind.\
-"""
-
 # UC#10 – Fachfrage: concise, direct answer with numbered source refs
 FACHFRAGE_PROMPT = """\
 Du bist ein Assistent der Wissenschaftlichen Dienste des Deutschen Bundestages.
@@ -79,13 +67,6 @@ class AnswerGenerator:
             api_key=settings.ai_hub_api_key,
         )
         self._model = settings.chat_model
-
-    def generate(self, question: str, context: str) -> str:
-        """Generate a complete answer (non-streaming)."""
-        return self._complete(
-            SYSTEM_PROMPT,
-            f"Kontext:\n{context}\n\nFrage: {question}",
-        )
 
     def generate_answer(
         self,

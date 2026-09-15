@@ -83,7 +83,10 @@ Seed stored on the run.
 
 ## Review screen
 
-- left: answer + source cards (reuse `GeneratedAnswer.tsx`) → `PdfViewer` inline for 4.3c
+- left: answer + source cards (reuse `GeneratedAnswer.tsx`) → inline PDF for 4.3c.
+  the old `PdfViewer.tsx` modal was deleted as dead code; it duplicated `pdfUrl()`
+  and a review screen wants a viewer shaped for its layout. recoverable from
+  `git show 9bb439e:01_frontend/src/components/PdfViewer.tsx`
 - right: the case, read only, the yardstick
 - tabs: 3 repeats + 3 variants
 - bottom: verdict form. 4.3a/b prefilled, 4.3c human only, Schweregrad, Reproduzierbar, Freitext

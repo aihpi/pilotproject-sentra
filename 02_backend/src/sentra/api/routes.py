@@ -97,6 +97,7 @@ def ingest_status() -> IngestionStatusResponse:
         current_file=progress.current_file,
         started_at=progress.started_at,
         completed_at=progress.completed_at,
+        stale_documents=list(progress.stale_documents),
     )
 
 
