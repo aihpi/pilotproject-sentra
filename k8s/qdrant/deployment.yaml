@@ -16,7 +16,22 @@ spec:
     spec:
       containers:
         - name: qdrant
-          image: qdrant/qdrant:v1.13.6
+          # Was v1.13.6, six minors behind what development runs against.
+          # See docker-compose.yml; this pin, that one and the qdrant-client
+          # floor in 02_backend/pyproject.toml all move together.
+          #
+          # FIRST DEPLOY AFTER THIS CHANGE: the qdrant-storage PVC may still
+          # hold data written by 1.13.6, and Qdrant upgrades between adjacent
+          # minors rather than across six, so 1.19 may refuse to open it. This
+          # is a prototype and the corpus is re-ingestable, so the accepted
+          # answer is to discard the volume and re-ingest rather than migrate:
+          #
+          #   kubectl delete pvc qdrant-storage -n sentra
+          #   ./deploy.sh
+          #
+          # If the pod comes up healthy without that, nothing was lost and
+          # there is nothing to do.
+          image: qdrant/qdrant:v1.19.1
           ports:
             - containerPort: 6333
               name: http
