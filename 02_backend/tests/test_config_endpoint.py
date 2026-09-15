@@ -31,7 +31,7 @@ from sentra.ingestion.metadata import (
     FALLBACK_DOCUMENT_TYPE,
     extract_metadata,
 )
-from sentra.rag.generator import DEFAULT_PROMPTS, FACHFRAGE_PROMPT, OVERVIEW_PROMPT
+from sentra.rag.generator import FACHFRAGE_PROMPT, OVERVIEW_PROMPT
 
 app = FastAPI()
 app.include_router(router)

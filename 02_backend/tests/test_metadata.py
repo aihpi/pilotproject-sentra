@@ -7,7 +7,9 @@ from sentra.ingestion.metadata import (
     _extract_document_type,
     _extract_fachbereich,
     _extract_title,
+    _format_az,
     _normalize_az,
+    _normalize_fachbereich_number,
     _normalize_german_date,
     _parse_pdf_date,
     extract_metadata,
@@ -40,6 +42,27 @@ class TestExtractAktenzeichen:
 
     def test_from_filename_no_space(self):
         assert _extract_aktenzeichen("", "", "WD9-100-21.pdf") == "WD 9 - 3000 - 100/21"
+
+    def test_from_filename_double_space(self):
+        """Used to come out as "WD  9 - 3000 - 100/21".
+
+        The filename branch only inserted a missing space and never collapsed
+        a run of them, so a filename like this produced a malformed
+        Aktenzeichen. Downstream that also cost the Fachbereich its name,
+        because the lookup splits on " - " and "WD  9" is not a key.
+        No filename in the current corpus has one, so nothing already indexed
+        changes; it is the branches agreeing that matters.
+        """
+        assert _extract_aktenzeichen("", "", "WD  9-100-21.pdf") == "WD 9 - 3000 - 100/21"
+
+    def test_from_filename_tab(self):
+        assert _extract_aktenzeichen("", "", "WD\t9-100-21.pdf") == "WD 9 - 3000 - 100/21"
+
+    def test_from_furniture_extra_spaces(self):
+        assert (
+            _extract_aktenzeichen("", "WD  6  -  3000  -  052/24", "doc.pdf")
+            == "WD 6 - 3000 - 052/24"
+        )
 
     def test_body_takes_priority_over_furniture(self):
         md = "Aktenzeichen: WD 3 - 3000 - 029/23"
@@ -80,6 +103,17 @@ class TestExtractFachbereich:
 
     def test_returns_empty_when_nothing_found(self):
         assert _extract_fachbereich("", "", "") == ("", "")
+
+    def test_number_spacing_normalized_from_body(self):
+        md = "Fachbereich:  WD  9: Gesundheit, Familie\n"
+        number, _ = _extract_fachbereich(md, "", "")
+        assert number == "WD 9"
+
+    def test_number_spacing_normalized_from_aktenzeichen(self):
+        """A messy number here would miss the name lookup entirely."""
+        number, name = _extract_fachbereich("", "", "WD  3 - 3000 - 029/23")
+        assert number == "WD 3"
+        assert name == "Verfassung und Verwaltung"
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +275,55 @@ class TestExtractCompletionDate:
 # ---------------------------------------------------------------------------
 # Normalize AZ
 # ---------------------------------------------------------------------------
+
+
+class TestNormalizeFachbereichNumber:
+    """The single normalizer behind five former copies of the same re.sub.
+
+    Three of them handled a Fachbereich number pulled out of text and two an
+    Aktenzeichen prefix, which is the same thing, so they collapse into one
+    function rather than one per call site.
+    """
+
+    def test_already_canonical(self):
+        assert _normalize_fachbereich_number("WD 9") == "WD 9"
+
+    def test_collapses_a_run_of_spaces(self):
+        assert _normalize_fachbereich_number("WD   9") == "WD 9"
+
+    def test_inserts_a_missing_space(self):
+        assert _normalize_fachbereich_number("WD9") == "WD 9"
+
+    def test_collapses_tabs(self):
+        assert _normalize_fachbereich_number("WD\t9") == "WD 9"
+
+    def test_strips_the_edges(self):
+        assert _normalize_fachbereich_number("  WD 9  ") == "WD 9"
+
+    def test_two_digit_number(self):
+        assert _normalize_fachbereich_number("WD10") == "WD 10"
+
+    def test_eu(self):
+        assert _normalize_fachbereich_number("EU6") == "EU 6"
+
+    def test_leaves_unrecognised_text_alone_apart_from_whitespace(self):
+        assert _normalize_fachbereich_number("  etwas  anderes ") == "etwas anderes"
+
+
+class TestFormatAz:
+    """The single place that knows an Aktenzeichen's shape."""
+
+    def test_assembles(self):
+        assert _format_az("WD 2", "029/25") == "WD 2 - 3000 - 029/25"
+
+    def test_normalizes_the_number_it_is_given(self):
+        assert _format_az("WD  2", "029/25") == "WD 2 - 3000 - 029/25"
+        assert _format_az("EU6", "012/25") == "EU 6 - 3000 - 012/25"
+
+    def test_round_trips_through_normalize_az(self):
+        """Whatever _format_az builds, _normalize_az leaves alone."""
+        built = _format_az("WD  7", "045/22")
+        assert _normalize_az(built) == built
 
 
 class TestNormalizeAz:
