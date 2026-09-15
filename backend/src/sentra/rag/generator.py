@@ -97,6 +97,7 @@ class AnswerGenerator:
         self._client = OpenAI(
             base_url=settings.ai_hub_base_url,
             api_key=settings.ai_hub_api_key,
+            timeout=settings.generation_timeout_seconds,
         )
         self._model = settings.chat_model
 

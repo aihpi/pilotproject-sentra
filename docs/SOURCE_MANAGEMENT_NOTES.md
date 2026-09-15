@@ -5,11 +5,15 @@ Consumers: SENTRA search and eval cases, the same corpus.
 ## The number
 
 ```
-1966  PDFs under 03_data,  618 MB
+1919  PDFs under data/,  592 MB  (was 1966 under 03_data at 618 MB; the
+      tree below was flattened into one directory and #55 renamed the folder)
   17  indexed
 ```
-`glob("*.pdf")` is non-recursive, pointed at `03_data/Ausarbeitungen`.
-All of `03_data/Extra/ab_2023/` (~1950 files, Fachbereich × year tree) is invisible to it.
+`glob("*.pdf")` is non-recursive, pointed at `data/Ausarbeitungen`.
+All of `03_data/Extra/ab_2023/` (~1950 files, Fachbereich × year tree) was invisible to it.
+**No longer the case:** the corpus was flattened into one directory by hand, so the
+non-recursive glob now reaches everything. The glob is still non-recursive, so this
+holds only as long as nobody adds a subdirectory.
 → not "add an upload button", but "1% of a real corpus is indexed and there is no mechanism for the rest".
 
 ## What breaks, measured
@@ -111,7 +115,7 @@ sidecar ≠ extraction → **surface it**, don't silently pick.
 - folder import: **recursive**, idempotent by hash
 - extraction fails / multiple AZ / `Unbekannter Titel` → `needs_review`, **not indexed**
 - storage: named volume, opaque `storage_key` → MinIO/S3 later is a config change
-- `03_data` becomes read-only seed, `./03_data:/data` stops being load-bearing
+- `data/` becomes read-only seed, `./data:/data` stops being load-bearing
 
 ## Edit = 2 operations (do not conflate)
 
@@ -178,7 +182,8 @@ preview-before-approve · drift panel.
 There was a `PdfViewer.tsx` modal, unused since it was written and deleted in
 the dead-code task. It duplicated `pdfUrl()` with its own base URL, and a
 review screen will want a viewer shaped for its own layout rather than a
-modal. `git show 9bb439e:01_frontend/src/components/PdfViewer.tsx` if the 39
+modal. `git show 9bb439e:01_frontend/src/components/PdfViewer.tsx` (the pre-#55
+path, which is what that commit holds) if the 39
 lines are worth starting from.
 `DocumentsTable` needs server-side pagination + search at 1966 rows.
 

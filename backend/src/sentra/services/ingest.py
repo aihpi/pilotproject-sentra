@@ -2,8 +2,10 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 
 from sentra.config import Settings
+from sentra.domain import DocumentMetadata
 from sentra.ingestion.chunker import Chunk, chunk_document
 from sentra.ingestion.metadata import extract_metadata
 from sentra.ingestion.parser import parse_pdfs
@@ -102,8 +104,6 @@ def _run_ingestion_inner(
     store.ensure_doc_collection()
 
     # Count total files and pre-filter for incremental ingestion
-    from pathlib import Path
-
     pdf_dir = Path(settings.documents_dir)
     all_pdf_paths = sorted(pdf_dir.glob("*.pdf"))
 
@@ -225,7 +225,7 @@ def _store_doc_record(
     embedder: EmbeddingClient,
     chunks: list[Chunk],
     embeddings: list[list[float]],
-    metadata,
+    metadata: DocumentMetadata,
     markdown: str,
 ) -> None:
     """Compute doc-level mean embedding, extract URLs, and store a single doc record."""

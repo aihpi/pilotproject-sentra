@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pypdfium2 as pdfium
 from docling.document_converter import DocumentConverter
-from docling_core.types.doc.document import ContentLayer
+from docling_core.types.doc.document import ContentLayer, DoclingDocument
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ def _extract_pdf_metadata(pdf_path: Path) -> dict:
         return {}
 
 
-def _extract_furniture_text(doc) -> str:
+def _extract_furniture_text(doc: DoclingDocument) -> str:
     """Extract all furniture-layer items (page headers/footers) as a single text block."""
     lines: list[str] = []
     for item, _level in doc.iterate_items(

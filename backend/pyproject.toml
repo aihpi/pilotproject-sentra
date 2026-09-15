@@ -62,6 +62,11 @@ warn_redundant_casts = true
 # Makes the deferred ignores below self-cleaning: once the underlying cause is
 # fixed, the now-pointless ignore fails the check instead of lingering.
 warn_unused_ignores = true
+# An unannotated parameter is silently Any, so mypy checks nothing about it and
+# says nothing either. Two had been sitting unannotated since before domain/
+# existed to name their types, and nothing reported them. On at the cost of
+# four annotations.
+disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
 # Neither ships type information or a py.typed marker.

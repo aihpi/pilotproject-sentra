@@ -181,3 +181,44 @@ class TestEmbeddingDimension:
         """Creation at that width is covered behaviourally in
         test_store_collection.py::TestEnsure."""
         assert make_settings(embedding_dim=1536).embedding_dim == 1536
+
+
+class TestAiHubTimeouts:
+    """Both clients get an explicit bound, and it is the configured one.
+
+    Generation had no timeout at all, which left the openai client's own
+    default of 600 seconds for reads. Measured against the live hub, an answer
+    or an overview takes 20 to 29 seconds, so ten minutes is not a safety
+    margin, it is a held worker and a spinner the user cannot escape: the
+    frontend sets no timeout of its own and waits exactly as long as the
+    backend does.
+    """
+
+    def test_generation_uses_the_configured_timeout(self):
+        from sentra.rag.generator import AnswerGenerator
+
+        settings = make_settings(generation_timeout_seconds=42.0)
+        assert AnswerGenerator(settings)._client.timeout == 42.0
+
+    def test_embedding_uses_the_configured_timeout(self):
+        from sentra.rag.embeddings import EmbeddingClient
+
+        settings = make_settings(embedding_timeout_seconds=17.0)
+        assert EmbeddingClient(settings)._client.timeout == 17.0
+
+    def test_neither_falls_back_to_the_library_default(self):
+        """600 seconds is what the client uses when nobody says otherwise, so
+        seeing it here would mean the setting is not reaching the client."""
+        from sentra.rag.embeddings import EmbeddingClient
+        from sentra.rag.generator import AnswerGenerator
+
+        settings = make_settings()
+        assert AnswerGenerator(settings)._client.timeout == 120.0
+        assert EmbeddingClient(settings)._client.timeout == 60.0
+
+    def test_generation_is_allowed_longer_than_embedding(self):
+        """Not a style rule. Embedding one query takes about 0.2 seconds and a
+        completion takes tens of seconds, so the same bound cannot suit both.
+        """
+        settings = make_settings()
+        assert settings.generation_timeout_seconds > settings.embedding_timeout_seconds
