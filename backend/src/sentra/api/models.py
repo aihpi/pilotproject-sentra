@@ -1,4 +1,6 @@
-from pydantic import BaseModel
+import re
+
+from pydantic import BaseModel, field_validator
 
 from sentra import domain
 
@@ -60,9 +62,45 @@ class HealthResponse(BaseModel):
 # ── Explorer API models (v2) ────────────────────────────────────────
 
 
+# A year as the API accepts it: four digits, not starting with a zero. There is
+# deliberately no upper bound. Which years exist is a property of the corpus,
+# and a ceiling written here would be wrong the first time somebody ingests a
+# document from outside whatever range we guessed.
+_YEAR = re.compile(r"[1-9]\d{3}")
+
+# German, like every other message a caller can end up reading.
+YEAR_EXPECTED = 'Jahresangabe muss vierstellig sein, zum Beispiel "2023".'
+
+
 class DateRange(BaseModel):
-    date_from: str | None = None  # "YYYY" year string
+    """An inclusive year range. Both bounds are "YYYY" strings.
+
+    Both fields used to be plain strings with no validation, so anything at all
+    reached rag/store.py, which parsed the year inside a try whose handler
+    logged a warning and fell through. The date condition was then never added
+    to the query: the search ran across every year in the corpus and answered
+    200, with nothing in the response saying the filter had been ignored. A
+    mistyped year returned confident results from the wrong period.
+
+    Rejecting here is what keeps that from being reachable. The explorer UI
+    could never trigger it — FilterBar renders a year dropdown — so it was
+    always a problem for callers using the API directly.
+    """
+
+    date_from: str | None = None
     date_to: str | None = None
+
+    @field_validator("date_from", "date_to")
+    @classmethod
+    def _valid_year(cls, value: str | None) -> str | None:
+        # An empty string has always meant "no bound", here and in the store,
+        # so it keeps meaning that. Anything else that is not a year is a
+        # mistake rather than an absent filter, and is worth failing over.
+        if not value:
+            return None
+        if not _YEAR.fullmatch(value):
+            raise ValueError(YEAR_EXPECTED)
+        return value
 
 
 def date_range_params(
