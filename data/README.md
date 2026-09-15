@@ -9,7 +9,7 @@ Put the documents you want indexed in a subdirectory here, then point
 so every PDF has to sit directly inside the one you name.
 
 ```
-DOCUMENTS_DIR=../03_data/Ausarbeitungen     # running the backend locally
+DOCUMENTS_DIR=../data/Ausarbeitungen     # running the backend locally
 DOCUMENTS_DIR=/data/Ausarbeitungen          # inside the container, set by compose
 ```
 
@@ -23,10 +23,10 @@ Ingestion globs `*.pdf`. There are also `.docx` files here, mostly abstracts of
 documents that are already indexed as PDFs, and they are skipped on purpose.
 Docling could read them; the open question is how an abstract and its parent
 should relate, since they share an Aktenzeichen. See
-`references/SOURCE_MANAGEMENT_NOTES.md`.
+`docs/SOURCE_MANAGEMENT_NOTES.md`.
 
 ## This is not the test corpus
 
-Tests read `02_backend/tests/fixtures/corpus`, seventeen documents versioned with
+Tests read `backend/tests/fixtures/corpus`, seventeen documents versioned with
 the code. They deliberately do not read this directory: it holds whatever has
 been ingested, and a test fixture that parses all of it takes over an hour.

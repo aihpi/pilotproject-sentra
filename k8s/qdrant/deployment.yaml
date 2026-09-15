@@ -18,7 +18,7 @@ spec:
         - name: qdrant
           # Was v1.13.6, six minors behind what development runs against.
           # See docker-compose.yml; this pin, that one and the qdrant-client
-          # floor in 02_backend/pyproject.toml all move together.
+          # floor in backend/pyproject.toml all move together.
           #
           # FIRST DEPLOY AFTER THIS CHANGE: the qdrant-storage PVC may still
           # hold data written by 1.13.6, and Qdrant upgrades between adjacent

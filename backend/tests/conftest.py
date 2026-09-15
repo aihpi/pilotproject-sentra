@@ -22,7 +22,7 @@ from sentra.rag.store import VectorStore
 
 # ── Constants ───────────────────────────────────────────────────────
 
-# The fixture corpus, versioned alongside the tests. Deliberately not 03_data:
+# The fixture corpus, versioned alongside the tests. Deliberately not data/:
 # that holds whatever corpus the operator has ingested, which is thousands of
 # documents, and a module-scoped fixture parsing all of them through Docling
 # would take over an hour and exhaust memory. These 17 are a fixed set chosen to
