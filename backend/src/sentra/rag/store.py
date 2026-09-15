@@ -337,8 +337,8 @@ class VectorStore:
     ) -> list[Hit]:
         """Search for similar chunks with optional metadata filtering.
 
-        Returns a list of dicts with 'score' and all payload fields.
-        date_from/date_to are year strings ("2023") converted to ISO range.
+        date_from/date_to are year strings ("2023") converted to an ISO range.
+        A value that is not one raises rather than searching unfiltered.
         """
         # The three keyword filters differ only in which payload key they match,
         # so they are one loop. Each is applied only when a value was given.
@@ -352,22 +352,31 @@ class VectorStore:
             if value
         ]
         if date_from or date_to:
+            # A year this cannot read used to log a warning and fall through,
+            # which left the condition off the query entirely: the search then
+            # ran across every year and returned a confident 200 as though the
+            # filter had been applied. Running unfiltered is not a recovery
+            # from being asked to filter, so it raises.
+            #
+            # DateRange in api/models.py rejects a bad year before it reaches
+            # here, which makes this an assertion that the two agree rather
+            # than a path the API can take. Non-API callers do not go through
+            # that model, and they are the reason it stays.
             try:
                 gte = date(int(date_from), 1, 1) if date_from else None
                 lte = date(int(date_to), 12, 31) if date_to else None
-            except (ValueError, TypeError):
-                logger.warning(
-                    "Invalid date_from=%r / date_to=%r, skipping date filter",
-                    date_from,
-                    date_to,
+            except (ValueError, TypeError) as exc:
+                raise ValueError(
+                    f"Cannot build a date filter from date_from={date_from!r}, "
+                    f"date_to={date_to!r}. Both must be four-digit year strings."
+                ) from exc
+
+            conditions.append(
+                FieldCondition(
+                    key="completion_date",
+                    range=DatetimeRange(gte=gte, lte=lte),
                 )
-            else:
-                conditions.append(
-                    FieldCondition(
-                        key="completion_date",
-                        range=DatetimeRange(gte=gte, lte=lte),
-                    )
-                )
+            )
 
         query_filter = Filter(must=conditions) if conditions else None
 
