@@ -83,6 +83,28 @@ _FILENAME_RE = re.compile(r"((?:WD|EU)\s*\d+)-(\d+)-(\d+)")
 _FILENAME_LANG_RE = re.compile(r"_([A-Z]{2})\.pdf$", re.IGNORECASE)
 
 
+def _normalize_fachbereich_number(raw: str) -> str:
+    """Bring a Fachbereich number to the canonical "WD 9" / "EU 6" form.
+
+    Two things go wrong with these, from two different sources. Text pulled
+    out of a PDF carries whatever spacing the layout produced, including tabs
+    and runs of spaces ("WD  9"), and filenames tend to drop the space
+    altogether ("WD9-100-21.pdf"). Both end up here, so insert the space if it
+    is missing and then collapse whatever whitespace is left.
+    """
+    spaced = re.sub(r"(WD|EU)\s*(\d)", r"\1 \2", raw.strip())
+    return re.sub(r"\s+", " ", spaced)
+
+
+def _format_az(fachbereich_number: str, number: str) -> str:
+    """Assemble the canonical Aktenzeichen: "WD 2 - 3000 - 029/25".
+
+    The one place that knows the shape. 3000 is the Wissenschaftliche Dienste
+    section and is the same for every document in the corpus.
+    """
+    return f"{_normalize_fachbereich_number(fachbereich_number)} - 3000 - {number}"
+
+
 def extract_metadata(
     markdown: str, furniture_text: str, source_file: str, pdf_metadata: dict | None = None
 ) -> DocumentMetadata:
@@ -124,14 +146,12 @@ def _extract_aktenzeichen(markdown: str, furniture_text: str, source_file: str) 
     # 2. Furniture layer (page headers/footers)
     match = _AZ_RE.search(furniture_text)
     if match:
-        fb = re.sub(r"\s+", " ", match.group(1).strip())
-        return f"{fb} - 3000 - {match.group(2)}"
+        return _format_az(match.group(1), match.group(2))
 
     # 3. Filename fallback: "WD 9-100-21.pdf"
     match = _FILENAME_RE.search(source_file)
     if match:
-        fb = re.sub(r"(WD|EU)(\d)", r"\1 \2", match.group(1).strip())
-        az = f"{fb} - 3000 - {match.group(2)}/{match.group(3)}"
+        az = _format_az(match.group(1), f"{match.group(2)}/{match.group(3)}")
         logger.info("Aktenzeichen derived from filename for %s: %s", source_file, az)
         return az
 
@@ -144,19 +164,16 @@ def _extract_fachbereich(markdown: str, furniture_text: str, aktenzeichen: str) 
     # 1. Labeled field in body: "Fachbereich: WD 9: Gesundheit, ..."
     match = _FB_LABELED_RE.search(markdown)
     if match:
-        number = re.sub(r"\s+", " ", match.group(1).strip())
-        return number, match.group(2).strip()
+        return _normalize_fachbereich_number(match.group(1)), match.group(2).strip()
 
     # 2. Furniture: "Fachbereich WD 6 (Arbeit und Soziales)"
     match = _FB_FULL_RE.search(furniture_text)
     if match:
-        number = re.sub(r"\s+", " ", match.group(1).strip())
-        return number, match.group(2).strip()
+        return _normalize_fachbereich_number(match.group(1)), match.group(2).strip()
 
     # 3. Derive from Aktenzeichen prefix + lookup table
     if aktenzeichen:
-        number = aktenzeichen.split(" - ")[0].strip()
-        number = re.sub(r"\s+", " ", number)
+        number = _normalize_fachbereich_number(aktenzeichen.split(" - ")[0])
         return number, FACHBEREICH_NAMES.get(number, number)
 
     return "", ""
@@ -344,8 +361,7 @@ def _normalize_az(raw: str) -> str:
     """Normalize Aktenzeichen spacing."""
     match = _AZ_RE.search(raw)
     if match:
-        fb = re.sub(r"\s+", " ", match.group(1).strip())
-        return f"{fb} - 3000 - {match.group(2)}"
+        return _format_az(match.group(1), match.group(2))
     return raw.strip()
 
 
