@@ -1,5 +1,5 @@
 <div style="background-color: #ffffff; color: #000000; padding: 10px;">
-<img src="00_aisc/img/logo_aisc_bmftr.jpg">
+<img src="brand/img/logo_aisc_bmftr.jpg">
 <h1>Sentra – RAG for Wissenschaftliche Dienste</h1>
 </div>
 
@@ -56,7 +56,7 @@ The simplest way to run the full stack.
 ### 1. Configure environment
 
 ```bash
-cp 02_backend/.env.example .env
+cp backend/.env.example .env
 ```
 
 Edit `.env` and set your AI Hub credentials:
@@ -86,9 +86,9 @@ Those are the host ports. Inside the container network the services listen on
 
 ### 3. Ingest documents
 
-Put the PDFs you want indexed in `03_data/Ausarbeitungen/`. That directory is not
+Put the PDFs you want indexed in `data/Ausarbeitungen/`. That directory is not
 tracked, so a fresh clone starts empty, and ingestion reads one directory without
-recursing. See `03_data/README.md`.
+recursing. See `data/README.md`.
 
 Then open the frontend at http://localhost:5173, navigate to **Dokumente**, and click
 **Dokumente einlesen**. This parses those PDFs and indexes them into Qdrant.
@@ -134,13 +134,13 @@ docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant:latest
 ### 2. Backend
 
 ```bash
-cd 02_backend
+cd backend
 
 # Create and configure environment
 cp .env.example .env
 # Edit .env — set AI_HUB_BASE_URL, AI_HUB_API_KEY
-# The example file already points DOCUMENTS_DIR at ../03_data/Ausarbeitungen,
-# which resolves correctly when you run the server from 02_backend.
+# The example file already points DOCUMENTS_DIR at ../data/Ausarbeitungen,
+# which resolves correctly when you run the server from backend/.
 
 # Install dependencies
 uv sync
@@ -154,7 +154,7 @@ The backend is now at http://localhost:8001 (Swagger UI at http://localhost:8001
 ### 3. Frontend
 
 ```bash
-cd 01_frontend
+cd frontend
 
 # Install dependencies
 npm install
@@ -163,7 +163,7 @@ npm install
 npm run dev
 ```
 
-The frontend is now at http://localhost:5173 and calls the backend at `localhost:8001`, which is what `01_frontend/.env.development` sets.
+The frontend is now at http://localhost:5173 and calls the backend at `localhost:8001`, which is what `frontend/.env.development` sets.
 
 ### 4. Ingest & search
 
@@ -174,23 +174,33 @@ Same as Docker — navigate to **Dokumente** → **Dokumente einlesen**, then sw
 ## Project Structure
 
 ```
-├── 00_aisc/              # Branding assets (HPI/AISC logos)
-├── 01_frontend/          # React frontend
+Ships:
+
+├── frontend/             # React frontend
 │   ├── src/
 │   │   ├── components/   # UI components
 │   │   ├── lib/          # API client, utilities
 │   │   └── types/        # TypeScript interfaces
 │   └── Dockerfile
-├── 02_backend/           # FastAPI backend
+├── backend/              # FastAPI backend
 │   ├── src/sentra/
 │   │   ├── api/          # Routes, request/response models
-│   │   ├── ingestion/    # PDF parsing, metadata extraction, chunking
+│   │   ├── services/     # Ingestion and query orchestration
 │   │   ├── rag/          # Embeddings, vector store, answer generation
-│   │   └── services/     # Ingestion and query orchestration
+│   │   ├── ingestion/    # PDF parsing, metadata extraction, chunking
+│   │   ├── domain/       # Framework-free types the layers above share
+│   │   └── config.py
 │   └── Dockerfile
-├── 03_data/              # Document corpus, not tracked. See 03_data/README.md
-│   └── Ausarbeitungen/
+├── k8s/                  # Kubernetes manifests
 └── docker-compose.yml
+
+Does not ship:
+
+├── data/                 # Document corpus, not tracked. See data/README.md
+│   └── Ausarbeitungen/
+├── docs/                 # Design notes and received documents
+├── notebooks/            # Exploratory analysis, own dependencies
+└── brand/                # HPI/AISC logos
 ```
 
 ## API Endpoints
@@ -206,6 +216,6 @@ Same as Docker — navigate to **Dokumente** → **Dokumente einlesen**, then sw
 
 ## Acknowledgements
 
-<img src="00_aisc/img/logo_bmftr_de.png" alt="BMFTR" style="width:170px;"/>
+<img src="brand/img/logo_bmftr_de.png" alt="BMFTR" style="width:170px;"/>
 
 The [AI Service Centre Berlin Brandenburg](http://hpi.de/kisz) is funded by the [Federal Ministry of Research, Technology and Space](https://www.bmbf.de/) under the funding code 01IS22092.

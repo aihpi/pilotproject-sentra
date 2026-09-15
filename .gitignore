@@ -199,7 +199,7 @@ cython_debug/
 
 # Document corpus. Operational data rather than source: the contents are whatever
 # has been ingested on a given machine, currently hundreds of megabytes. The test
-# fixtures are versioned separately, in 02_backend/tests/fixtures/corpus.
-# See 03_data/README.md.
-03_data/*
-!03_data/README.md
+# fixtures are versioned separately, in backend/tests/fixtures/corpus.
+# See data/README.md.
+data/*
+!data/README.md

@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: 02_backend
+        working-directory: backend
 
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +33,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-          cache-dependency-glob: "02_backend/uv.lock"
+          cache-dependency-glob: "backend/uv.lock"
 
       - name: Install the project and its dev dependencies
         run: uv sync --frozen
@@ -47,12 +47,12 @@ jobs:
       # ruff, ruff-format and mypy run through pre-commit rather than being
       # invoked directly here, so the hook and this pipeline cannot pin
       # different versions and start disagreeing with each other. The mypy hook
-      # shells into 02_backend and uses the environment synced above.
+      # shells into backend and uses the environment synced above.
       - name: Lint and type check
         working-directory: ${{ github.workspace }}
         run: uvx pre-commit run --all-files --show-diff-on-failure --color always
 
-      # The integration tier is excluded on purpose, see 02_backend/README.md.
+      # The integration tier is excluded on purpose, see backend/README.md.
       # It needs Qdrant with the corpus already ingested, which means a full
       # Docling run plus embedding calls against the AI Hub.
       - name: Offline test suite
@@ -63,16 +63,16 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: 01_frontend
+        working-directory: frontend
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20" # matches 01_frontend/Dockerfile
+          node-version: "20" # matches frontend/Dockerfile
           cache: npm
-          cache-dependency-path: 01_frontend/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci

@@ -14,10 +14,10 @@ repos:
         # Two or more trailing spaces are a hard line break in markdown, and the
         # PR template relies on them. Without this the hook silently reflows it.
         args: [--markdown-linebreak-ext=md]
-        exclude: ^references/
+        exclude: ^docs/
       - id: end-of-file-fixer
-        # references/ holds documents we received rather than source we own.
-        exclude: ^references/
+        # docs/ holds documents we received rather than source we own.
+        exclude: ^docs/
       - id: check-merge-conflict
       - id: check-yaml
       - id: check-toml
@@ -29,25 +29,25 @@ repos:
     hooks:
       - id: ruff-check
         args: [--fix]
-        files: ^02_backend/
+        files: ^backend/
       - id: ruff-format
-        files: ^02_backend/
+        files: ^backend/
 
   # mypy needs the project's own dependencies to resolve imports, so it runs
   # inside the backend's uv environment rather than an isolated hook env.
   - repo: local
     hooks:
       - id: mypy
-        name: mypy (02_backend)
-        entry: bash -c 'cd 02_backend && uv run mypy'
+        name: mypy (backend)
+        entry: bash -c 'cd backend && uv run mypy'
         language: system
         types: [python]
-        files: ^02_backend/src/
+        files: ^backend/src/
         pass_filenames: false
       - id: import-linter
-        name: import-linter (02_backend)
-        entry: bash -c 'cd 02_backend && uv run lint-imports'
+        name: import-linter (backend)
+        entry: bash -c 'cd backend && uv run lint-imports'
         language: system
         types: [python]
-        files: ^02_backend/src/
+        files: ^backend/src/
         pass_filenames: false

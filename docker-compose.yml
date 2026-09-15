@@ -1,13 +1,13 @@
 services:
   backend:
     build:
-      context: ./02_backend
+      context: ./backend
     ports:
       # host:container. 8000 is uvicorn inside the image, 8001 is the host.
       - "8001:8000"
     env_file:
       # The single source of configuration, shared with local runs and tests.
-      - 02_backend/.env
+      - backend/.env
     environment:
       # The three values that differ inside a container. Everything else comes
       # from the file above, so there is no second env file to keep in sync.
@@ -15,14 +15,14 @@ services:
       DOCUMENTS_DIR: /data/Ausarbeitungen
       FEEDBACK_FILE: /data/feedback.jsonl
     volumes:
-      - ./03_data:/data
+      - ./data:/data
     depends_on:
       qdrant:
         condition: service_started
 
   frontend:
     build:
-      context: ./01_frontend
+      context: ./frontend
     ports:
       # host:container. 80 is nginx inside the image, 5173 on the host to match
       # the port the vite dev server uses.
@@ -33,7 +33,7 @@ services:
   qdrant:
     # Pinned, not :latest. The client enforces a compatibility window of one
     # minor version, so a rolling server tag drifts out of it on its own. Keep
-    # this, qdrant-client in 02_backend/pyproject.toml, and
+    # this, qdrant-client in backend/pyproject.toml, and
     # k8s/qdrant/deployment.yaml on the same minor.
     image: qdrant/qdrant:v1.19.1
     ports:

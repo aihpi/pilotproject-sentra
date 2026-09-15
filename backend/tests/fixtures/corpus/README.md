@@ -4,7 +4,7 @@ Seventeen Bundestag WD documents, versioned with the tests that assert against
 them. `tests/conftest.py` points `DATA_DIR` here and holds a hand-written
 `GROUND_TRUTH` table keyed by these exact filenames.
 
-They are deliberately not read from `03_data`. That directory holds whatever
+They are deliberately not read from `data/`. That directory holds whatever
 corpus the operator has ingested, which is thousands of documents, and
 `test_ingestion_e2e.py` parses everything in `DATA_DIR` through Docling in a
 module-scoped fixture. Pointed at an operational corpus that takes over an hour
