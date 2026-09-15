@@ -30,8 +30,14 @@ from sentra.domain import (
 
 logger = logging.getLogger(__name__)
 
-# Octen-Embedding-8B embedding dimension
-EMBEDDING_DIM = 4096
+
+class DimensionMismatch(RuntimeError):
+    """An existing collection was built for a different vector width.
+
+    Raised at startup rather than on the first search. A collection cannot serve
+    vectors of a width it was not created with, so every query would fail; the
+    useful moment to say so is before the application claims to be healthy.
+    """
 
 
 def _payload_of(point: object) -> dict:
@@ -134,10 +140,12 @@ class _Collection:
         client: QdrantClient,
         name: str,
         indexed_fields: tuple[str, ...],
+        vector_size: int,
     ) -> None:
         self._client = client
         self.name = name
         self._indexed_fields = indexed_fields
+        self._vector_size = vector_size
 
     def _names(self) -> set[str]:
         return {c.name for c in self._client.get_collections().collections}
@@ -163,7 +171,7 @@ class _Collection:
 
         self._client.create_collection(
             collection_name=self.name,
-            vectors_config=VectorParams(size=EMBEDDING_DIM, distance=Distance.COSINE),
+            vectors_config=VectorParams(size=self._vector_size, distance=Distance.COSINE),
         )
         for field in self._indexed_fields:
             self._client.create_payload_index(
@@ -207,6 +215,25 @@ class _Collection:
             if offset is None:
                 return
 
+    def configured_vector_size(self) -> int | None:
+        """The width this collection was created with, or None if it is absent."""
+        if not self.exists():
+            return None
+        params = self._client.get_collection(collection_name=self.name).config.params
+        vectors = params.vectors
+        return getattr(vectors, "size", None)
+
+    def verify_vector_size(self) -> None:
+        """Refuse to continue if the collection cannot hold our vectors."""
+        actual = self.configured_vector_size()
+        if actual is not None and actual != self._vector_size:
+            raise DimensionMismatch(
+                f"Collection '{self.name}' was created for {actual}-dimensional "
+                f"vectors but EMBEDDING_DIM is {self._vector_size}. The embedding "
+                f"model was probably changed. Either set EMBEDDING_DIM back, or "
+                f"delete the collection and re-ingest."
+            )
+
     def delete(self) -> None:
         self._client.delete_collection(collection_name=self.name)
         logger.info("Deleted collection '%s'", self.name)
@@ -226,8 +253,28 @@ class VectorStore:
 
     def __init__(self, settings: Settings) -> None:
         self._client = QdrantClient(url=settings.qdrant_url)
-        self._chunks = _Collection(self._client, settings.collection_name, CHUNK_INDEXED_FIELDS)
-        self._docs = _Collection(self._client, settings.doc_collection_name, DOC_INDEXED_FIELDS)
+        self._chunks = _Collection(
+            self._client,
+            settings.collection_name,
+            CHUNK_INDEXED_FIELDS,
+            settings.embedding_dim,
+        )
+        self._docs = _Collection(
+            self._client,
+            settings.doc_collection_name,
+            DOC_INDEXED_FIELDS,
+            settings.embedding_dim,
+        )
+
+    def verify_dimensions(self) -> None:
+        """Check both collections can hold vectors of the configured width.
+
+        Costs one call per collection and no embedding, because it compares the
+        configured width against what Qdrant already recorded when the
+        collection was created.
+        """
+        self._chunks.verify_vector_size()
+        self._docs.verify_vector_size()
 
     def ensure_collection(self) -> None:
         """Create the chunk collection if it doesn't exist."""

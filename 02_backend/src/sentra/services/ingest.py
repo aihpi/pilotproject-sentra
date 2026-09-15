@@ -3,6 +3,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from sentra.config import Settings
 from sentra.ingestion.chunker import Chunk, chunk_document
 from sentra.ingestion.metadata import extract_metadata
 from sentra.ingestion.parser import parse_pdfs
@@ -40,7 +41,7 @@ def get_ingestion_progress() -> IngestionProgress:
 def run_ingestion(
     store: VectorStore,
     embedder: EmbeddingClient,
-    documents_dir: str,
+    settings: Settings,
     force: bool = False,
 ) -> None:
     """Run the full document ingestion pipeline as a background task.
@@ -56,7 +57,7 @@ def run_ingestion(
     )
 
     try:
-        _run_ingestion_inner(store, embedder, documents_dir, force)
+        _run_ingestion_inner(store, embedder, settings, force)
     except Exception as e:
         msg = f"Ingestion failed: {e}"
         logger.exception(msg)
@@ -80,7 +81,7 @@ def run_ingestion(
 def _run_ingestion_inner(
     store: VectorStore,
     embedder: EmbeddingClient,
-    documents_dir: str,
+    settings: Settings,
     force: bool,
 ) -> None:
     """Inner ingestion logic — processes documents one by one."""
@@ -103,7 +104,7 @@ def _run_ingestion_inner(
     # Count total files and pre-filter for incremental ingestion
     from pathlib import Path
 
-    pdf_dir = Path(documents_dir)
+    pdf_dir = Path(settings.documents_dir)
     all_pdf_paths = sorted(pdf_dir.glob("*.pdf"))
 
     if not all_pdf_paths:
@@ -133,7 +134,7 @@ def _run_ingestion_inner(
         _progress.skipped,
     )
 
-    for doc in parse_pdfs(documents_dir, pdf_paths=paths_to_process):
+    for doc in parse_pdfs(settings.documents_dir, pdf_paths=paths_to_process):
         doc_start = time.monotonic()
         _progress.current_file = doc.source_file
 
@@ -144,7 +145,7 @@ def _run_ingestion_inner(
             )
 
             # Chunk
-            chunks = chunk_document(doc.markdown, metadata)
+            chunks = chunk_document(doc.markdown, metadata, max_tokens=settings.chunk_max_tokens)
 
             if not chunks:
                 _progress.processed += 1

@@ -28,6 +28,10 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
 
     store = VectorStore(settings)
+    # Before creating anything: an existing collection built for a different
+    # vector width cannot serve our vectors, so every query would fail. Better
+    # to refuse here than to come up healthy and fail on first search.
+    store.verify_dimensions()
     store.ensure_collection()
     store.ensure_doc_collection()
 
@@ -52,8 +56,9 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    # 5173 is the vite dev server. Nothing serves on 3000.
-    allow_origins=["http://localhost:5173"],
+    # Only the vite dev server calls this cross-origin. Under docker compose
+    # nginx proxies /api, so the browser sees one origin and CORS never applies.
+    allow_origins=get_settings().cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

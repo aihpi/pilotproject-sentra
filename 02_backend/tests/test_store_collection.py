@@ -43,6 +43,7 @@ class FakeClient:
     raise_on_get_collections: bool = False
 
     created: list[str] = field(default_factory=list)
+    created_sizes: list[int] = field(default_factory=list)
     indexes: list[tuple[str, str]] = field(default_factory=list)
     upserts: list[tuple[str, int, bool]] = field(default_factory=list)
     scroll_calls: list[dict] = field(default_factory=list)
@@ -55,6 +56,7 @@ class FakeClient:
 
     def create_collection(self, collection_name: str, vectors_config: Any) -> None:
         self.created.append(collection_name)
+        self.created_sizes.append(vectors_config.size)
 
     def create_payload_index(
         self, collection_name: str, field_name: str, field_schema: Any
@@ -72,8 +74,13 @@ class FakeClient:
         self.deleted.append(collection_name)
 
 
-def make(client: FakeClient, name: str = "chunks", fields=CHUNK_INDEXED_FIELDS) -> _Collection:
-    return _Collection(client, name, fields)  # type: ignore[arg-type]
+def make(
+    client: FakeClient,
+    name: str = "chunks",
+    fields=CHUNK_INDEXED_FIELDS,
+    vector_size: int = 4096,
+) -> _Collection:
+    return _Collection(client, name, fields, vector_size)  # type: ignore[arg-type]
 
 
 class TestEnsure:
@@ -97,6 +104,12 @@ class TestEnsure:
         client = FakeClient(existing=["something-else"])
         make(client).ensure()
         assert client.created == ["chunks"]
+
+    def test_created_at_the_configured_vector_width(self):
+        """A collection built at the wrong width cannot serve our vectors."""
+        client = FakeClient(existing=[])
+        make(client, vector_size=1536).ensure()
+        assert client.created_sizes == [1536]
 
     def test_the_two_field_lists_are_what_the_halves_used(self):
         """Pins the lists copied out of the two hand-written ensure methods."""
