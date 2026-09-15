@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from sentra.api.errors import register_error_handlers
 from sentra.api.routes import router
 from sentra.config import get_settings
 from sentra.rag.embeddings import EmbeddingClient
@@ -64,4 +65,5 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+register_error_handlers(app)
 app.include_router(router)

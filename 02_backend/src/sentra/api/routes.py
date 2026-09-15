@@ -111,12 +111,17 @@ def ingest_status() -> IngestionStatusResponse:
 def list_documents(
     store: VectorStore = Depends(get_store),
 ) -> list[DocumentInfo]:
-    """List all indexed documents with metadata."""
-    try:
-        info = store.collection_info()
-        if info["points_count"] == 0:
-            return []
-    except Exception:
+    """List all indexed documents with metadata.
+
+    An index that does not exist yet, or exists and is empty, is an empty
+    list. A Qdrant that cannot be reached is not: that used to be caught here
+    and reported as an empty index, which left the frontend unable to tell the
+    two apart. It now reaches the 503 handler.
+    """
+    if not store.collection_exists():
+        return []
+
+    if store.collection_info()["points_count"] == 0:
         return []
 
     raw_docs = store.scroll_all_documents()
@@ -180,10 +185,21 @@ def submit_feedback(
     }
 
     feedback_path = Path(settings.feedback_file)
-    feedback_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(feedback_path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(feedback_entry, ensure_ascii=False) + "\n")
+    # A full or unwritable disk is a dependency failure like any other, and
+    # this one surfaced as a bare 500 with a traceback. The rating is already
+    # lost at this point either way; the caller at least learns it was not
+    # their request that was wrong.
+    try:
+        feedback_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(feedback_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(feedback_entry, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        logger.error("Could not write feedback to %s: %s", feedback_path, exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Rückmeldung konnte nicht gespeichert werden.",
+        ) from exc
 
     logger.info("Feedback recorded: %s", body.rating)
     return FeedbackResponse(status="ok")
