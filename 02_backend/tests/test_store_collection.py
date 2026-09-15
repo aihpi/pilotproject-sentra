@@ -16,6 +16,8 @@ Run:  uv run pytest tests/test_store_collection.py -v
 from dataclasses import dataclass, field
 from typing import Any
 
+import pytest
+
 from sentra.rag.store import (
     CHUNK_INDEXED_FIELDS,
     DOC_INDEXED_FIELDS,
@@ -134,8 +136,24 @@ class TestExists:
         assert make(FakeClient(existing=[])).exists() is False
 
     def test_false_rather_than_raising_when_qdrant_is_down(self):
-        """Callers use this to ask whether there is anything to read yet."""
+        """The tolerant default, for callers that fail loudly a moment later."""
         assert make(FakeClient(raise_on_get_collections=True)).exists() is False
+
+    def test_strict_mode_raises_when_qdrant_is_down(self):
+        """What anything user-facing has to ask.
+
+        The tolerant answer conflates "no collection" with "cannot tell",
+        which is how an unreachable Qdrant came to look like an empty index:
+        the router swallowed the exception, and after that was removed this
+        method was still swallowing it one layer down.
+        """
+        with pytest.raises(ConnectionError):
+            make(FakeClient(raise_on_get_collections=True)).exists(tolerate_unreachable=False)
+
+    def test_strict_mode_still_answers_normally(self):
+        client = FakeClient(existing=["chunks"])
+        assert make(client).exists(tolerate_unreachable=False) is True
+        assert make(FakeClient(existing=[])).exists(tolerate_unreachable=False) is False
 
     def test_ensure_still_raises_when_qdrant_is_down(self):
         """Unlike exists, startup must fail loudly rather than silently create."""

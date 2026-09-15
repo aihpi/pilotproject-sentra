@@ -150,14 +150,24 @@ class _Collection:
     def _names(self) -> set[str]:
         return {c.name for c in self._client.get_collections().collections}
 
-    def exists(self) -> bool:
-        """Whether the collection is there, False if Qdrant cannot be reached.
+    def exists(self, *, tolerate_unreachable: bool = True) -> bool:
+        """Whether the collection is there.
 
-        Tolerant on purpose: callers use this to decide whether there is
-        anything to read yet, and "not reachable" and "not created" lead to the
-        same empty answer. `ensure` deliberately does not use it, so that a
-        startup against a dead Qdrant still fails loudly.
+        Two callers want different things from a Qdrant they cannot reach, so
+        which one it is has to be said at the call site.
+
+        Tolerant, the default: "not reachable" and "not created" both come
+        back False. That suits callers who fail loudly a moment later anyway,
+        and `ensure` deliberately does not use this at all so that a startup
+        against a dead Qdrant still fails.
+
+        Strict: the failure propagates, and something above turns it into a
+        503. Anything user-facing wants this. Answering "there is no
+        collection" when the truth is "we cannot tell" is how an outage came
+        to look like an empty index.
         """
+        if not tolerate_unreachable:
+            return self.name in self._names()
         try:
             return self.name in self._names()
         except Exception:
@@ -386,6 +396,15 @@ class VectorStore:
     def delete_collection(self) -> None:
         """Delete the collection (useful for re-ingestion)."""
         self._chunks.delete()
+
+    def collection_exists(self) -> bool:
+        """Whether the chunk collection has been created yet.
+
+        Distinct from it being empty, and distinct again from Qdrant being
+        unreachable: before the first ingestion there is no collection, and
+        that is not an error.
+        """
+        return self._chunks.exists(tolerate_unreachable=False)
 
     def collection_info(self) -> dict:
         """Get collection statistics."""
