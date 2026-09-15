@@ -115,6 +115,13 @@ def _run_ingestion_inner(
     paths_to_process: list[Path] = []
     filesystem_files: set[str] = {p.name for p in all_pdf_paths}
 
+    # Before any of the early returns below. Both sets are complete here and
+    # neither changes while documents are processed, so the answer is the same
+    # as it would be at the end of the run, and it is now also reported on the
+    # run where it matters most: the one that finds everything already indexed
+    # and processes nothing.
+    _record_stale_documents(indexed_files, filesystem_files)
+
     for p in all_pdf_paths:
         if not force and p.name in indexed_files:
             _progress.skipped += 1
@@ -183,16 +190,34 @@ def _run_ingestion_inner(
 
     _progress.current_file = ""
 
-    # Detect stale documents (in Qdrant but not on filesystem), keyed by filename.
-    if indexed_files and filesystem_files:
-        stale = indexed_files - filesystem_files
-        if stale:
-            _progress.stale_documents = sorted(stale)
-            logger.warning(
-                "Found %d stale documents in Qdrant not on filesystem: %s",
-                len(stale),
-                ", ".join(sorted(stale)[:10]),
-            )
+
+def _record_stale_documents(indexed_files: set[str], filesystem_files: set[str]) -> None:
+    """Report documents that are in Qdrant with no matching file on disk.
+
+    Deliberately takes the two sets rather than reading them itself, so that
+    it cannot end up depending on where in the run it is called from. It used
+    to sit at the end of run_ingestion, after a return that fires whenever
+    every file is already indexed, which is the steady state: the check went
+    four months without running.
+
+    Stays silent when either set is empty. An empty index has nothing to be
+    stale, and an empty directory means the documents are not where we are
+    looking, which would otherwise report every indexed document as stale.
+    That covers a forced run too, where indexed_files is never loaded.
+    """
+    if not indexed_files or not filesystem_files:
+        return
+
+    stale = indexed_files - filesystem_files
+    if not stale:
+        return
+
+    _progress.stale_documents = sorted(stale)
+    logger.warning(
+        "Found %d stale documents in Qdrant not on filesystem: %s",
+        len(stale),
+        ", ".join(sorted(stale)[:10]),
+    )
 
 
 def _store_doc_record(
