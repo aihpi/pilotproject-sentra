@@ -195,6 +195,7 @@ uv run pytest -m "not integration"   # 274 tests, no services needed. This is wh
 uv run pytest -m integration         # 77 tests, needs Qdrant and the AI Hub
 
 cd frontend
+npm test                             # 26 component tests in jsdom, no browser needed
 npm run build                        # tsc -b, then vite build
 npm run lint
 ```
@@ -207,6 +208,10 @@ The integration tier is not in CI, and the reason is cost rather than
 difficulty: every run embeds live queries and calls the chat model. It uses its
 own index built from `backend/tests/fixtures/corpus`, so it never reads whatever
 you have ingested.
+
+The frontend tests are vitest plus testing-library, sharing `vite.config.ts`
+so the `@` alias is defined once. They cover the explorer components that take
+plain props, and CI runs them next to the linter.
 
 Note that `npx tsc --noEmit` checks **nothing** in this repository: the root
 `tsconfig.json` uses project references with `"files": []`, so it exits 0 without

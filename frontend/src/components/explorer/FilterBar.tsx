@@ -48,7 +48,7 @@ export function FilterBar({
           value={dateFrom || "__all__"}
           onValueChange={(v) => onDateFromChange(v === "__all__" ? "" : v)}
         >
-          <SelectTrigger className="h-8 w-[80px] text-xs">
+          <SelectTrigger className="h-8 w-[80px] text-xs" aria-label="Zeitraum von">
             <SelectValue placeholder="Von" />
           </SelectTrigger>
           <SelectContent>
@@ -65,7 +65,7 @@ export function FilterBar({
           value={dateTo || "__all__"}
           onValueChange={(v) => onDateToChange(v === "__all__" ? "" : v)}
         >
-          <SelectTrigger className="h-8 w-[80px] text-xs">
+          <SelectTrigger className="h-8 w-[80px] text-xs" aria-label="Zeitraum bis">
             <SelectValue placeholder="Bis" />
           </SelectTrigger>
           <SelectContent>
@@ -84,7 +84,7 @@ export function FilterBar({
         value={documentType || "__all__"}
         onValueChange={(v) => onDocumentTypeChange(v === "__all__" ? null : v)}
       >
-        <SelectTrigger className="h-8 w-[150px] text-xs">
+        <SelectTrigger className="h-8 w-[150px] text-xs" aria-label="Dokumenttyp">
           <SelectValue placeholder="Dokumenttyp" />
         </SelectTrigger>
         <SelectContent>
@@ -102,7 +102,7 @@ export function FilterBar({
         value={fachbereich || "__all__"}
         onValueChange={(v) => onFachbereichChange(v === "__all__" ? null : v)}
       >
-        <SelectTrigger className="h-8 w-[110px] text-xs">
+        <SelectTrigger className="h-8 w-[110px] text-xs" aria-label="Referat">
           <SelectValue placeholder="Referat" />
         </SelectTrigger>
         <SelectContent>

@@ -80,6 +80,11 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # jsdom only, no browser and no services, so this belongs in the same
+      # gate as the linter rather than in a tier of its own.
+      - name: Tests
+        run: npm test
+
       # `npm run build` is `tsc -b && vite build`, so this type checks and then
       # proves the bundle the image actually ships still builds.
       - name: Type check and build
