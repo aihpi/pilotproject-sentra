@@ -157,7 +157,9 @@ class AnswerRequest(BaseModel):
     date_range: DateRange | None = None
     fachbereich: str | None = None
     document_type: str | None = None
-    top_k: int = 10
+    # Omit to use RETRIEVAL_TOP_K. The other endpoints keep literal defaults
+    # because they count documents rather than chunks.
+    top_k: int | None = None
     system_prompt: str | None = None
 
 

@@ -67,7 +67,7 @@ def build(force: bool = False) -> int:
         return 0
 
     log.info("Indexing %d fixture documents into '%s'", len(pdfs), TEST_COLLECTION)
-    run_ingestion(store, EmbeddingClient(settings), str(DATA_DIR), force=force)
+    run_ingestion(store, EmbeddingClient(settings), settings, force=force)
 
     info = store.collection_info()
     log.info("Done: %d points in '%s'", info["points_count"], TEST_COLLECTION)

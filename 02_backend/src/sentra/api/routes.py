@@ -75,7 +75,7 @@ def ingest(
     logger.info("Ingestion triggered via API (force=%s)", force)
     thread = threading.Thread(
         target=run_ingestion,
-        args=(store, embedder, settings.documents_dir, force),
+        args=(store, embedder, settings, force),
         daemon=True,
     )
     thread.start()
@@ -271,6 +271,7 @@ def explorer_answer(
     store: VectorStore = Depends(get_store),
     embedder: EmbeddingClient = Depends(get_embedder),
     generator: AnswerGenerator = Depends(get_generator),
+    settings: Settings = Depends(get_settings),
 ) -> GeneratedAnswerResponse:
     """UC#10: Answer a specific Fachfrage."""
     date_from, date_to = date_range_params(body.date_range)
@@ -278,7 +279,7 @@ def explorer_answer(
         query=body.query,
         date_from=date_from,
         date_to=date_to,
-        top_k=body.top_k,
+        top_k=body.top_k or settings.retrieval_top_k,
         store=store,
         embedder=embedder,
         generator=generator,
@@ -299,6 +300,7 @@ def explorer_overview(
     store: VectorStore = Depends(get_store),
     embedder: EmbeddingClient = Depends(get_embedder),
     generator: AnswerGenerator = Depends(get_generator),
+    settings: Settings = Depends(get_settings),
 ) -> GeneratedAnswerResponse:
     """UC#2: Generate a structured topic overview."""
     date_from, date_to = date_range_params(body.date_range)
@@ -306,7 +308,7 @@ def explorer_overview(
         query=body.query,
         date_from=date_from,
         date_to=date_to,
-        top_k=body.top_k,
+        top_k=body.top_k or settings.retrieval_top_k,
         store=store,
         embedder=embedder,
         generator=generator,
