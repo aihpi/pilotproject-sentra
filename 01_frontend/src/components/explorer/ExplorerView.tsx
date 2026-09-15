@@ -1,315 +1,35 @@
-import { useState, useRef, useEffect } from "react";
-import { cn } from "@/lib/utils";
-import { Input } from "@/components/ui/input";
+import { useEffect, useState } from "react";
+
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
+import { fetchConfig } from "@/lib/api";
+import type { AppConfig } from "@/types";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import {
-  Search,
-  FolderSearch,
-  MessageSquareText,
-  FileStack,
-  Globe,
-  HelpCircle,
-  BookOpenText,
   ArrowRight,
+  FolderSearch,
   Loader2,
-  AlertCircle,
+  MessageSquareText,
   SlidersHorizontal,
-  X,
   Sparkles,
-  RotateCcw,
+  X,
 } from "lucide-react";
-import { DocumentList } from "./DocumentList";
-import { GeneratedAnswer } from "./GeneratedAnswer";
-import { SourceUrlList } from "./SourceUrlList";
-import {
-  searchDocumentsByTopic,
-  findSimilarDocuments,
-  findExternalSources,
-  answerQuestion,
-  generateOverview,
-  fetchDocuments,
-  fetchConfig,
-} from "@/lib/api";
-import type {
-  AppConfig,
-  ReferatOption,
-  DocumentResult,
-  GeneratedAnswerResult,
-  ExternalSourceResult,
-  DocumentInfo,
-} from "@/types";
 
-// --- Types ---
+import { DocumentAutocomplete } from "./DocumentAutocomplete";
+import { FilterBar } from "./FilterBar";
+import { PromptDialog } from "./PromptDialog";
+import { ResultPanel } from "./ResultPanel";
+import { DOC_SUB_MODES, FRAGEN_SUB_MODES } from "./subModes";
+import type { DocSubMode, FragenSubMode, SubMode, Tab } from "./types";
+import { useExplorerSearch } from "./useExplorerSearch";
 
-type Tab = "dokumente" | "fragen";
-type DocSubMode = "thema" | "aehnliche" | "quellen";
-type FragenSubMode = "fachfrage" | "ueberblick";
-type SubMode = DocSubMode | FragenSubMode;
-
-interface SubModeConfig {
-  id: SubMode;
-  label: string;
-  icon: React.ReactNode;
-  placeholder: string;
-  description: string;
-}
-
-// --- Sub-mode definitions ---
-
-const DOC_SUB_MODES: SubModeConfig[] = [
-  {
-    id: "thema",
-    label: "Nach Thema",
-    icon: <Search className="h-3.5 w-3.5" />,
-    placeholder: "Thema eingeben, z.B. „CO₂-Bepreisung“",
-    description: "Zeigt alle vorhandenen Dokumente zu einem Thema",
-  },
-  {
-    id: "aehnliche",
-    label: "Ähnliche Dokumente",
-    icon: <FileStack className="h-3.5 w-3.5" />,
-    placeholder: "Aktenzeichen oder Titel eingeben…",
-    description: "Findet ähnliche Dokumente zu einem bestehenden Dokument",
-  },
-  {
-    id: "quellen",
-    label: "Externe Quellen",
-    icon: <Globe className="h-3.5 w-3.5" />,
-    placeholder: "Thema eingeben, z.B. „CO₂-Bepreisung“",
-    description: "Zeigt externe Quellen und Datenportale aus unseren Dokumenten",
-  },
-];
-
-const FRAGEN_SUB_MODES: SubModeConfig[] = [
-  {
-    id: "fachfrage",
-    label: "Fachfrage",
-    icon: <HelpCircle className="h-3.5 w-3.5" />,
-    placeholder: "Frage eingeben, z.B. „Wann tritt ETS 2 in Kraft?“",
-    description: "Beantwortet eine konkrete Frage mit Quellenbezug",
-  },
-  {
-    id: "ueberblick",
-    label: "Themenüberblick",
-    icon: <BookOpenText className="h-3.5 w-3.5" />,
-    placeholder: "Thema eingeben, z.B. „CO₂-Bepreisung“",
-    description: "Erstellt eine strukturierte Übersicht zum aktuellen Wissensstand",
-  },
-];
-
-// --- Autocomplete dropdown ---
-
-function DocumentAutocomplete({
-  value,
-  onChange,
-  onKeyDown,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  onKeyDown?: (e: React.KeyboardEvent) => void;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [suggestions, setSuggestions] = useState<DocumentInfo[]>([]);
-  const ref = useRef<HTMLDivElement>(null);
-
-  // Load document list for autocomplete
-  useEffect(() => {
-    fetchDocuments()
-      .then(setSuggestions)
-      .catch(() => setSuggestions([]));
-  }, []);
-
-  const filtered =
-    value.length > 0
-      ? suggestions.filter(
-          (d) =>
-            d.aktenzeichen.toLowerCase().includes(value.toLowerCase()) ||
-            d.title.toLowerCase().includes(value.toLowerCase()),
-        )
-      : suggestions;
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  return (
-    <div ref={ref} className="relative flex-1">
-      <Input
-        value={value}
-        onChange={(e) => {
-          onChange(e.target.value);
-          setIsOpen(true);
-        }}
-        onKeyDown={onKeyDown}
-        onFocus={() => setIsOpen(true)}
-        placeholder="Aktenzeichen oder Titel eingeben…"
-        className="h-11 text-sm"
-      />
-      {isOpen && filtered.length > 0 && (
-        <div className="absolute z-50 mt-1 w-full rounded-lg border bg-card shadow-lg">
-          <div className="max-h-56 overflow-y-auto p-1">
-            {filtered.map((doc) => (
-              <button
-                key={doc.aktenzeichen}
-                className="flex w-full items-start gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
-                onClick={() => {
-                  onChange(doc.aktenzeichen);
-                  setIsOpen(false);
-                }}
-              >
-                <span className="shrink-0 font-mono text-xs text-muted-foreground mt-0.5">
-                  {doc.aktenzeichen}
-                </span>
-                <span className="text-xs text-foreground line-clamp-1">
-                  {doc.title}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// --- Filter bar ---
-
-function FilterBar({
-  dateFrom,
-  dateTo,
-  onDateFromChange,
-  onDateToChange,
-  fachbereich,
-  onFachbereichChange,
-  documentType,
-  onDocumentTypeChange,
-  documentTypes,
-  referate,
-}: {
-  dateFrom: string;
-  dateTo: string;
-  onDateFromChange: (v: string) => void;
-  onDateToChange: (v: string) => void;
-  fachbereich: string | null;
-  onFachbereichChange: (v: string | null) => void;
-  documentType: string | null;
-  onDocumentTypeChange: (v: string | null) => void;
-  /** Served by GET /api/config. Empty while that request is in flight. */
-  documentTypes: string[];
-  referate: ReferatOption[];
-}) {
-  const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: currentYear - 2014 }, (_, i) => 2015 + i);
-
-  return (
-    <div className="flex flex-wrap items-center gap-3">
-      {/* Zeitraum */}
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground whitespace-nowrap">Zeitraum:</span>
-        <Select
-          value={dateFrom || "__all__"}
-          onValueChange={(v) => onDateFromChange(v === "__all__" ? "" : v)}
-        >
-          <SelectTrigger className="h-8 w-[80px] text-xs">
-            <SelectValue placeholder="Von" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">Von</SelectItem>
-            {years.map((y) => (
-              <SelectItem key={y} value={String(y)}>
-                {y}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <span className="text-xs text-muted-foreground">&ndash;</span>
-        <Select
-          value={dateTo || "__all__"}
-          onValueChange={(v) => onDateToChange(v === "__all__" ? "" : v)}
-        >
-          <SelectTrigger className="h-8 w-[80px] text-xs">
-            <SelectValue placeholder="Bis" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">Bis</SelectItem>
-            {years.map((y) => (
-              <SelectItem key={y} value={String(y)}>
-                {y}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Dokumenttyp */}
-      <Select
-        value={documentType || "__all__"}
-        onValueChange={(v) => onDocumentTypeChange(v === "__all__" ? null : v)}
-      >
-        <SelectTrigger className="h-8 w-[150px] text-xs">
-          <SelectValue placeholder="Dokumenttyp" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__all__">Alle Typen</SelectItem>
-          {documentTypes.map((dt) => (
-            <SelectItem key={dt} value={dt}>
-              {dt}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      {/* Referat */}
-      <Select
-        value={fachbereich || "__all__"}
-        onValueChange={(v) => onFachbereichChange(v === "__all__" ? null : v)}
-      >
-        <SelectTrigger className="h-8 w-[110px] text-xs">
-          <SelectValue placeholder="Referat" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__all__">Alle Referate</SelectItem>
-          {referate.map((r) => (
-            <SelectItem key={r.number} value={r.number} title={r.name}>
-              {r.number}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
-
-// --- Result state ---
-
-type ResultData =
-  | { type: "documents"; documents: DocumentResult[]; referenceDoc?: string }
-  | { type: "answer"; result: GeneratedAnswerResult; query: string }
-  | { type: "sources"; sources: ExternalSourceResult[] };
-
-// --- Main ExplorerView ---
-
+/** The explorer screen: pick a mode, type something, look at what came back.
+ *
+ * What is left here is the control surface and the state it needs. The pieces
+ * that can be described on their own moved out: the suggestion input, the
+ * filter bar, the prompt editor, the result panel, and the decision about
+ * which endpoint each sub-mode calls.
+ */
 export function ExplorerView() {
   const [activeTab, setActiveTab] = useState<Tab>("dokumente");
   const [docSubMode, setDocSubMode] = useState<DocSubMode>("thema");
@@ -320,11 +40,11 @@ export function ExplorerView() {
   const [fachbereich, setFachbereich] = useState<string | null>(null);
   const [documentType, setDocumentType] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [resultData, setResultData] = useState<ResultData | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  // Prompt customisation (only for fragen modes)
+  const { isLoading, result, error, search, clear, setError } = useExplorerSearch();
+
+  // Prompt customisation, only for the fragen modes. Null means "use the
+  // server's default" rather than "empty prompt".
   const [customPrompts, setCustomPrompts] = useState<Record<string, string | null>>({
     fachfrage: null,
     ueberblick: null,
@@ -356,7 +76,7 @@ export function ExplorerView() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [setError]);
 
   const currentSubMode = activeTab === "dokumente" ? docSubMode : fragenSubMode;
   const subModes = activeTab === "dokumente" ? DOC_SUB_MODES : FRAGEN_SUB_MODES;
@@ -382,8 +102,7 @@ export function ExplorerView() {
   const handleTabChange = (tab: Tab) => {
     setActiveTab(tab);
     setQuery("");
-    setResultData(null);
-    setError(null);
+    clear();
     setFachbereich(null);
     setDocumentType(null);
     setDateFrom("");
@@ -394,96 +113,20 @@ export function ExplorerView() {
     if (activeTab === "dokumente") setDocSubMode(mode as DocSubMode);
     else setFragenSubMode(mode as FragenSubMode);
     setQuery("");
-    setResultData(null);
-    setError(null);
+    clear();
   };
 
-  const handleSearch = async () => {
-    if (!query.trim()) return;
-    setIsLoading(true);
-    setResultData(null);
-    setError(null);
-
-    try {
-      switch (currentSubMode) {
-        case "thema": {
-          const docs = await searchDocumentsByTopic(query, dateRange, 20, filters);
-          setResultData({ type: "documents", documents: docs });
-          break;
-        }
-        case "aehnliche": {
-          const docs = await findSimilarDocuments(query);
-          setResultData({ type: "documents", documents: docs, referenceDoc: query });
-          break;
-        }
-        case "quellen": {
-          const sources = await findExternalSources(query, dateRange, filters);
-          setResultData({ type: "sources", sources });
-          break;
-        }
-        case "fachfrage": {
-          const result = await answerQuestion(query, dateRange, 10, filters, customPrompts.fachfrage);
-          setResultData({ type: "answer", result, query });
-          break;
-        }
-        case "ueberblick": {
-          const result = await generateOverview(query, dateRange, 10, filters, customPrompts.ueberblick);
-          setResultData({ type: "answer", result, query });
-          break;
-        }
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Ein Fehler ist aufgetreten.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const handleSearch = () =>
+    search({
+      query,
+      subMode: currentSubMode,
+      dateRange,
+      filters,
+      customPrompt: customPrompts[currentSubMode],
+    });
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") handleSearch();
-  };
-
-  // --- Render results based on current mode ---
-  const renderResults = () => {
-    if (isLoading) {
-      return (
-        <div className="flex items-center justify-center py-16">
-          <div className="flex flex-col items-center gap-3">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">Suche läuft…</p>
-          </div>
-        </div>
-      );
-    }
-
-    if (error) {
-      return (
-        <div className="flex items-center justify-center py-16">
-          <div className="flex flex-col items-center gap-3 text-center">
-            <AlertCircle className="h-6 w-6 text-destructive" />
-            <p className="text-sm text-destructive">{error}</p>
-          </div>
-        </div>
-      );
-    }
-
-    if (!resultData) return null;
-
-    switch (resultData.type) {
-      case "documents":
-        return (
-          <DocumentList
-            documents={resultData.documents}
-            referenceDoc={resultData.referenceDoc}
-          />
-        );
-      case "answer":
-        return (
-          <GeneratedAnswer result={resultData.result} query={resultData.query} />
-        );
-      case "sources":
-        return <SourceUrlList sources={resultData.sources} />;
-    }
   };
 
   return (
@@ -667,68 +310,19 @@ export function ExplorerView() {
       </div>
 
       {/* Results */}
-      <div className="mt-6">{renderResults()}</div>
-
-      {/* Prompt editor dialog */}
-      <Dialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-primary" />
-              KI-Anweisungen
-            </DialogTitle>
-            <DialogDescription>
-              Passen Sie die Anweisungen an, die die KI bei der Beantwortung
-              verwendet. Änderungen wirken sich auf alle zukünftigen Antworten
-              in diesem Modus aus.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="py-2">
-            <textarea
-              value={draftPrompt}
-              onChange={(e) => setDraftPrompt(e.target.value)}
-              className="min-h-[220px] w-full rounded-lg border bg-muted/30 p-3 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/20 resize-y font-mono"
-              placeholder="Anweisungen eingeben…"
-            />
-          </div>
-
-          <DialogFooter className="flex items-center justify-between gap-2 sm:justify-between">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setDraftPrompt(defaultPrompt);
-              }}
-              className="gap-1.5 text-muted-foreground"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              Standard wiederherstellen
-            </Button>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setPromptDialogOpen(false)}
-              >
-                Abbrechen
-              </Button>
-              <Button
-                onClick={() => {
-                  const isCustom =
-                    draftPrompt.trim() !== defaultPrompt.trim();
-                  setCustomPrompts((prev) => ({
-                    ...prev,
-                    [currentSubMode]: isCustom ? draftPrompt : null,
-                  }));
-                  setPromptDialogOpen(false);
-                }}
-              >
-                Übernehmen
-              </Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <div className="mt-6">
+        <ResultPanel isLoading={isLoading} error={error} result={result} />
+      </div>
+      <PromptDialog
+        open={promptDialogOpen}
+        onOpenChange={setPromptDialogOpen}
+        draft={draftPrompt}
+        onDraftChange={setDraftPrompt}
+        defaultPrompt={defaultPrompt}
+        onApply={(prompt) =>
+          setCustomPrompts((prev) => ({ ...prev, [currentSubMode]: prompt }))
+        }
+      />
     </div>
   );
 }
