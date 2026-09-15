@@ -43,8 +43,11 @@ import {
   answerQuestion,
   generateOverview,
   fetchDocuments,
+  fetchConfig,
 } from "@/lib/api";
 import type {
+  AppConfig,
+  ReferatOption,
   DocumentResult,
   GeneratedAnswerResult,
   ExternalSourceResult,
@@ -190,50 +193,6 @@ function DocumentAutocomplete({
   );
 }
 
-// --- Default LLM prompts (must match backend defaults) ---
-
-const DEFAULT_FACHFRAGE_PROMPT = `Du bist ein Assistent der Wissenschaftlichen Dienste des Deutschen Bundestages.
-
-Beantworte die folgende Fachfrage präzise und direkt auf Basis der bereitgestellten Kontextauszüge.
-
-Regeln:
-- Gib eine klare, fokussierte Antwort auf die konkrete Frage.
-- Verwende nummerierte Quellenverweise **[1]**, **[2]** usw. im Text.
-- Jede Quellennummer bezieht sich auf das Aktenzeichen der jeweiligen Quelle (in der Reihenfolge ihres ersten Auftretens).
-- Wenn der Kontext die Frage nicht ausreichend beantwortet, sage dies ehrlich.
-- Antworte auf Deutsch.
-- Erfinde keine Informationen, die nicht im Kontext enthalten sind.
-- Halte die Antwort kompakt (max. 3–4 Absätze).`;
-
-const DEFAULT_OVERVIEW_PROMPT = `Du bist ein Assistent der Wissenschaftlichen Dienste des Deutschen Bundestages.
-
-Erstelle einen strukturierten Überblick zum folgenden Thema auf Basis der bereitgestellten Kontextauszüge.
-
-Regeln:
-- Gliedere die Antwort mit Markdown-Überschriften (##, ###).
-- Organisiere die Informationen thematisch, nicht nach Quellen.
-- Verwende nummerierte Quellenverweise **[1]**, **[2]** usw. im Text.
-- Jede Quellennummer bezieht sich auf das Aktenzeichen der jeweiligen Quelle (in der Reihenfolge ihres ersten Auftretens).
-- Beginne mit einer kurzen Zusammenfassung des aktuellen Stands.
-- Erfinde keine Informationen, die nicht im Kontext enthalten sind.
-- Antworte auf Deutsch.`;
-
-const DEFAULT_PROMPTS: Record<string, string> = {
-  fachfrage: DEFAULT_FACHFRAGE_PROMPT,
-  ueberblick: DEFAULT_OVERVIEW_PROMPT,
-};
-
-// --- Filter constants ---
-
-const REFERAT_OPTIONS = [
-  "WD 1", "WD 2", "WD 3", "WD 4", "WD 5",
-  "WD 6", "WD 7", "WD 8", "WD 9", "WD 10", "EU 6",
-];
-
-const DOCUMENT_TYPE_OPTIONS = [
-  "Ausarbeitung", "Sachstand", "Kurzinformation", "Dokumentation", "Sonstiges",
-];
-
 // --- Filter bar ---
 
 function FilterBar({
@@ -245,6 +204,8 @@ function FilterBar({
   onFachbereichChange,
   documentType,
   onDocumentTypeChange,
+  documentTypes,
+  referate,
 }: {
   dateFrom: string;
   dateTo: string;
@@ -254,6 +215,9 @@ function FilterBar({
   onFachbereichChange: (v: string | null) => void;
   documentType: string | null;
   onDocumentTypeChange: (v: string | null) => void;
+  /** Served by GET /api/config. Empty while that request is in flight. */
+  documentTypes: string[];
+  referate: ReferatOption[];
 }) {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: currentYear - 2014 }, (_, i) => 2015 + i);
@@ -308,7 +272,7 @@ function FilterBar({
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="__all__">Alle Typen</SelectItem>
-          {DOCUMENT_TYPE_OPTIONS.map((dt) => (
+          {documentTypes.map((dt) => (
             <SelectItem key={dt} value={dt}>
               {dt}
             </SelectItem>
@@ -326,9 +290,9 @@ function FilterBar({
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="__all__">Alle Referate</SelectItem>
-          {REFERAT_OPTIONS.map((fb) => (
-            <SelectItem key={fb} value={fb}>
-              {fb}
+          {referate.map((r) => (
+            <SelectItem key={r.number} value={r.number} title={r.name}>
+              {r.number}
             </SelectItem>
           ))}
         </SelectContent>
@@ -368,9 +332,39 @@ export function ExplorerView() {
   const [promptDialogOpen, setPromptDialogOpen] = useState(false);
   const [draftPrompt, setDraftPrompt] = useState("");
 
+  // Prompts and filter options come from the API so there is one definition of
+  // each. Null until the request lands: the filters render empty and the
+  // prompt button stays disabled rather than offering a prompt we cannot
+  // vouch for. No hardcoded fallback, which is the point of the endpoint.
+  const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchConfig()
+      .then((cfg) => {
+        if (!cancelled) setAppConfig(cfg);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Konfiguration konnte nicht geladen werden.",
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const currentSubMode = activeTab === "dokumente" ? docSubMode : fragenSubMode;
   const subModes = activeTab === "dokumente" ? DOC_SUB_MODES : FRAGEN_SUB_MODES;
   const activeConfig = subModes.find((m) => m.id === currentSubMode)!;
+
+  // "" while the config request is in flight; the button that opens the
+  // prompt dialog is disabled until then.
+  const defaultPrompt = appConfig?.prompts[currentSubMode] ?? "";
 
   const dateRange =
     dateFrom || dateTo
@@ -576,6 +570,15 @@ export function ExplorerView() {
             <Button
               variant="outline"
               size="icon"
+              // The dialog shows and resets the default prompt, which arrives
+              // with the config. Opening it before then would show an empty
+              // box and let a blank prompt be saved as a custom one.
+              disabled={!appConfig}
+              title={
+                appConfig
+                  ? "KI-Anweisungen anpassen"
+                  : "KI-Anweisungen werden geladen"
+              }
               className={cn(
                 "h-11 w-11 shrink-0",
                 customPrompts[currentSubMode]
@@ -583,11 +586,9 @@ export function ExplorerView() {
                   : "",
               )}
               onClick={() => {
-                const defaultPrompt = DEFAULT_PROMPTS[currentSubMode] || "";
                 setDraftPrompt(customPrompts[currentSubMode] || defaultPrompt);
                 setPromptDialogOpen(true);
               }}
-              title="KI-Anweisungen anpassen"
             >
               <Sparkles
                 className={cn(
@@ -657,6 +658,8 @@ export function ExplorerView() {
                 onFachbereichChange={setFachbereich}
                 documentType={documentType}
                 onDocumentTypeChange={setDocumentType}
+                documentTypes={appConfig?.document_types ?? []}
+                referate={appConfig?.referate ?? []}
               />
             </div>
           </div>
@@ -695,7 +698,6 @@ export function ExplorerView() {
               variant="ghost"
               size="sm"
               onClick={() => {
-                const defaultPrompt = DEFAULT_PROMPTS[currentSubMode] || "";
                 setDraftPrompt(defaultPrompt);
               }}
               className="gap-1.5 text-muted-foreground"
@@ -712,7 +714,6 @@ export function ExplorerView() {
               </Button>
               <Button
                 onClick={() => {
-                  const defaultPrompt = DEFAULT_PROMPTS[currentSubMode] || "";
                   const isCustom =
                     draftPrompt.trim() !== defaultPrompt.trim();
                   setCustomPrompts((prev) => ({

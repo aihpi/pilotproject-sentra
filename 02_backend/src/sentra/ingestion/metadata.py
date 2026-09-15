@@ -29,12 +29,24 @@ FACHBEREICH_NAMES: dict[str, str] = {
     "EU 6": "Fachbereich Europa",
 }
 
+# The types the extractor knows how to recognise in a document.
 DOCUMENT_TYPES = [
     "Ausarbeitung",
     "Sachstand",
     "Kurzinformation",
     "Dokumentation",
 ]
+
+# What a document gets when none of the above is found in it. Not a fifth
+# recognised type, which is why it is not in the list above, but it is still a
+# value that ends up in the index: 221 of the 1936 documents carry it, more
+# than Ausarbeitung does.
+FALLBACK_DOCUMENT_TYPE = "Sonstiges"
+
+# Everything document_type can hold, which is what a filter has to offer.
+# Recognised plus the fallback: leave the fallback out and the documents
+# carrying it become unreachable by that filter.
+DOCUMENT_TYPE_VALUES = [*DOCUMENT_TYPES, FALLBACK_DOCUMENT_TYPE]
 
 # --- Regexes for furniture layer (page headers/footers) ---
 
@@ -166,7 +178,7 @@ def _extract_document_type(markdown: str) -> str:
         if doc_type in header:
             return doc_type
 
-    return "Sonstiges"
+    return FALLBACK_DOCUMENT_TYPE
 
 
 def _extract_title(markdown: str) -> str:

@@ -189,3 +189,32 @@ class GeneratedAnswerResponse(BaseModel):
     text: str
     sources: list[AnswerSourceRef]
     system_prompt: str | None = None
+
+
+# ── Client configuration ────────────────────────────────────────────
+
+
+class ReferatOption(BaseModel):
+    """One Referat the UI can filter by.
+
+    The number is the value to filter on, because fachbereich_number is the
+    indexed field. The name is a label only, and it comes from the mapping in
+    the extractor rather than from the documents: the names the documents carry
+    are inconsistent (14 spellings for WD 2 alone, and WD 5 and WD 8 were both
+    reorganised at some point), so they cannot label a dropdown.
+    """
+
+    number: str
+    name: str
+
+
+class ConfigResponse(BaseModel):
+    """Everything the UI needs at start-up and used to hardcode.
+
+    One endpoint rather than three, because the client needs all of it on
+    mount and never one part without the others.
+    """
+
+    prompts: dict[str, str]
+    document_types: list[str]
+    referate: list[ReferatOption]

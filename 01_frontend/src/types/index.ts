@@ -65,3 +65,22 @@ export interface IngestionStatus {
   /** Indexed documents with no matching file on disk. */
   stale_documents: string[];
 }
+
+/** One Referat offered in the Fachbereich filter. */
+export interface ReferatOption {
+  /** The value to filter on. fachbereich_number is the indexed field. */
+  number: string;
+  /** Label only. Comes from the backend mapping, not from the documents,
+   *  whose own Fachbereich names are inconsistent. */
+  name: string;
+}
+
+/** Prompts and filter options, served by GET /api/config.
+ *  Previously hardcoded in ExplorerView with a comment asking whoever edited
+ *  them to keep both copies in step. */
+export interface AppConfig {
+  /** Keyed by question sub-mode id: fachfrage, ueberblick. */
+  prompts: Record<string, string>;
+  document_types: string[];
+  referate: ReferatOption[];
+}
