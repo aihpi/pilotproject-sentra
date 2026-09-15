@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+# A newer push to the same branch makes the previous run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "backend/uv.lock"
+
+      - name: Install the project and its dev dependencies
+        run: uv sync --frozen
+
+      - name: Cache pre-commit environments
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      # ruff, ruff-format and mypy run through pre-commit rather than being
+      # invoked directly here, so the hook and this pipeline cannot pin
+      # different versions and start disagreeing with each other. The mypy hook
+      # shells into backend and uses the environment synced above.
+      - name: Lint and type check
+        working-directory: ${{ github.workspace }}
+        run: uvx pre-commit run --all-files --show-diff-on-failure --color always
+
+      # The integration tier is excluded on purpose, see backend/README.md.
+      # It needs Qdrant with the corpus already ingested, which means a full
+      # Docling run plus embedding calls against the AI Hub.
+      - name: Offline test suite
+        run: uv run pytest -m "not integration" -q
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20" # matches frontend/Dockerfile
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      # jsdom only, no browser and no services, so this belongs in the same
+      # gate as the linter rather than in a tier of its own.
+      - name: Tests
+        run: npm test
+
+      # `npm run build` is `tsc -b && vite build`, so this type checks and then
+      # proves the bundle the image actually ships still builds.
+      - name: Type check and build
+        run: npm run build
