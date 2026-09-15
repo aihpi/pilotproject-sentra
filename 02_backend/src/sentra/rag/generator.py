@@ -44,6 +44,19 @@ Regeln:
 """
 
 
+# The prompt each question sub-mode starts from, served by GET /api/config so
+# the UI can show and reset the default without keeping its own copy. The keys
+# are the sub-mode ids the frontend uses and are therefore part of the API
+# contract: renaming one here renames it in the UI.
+#
+# The document sub-modes (thema, aehnliche, quellen) do not generate text and
+# so have no entry.
+DEFAULT_PROMPTS: dict[str, str] = {
+    "fachfrage": FACHFRAGE_PROMPT,
+    "ueberblick": OVERVIEW_PROMPT,
+}
+
+
 def format_context(hits: list[Hit]) -> str:
     """Format retrieved chunks into the context string the model sees.
 

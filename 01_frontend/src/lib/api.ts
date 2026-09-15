@@ -1,4 +1,5 @@
 import type {
+  AppConfig,
   DocumentInfo,
   FeedbackRequest,
   DocumentResult,
@@ -25,6 +26,14 @@ export function formatDate(dateStr: string): string {
 }
 
 // ── Document management ─────────────────────────────────────────────
+
+export async function fetchConfig(): Promise<AppConfig> {
+  const response = await fetch(`${API_BASE}/config`);
+  if (!response.ok) {
+    throw new Error(`Konfiguration konnte nicht geladen werden (HTTP ${response.status})`);
+  }
+  return response.json();
+}
 
 export async function fetchDocuments(): Promise<DocumentInfo[]> {
   const response = await fetch(`${API_BASE}/documents`);

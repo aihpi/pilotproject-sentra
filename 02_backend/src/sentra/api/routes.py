@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sentra.api.models import (
     AnswerRequest,
     AnswerSourceRef,
+    ConfigResponse,
     DocumentInfo,
     DocumentSearchRequest,
     DocumentSearchResponse,
@@ -22,12 +23,14 @@ from sentra.api.models import (
     HealthResponse,
     IngestionStatusResponse,
     IngestStartResponse,
+    ReferatOption,
     SimilarDocumentsRequest,
     date_range_params,
 )
 from sentra.config import Settings, get_settings
+from sentra.ingestion.metadata import DOCUMENT_TYPE_VALUES, FACHBEREICH_NAMES
 from sentra.rag.embeddings import EmbeddingClient
-from sentra.rag.generator import AnswerGenerator
+from sentra.rag.generator import DEFAULT_PROMPTS, AnswerGenerator
 from sentra.rag.store import VectorStore
 from sentra.services import explorer
 from sentra.services.ingest import get_ingestion_progress, run_ingestion
@@ -206,6 +209,28 @@ def health(
             status="degraded",
             qdrant=f"error: {e}",
         )
+
+
+# ── Client configuration ────────────────────────────────────────────
+
+
+@router.get("/config", response_model=ConfigResponse)
+def config() -> ConfigResponse:
+    """The prompts and filter options the UI needs at start-up.
+
+    All of this used to be copied into the frontend, with a comment asking
+    whoever edited it to keep both copies in step. Serving it means there is
+    one definition, and the UI shows the prompt that actually runs.
+
+    Static, so it takes no dependencies and needs no Qdrant.
+    """
+    return ConfigResponse(
+        prompts=DEFAULT_PROMPTS,
+        document_types=DOCUMENT_TYPE_VALUES,
+        referate=[
+            ReferatOption(number=number, name=name) for number, name in FACHBEREICH_NAMES.items()
+        ],
+    )
 
 
 # ── Explorer endpoints (v2) ─────────────────────────────────────────
