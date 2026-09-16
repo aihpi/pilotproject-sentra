@@ -33,11 +33,13 @@ eval = [
     "sqlalchemy>=2.0",
     "alembic>=1.13",
     "psycopg[binary]>=3.2",  # psycopg 3, which is what the postgresql+psycopg driver wants
+    "pyyaml>=6.0",           # the case file format; arrives transitively too, declared per policy
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "types-PyYAML>=6.0",  # pyyaml ships no annotations; yaml_io.py imports it directly
     "httpx>=0.27.0",
     "ruff>=0.8.0",
     "mypy>=1.13",

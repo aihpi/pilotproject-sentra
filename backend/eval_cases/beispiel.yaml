@@ -1,0 +1,19 @@
+# The worked example from the Vorlage, section 3. Not part of a real round —
+# it is here so the file format has something to read.
+#
+# A new case is written without a test_id; the backend allocates one and the
+# next export writes it back into this file.
+
+- kategorie: GO
+  ausgangsfrage: Wie lange darf ein Redner im Plenum sprechen?
+  abteilung: Hotline
+  erwartete_antwort: >-
+    Grundsatz einer Redezeit von 15 Minuten je Fraktion nach § 35 GOBT,
+    mit Verweis auf die Ausnahmeregelungen.
+  referenz_korrekt: GOBT § 35
+  # A source on the same topic that is outdated, so 4.3b can tell "cited a
+  # source" from "cited the right one of two plausible sources".
+  referenz_falsch: Alte GOBT-Fassung vor Novelle 2022, § 35 a. F.
+  grund_fuer_aufnahme: ""
+  grenzfall: false
+  status: entwurf
