@@ -51,21 +51,21 @@ class TestStarting:
         job, recorder = IngestionJob(), Recorder()
         assert started(job, recorder, monkeypatch) is True
 
-        job._thread.join(timeout=5)
+        job.wait(timeout=5)
         assert recorder.runs == 1
 
     def test_arguments_are_passed_through(self, monkeypatch):
         job, recorder = IngestionJob(), Recorder()
         started(job, recorder, monkeypatch, force=True)
 
-        job._thread.join(timeout=5)
+        job.wait(timeout=5)
         assert recorder.args == [("store", "embedder", "settings", True)]
 
     def test_force_defaults_to_false(self, monkeypatch):
         job, recorder = IngestionJob(), Recorder()
         started(job, recorder, monkeypatch)
 
-        job._thread.join(timeout=5)
+        job.wait(timeout=5)
         assert recorder.args[0][3] is False
 
 
@@ -79,18 +79,18 @@ class TestRefusingASecond:
         assert job.start("store", "embedder", "settings") is False
 
         block.set()
-        job._thread.join(timeout=5)
+        job.wait(timeout=5)
         assert recorder.runs == 1
 
     def test_a_new_run_is_allowed_once_the_first_finishes(self, monkeypatch):
         job, recorder = IngestionJob(), Recorder()
 
         assert started(job, recorder, monkeypatch) is True
-        job._thread.join(timeout=5)
+        job.wait(timeout=5)
 
         assert job.is_running() is False
         assert job.start("store", "embedder", "settings") is True
-        job._thread.join(timeout=5)
+        job.wait(timeout=5)
         assert recorder.runs == 2
 
     @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
@@ -108,12 +108,12 @@ class TestRefusingASecond:
 
         monkeypatch.setattr(jobs, "run_ingestion", explode)
         assert job.start("store", "embedder", "settings") is True
-        job._thread.join(timeout=5)
+        job.wait(timeout=5)
 
         assert job.is_running() is False
         recorder = Recorder()
         assert started(job, recorder, monkeypatch) is True
-        job._thread.join(timeout=5)
+        job.wait(timeout=5)
         assert recorder.runs == 1
 
 
@@ -145,7 +145,7 @@ class TestConcurrentStarts:
         assert sum(results) == 1, f"{sum(results)} callers were told they started"
 
         block.set()
-        job._thread.join(timeout=5)
+        job.wait(timeout=5)
         assert recorder.runs == 1, f"{recorder.runs} ingestions ran"
 
 
@@ -169,7 +169,7 @@ class TestThroughTheEndpoint:
 
         assert response.status_code == 200
         assert response.json() == {"status": "started"}
-        job._thread.join(timeout=5)
+        job.wait(timeout=5)
 
     def test_a_second_request_answers_409(self, settings, monkeypatch):
         block = threading.Event()
@@ -181,7 +181,7 @@ class TestThroughTheEndpoint:
         assert client.post("/api/ingest").status_code == 409
 
         block.set()
-        job._thread.join(timeout=5)
+        job.wait(timeout=5)
         assert recorder.runs == 1
 
     def test_force_reaches_the_job(self, settings, monkeypatch):
@@ -189,6 +189,6 @@ class TestThroughTheEndpoint:
         monkeypatch.setattr(jobs, "run_ingestion", recorder)
 
         self.client(job, settings).post("/api/ingest?force=true")
-        job._thread.join(timeout=5)
+        job.wait(timeout=5)
 
         assert recorder.args[0][3] is True
