@@ -125,6 +125,11 @@ layers = [
     "services",
     "rag | ingestion",
     "(evaluation)",
+    # Generic background-job orchestration. Below evaluation so that both it
+    # and services can use it: #51 intended one jobs module to serve ingestion,
+    # source management and the harness, but it landed in services, which
+    # evaluation is not allowed to import.
+    "jobs",
     "domain",
     "config",
 ]
