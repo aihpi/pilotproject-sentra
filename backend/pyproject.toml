@@ -21,6 +21,17 @@ dependencies = [
     "numpy>=1.26",              # rag/store.py
 ]
 
+[project.optional-dependencies]
+# The evaluation harness. An extra rather than a base dependency, and a
+# dependency group would not do: groups are a development-time concept and do
+# not survive into an installed package, whereas this has to be installable
+# into the production image on the deployments that run rounds and absent on
+# the ones that do not. main imports sentra.evaluation only when EVAL_ENABLED
+# is set, which is what makes leaving it out safe.
+eval = [
+    "httpx>=0.27.0",  # the runner calls SENTRA over HTTP at SENTRA_BASE_URL
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
@@ -109,6 +120,25 @@ layers = [
 ]
 # Fail if a new top-level module appears and nobody adds it here.
 exhaustive = true
+
+[[tool.importlinter.contracts]]
+# The harness must not import what it measures.
+#
+# The layers contract above already makes these imports impossible, so this is
+# not what stops them happening. It is here to name the two places where the
+# temptation is concrete and to say why each one is a mistake.
+#
+# rag.generator: the Vorlage asks for a check that shares neither model nor
+# prompt structure with SENTRA. Reusing the prompt scaffolding would move a
+# consistency problem into the thing measuring it rather than finding it.
+#
+# api.models: the harness has its own audience and its own response shapes.
+# Sharing them is how services/explorer.py came to import from the API layer,
+# which is what #18 was for.
+name = "The evaluation harness does not import what it measures"
+type = "forbidden"
+source_modules = ["sentra.evaluation"]
+forbidden_modules = ["sentra.rag.generator", "sentra.api.models"]
 
 [build-system]
 requires = ["uv_build>=0.8.17,<0.9.0"]
