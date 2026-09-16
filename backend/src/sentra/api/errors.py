@@ -35,6 +35,9 @@ logger = logging.getLogger(__name__)
 SEARCH_UNAVAILABLE = "Die Suchdatenbank ist nicht erreichbar. Bitte später erneut versuchen."
 AI_UNAVAILABLE = "Der KI-Dienst ist nicht erreichbar. Bitte später erneut versuchen."
 MISCONFIGURED = "Der Suchindex ist falsch konfiguriert. Bitte den Betrieb informieren."
+EVAL_DB_UNAVAILABLE = (
+    "Die Datenbank der Auswertung ist nicht erreichbar. Bitte den Betrieb informieren."
+)
 
 
 def _unavailable(detail: str) -> JSONResponse:
@@ -77,8 +80,29 @@ def _misconfigured(request: Request, exc: Exception) -> JSONResponse:
     return _unavailable(MISCONFIGURED)
 
 
+def _eval_database_unavailable(request: Request, exc: Exception) -> JSONResponse:
+    """The eval database is down. Same shape, same status, different dependency."""
+    logger.warning("Eval database unavailable for %s: %s", request.url.path, exc)
+    return _unavailable(EVAL_DB_UNAVAILABLE)
+
+
 def register_error_handlers(app: FastAPI) -> None:
     """Attach the policy. Called once, from main."""
     app.add_exception_handler(QdrantApiException, _qdrant_unavailable)
     app.add_exception_handler(OpenAIError, _ai_hub_unavailable)
     app.add_exception_handler(DimensionMismatch, _misconfigured)
+
+
+def register_evaluation_error_handler(app: FastAPI, database_unavailable: type[Exception]) -> None:
+    """Extend the policy to the eval database, when the harness is mounted.
+
+    The exception class is passed in rather than imported. Importing it would
+    pull sentra.evaluation into every process that imports this module, which
+    is every process — and the harness not being imported with EVAL_ENABLED off
+    is the whole reason its dependencies can be an optional extra.
+
+    So the policy still lives here, in one place, with the German wording next
+    to the other three. main is the only thing that knows both halves, which is
+    what main is for.
+    """
+    app.add_exception_handler(database_unavailable, _eval_database_unavailable)

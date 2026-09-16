@@ -15,13 +15,26 @@ this package. See mount_evaluation in sentra.main.
 """
 
 from sentra.evaluation.config import EvalSettings, get_eval_settings
-from sentra.evaluation.judge import JudgeNotIndependent, assert_judge_is_independent
+from sentra.evaluation.db import Base, EvalDatabaseUnavailable, session_scope
+from sentra.evaluation.judge import (
+    JudgeConfig,
+    JudgeNotIndependent,
+    MissingJudgeConfiguration,
+    assert_judge_is_independent,
+    judge_config,
+)
 from sentra.evaluation.router import router
 
 __all__ = [
+    "Base",
+    "EvalDatabaseUnavailable",
     "EvalSettings",
+    "JudgeConfig",
     "JudgeNotIndependent",
+    "MissingJudgeConfiguration",
     "assert_judge_is_independent",
     "get_eval_settings",
+    "judge_config",
     "router",
+    "session_scope",
 ]

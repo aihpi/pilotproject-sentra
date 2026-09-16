@@ -22,7 +22,8 @@ from sentra.rag.store import VectorStore
 
 # ── Credentials the offline tier does not have and does not need ────
 
-ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+ENV_FILE = BACKEND_DIR / ".env"
 
 # A host that cannot resolve, per RFC 2606's reserved .invalid TLD. If an
 # offline test ever does reach for the hub, it fails on DNS rather than quietly
