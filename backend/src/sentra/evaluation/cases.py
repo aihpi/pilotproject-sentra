@@ -78,6 +78,8 @@ def create_case(
     erwartete_antwort: str = "",
     referenz_korrekt: str = "",
     referenz_falsch: str = "",
+    referenz_korrekt_az: str = "",
+    referenz_falsch_az: str = "",
     grund_fuer_aufnahme: str = "",
     grenzfall: bool = False,
 ) -> tuple[Case, CaseVersion]:
@@ -101,6 +103,8 @@ def create_case(
         erwartete_antwort=erwartete_antwort,
         referenz_korrekt=referenz_korrekt,
         referenz_falsch=referenz_falsch,
+        referenz_korrekt_az=referenz_korrekt_az,
+        referenz_falsch_az=referenz_falsch_az,
         grund_fuer_aufnahme=grund_fuer_aufnahme,
         grenzfall=grenzfall,
     )
@@ -137,6 +141,8 @@ def add_version(session: Session, case: Case, **fields: object) -> CaseVersion:
         "erwartete_antwort": latest.erwartete_antwort,
         "referenz_korrekt": latest.referenz_korrekt,
         "referenz_falsch": latest.referenz_falsch,
+        "referenz_korrekt_az": latest.referenz_korrekt_az,
+        "referenz_falsch_az": latest.referenz_falsch_az,
         "grund_fuer_aufnahme": latest.grund_fuer_aufnahme,
         "grenzfall": latest.grenzfall,
     }

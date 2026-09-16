@@ -39,6 +39,8 @@ CONTENT_FIELDS = (
     "erwartete_antwort",
     "referenz_korrekt",
     "referenz_falsch",
+    "referenz_korrekt_az",
+    "referenz_falsch_az",
     "grund_fuer_aufnahme",
     "grenzfall",
 )
@@ -60,6 +62,8 @@ class CaseEntry(BaseModel):
     erwartete_antwort: str = ""
     referenz_korrekt: str = ""
     referenz_falsch: str = ""
+    referenz_korrekt_az: str = ""
+    referenz_falsch_az: str = ""
     grund_fuer_aufnahme: str = ""
     grenzfall: bool = False
     # entwurf | freigegeben. Approving from the file is deliberate: the pull

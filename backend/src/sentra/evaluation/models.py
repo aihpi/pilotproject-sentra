@@ -54,6 +54,13 @@ FEHLER = "fehler"
 # own keys when they exist; until then every call carries this one.
 ORIGINAL = "original"
 
+# What a call was made for. An answer is the thing under test; a recall probe
+# asks the document search whether the expected source was findable at all, so
+# that "the answer did not cite it" can be told apart from "retrieval never
+# offered it".
+ZWECK_ANTWORT = "antwort"
+ZWECK_RECALL = "recall"
+
 
 class TestIdSequence(Base):
     """The next free number per category.
@@ -133,6 +140,19 @@ class CaseVersion(Base):
     # what makes 4.3b a real check rather than "did it cite anything": without
     # it there is no wrong answer for the model to reach for.
     referenz_falsch: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    # The same two sources as Aktenzeichen, which is what a check can match on.
+    #
+    # The Vorlage's reference fields hold citations a person reads — its worked
+    # example is "GOBT § 35". SENTRA cites its own documents, by Aktenzeichen.
+    # Comparing those two vocabularies compares nothing, so a case carries both:
+    # the citation for the reviewer and the Aktenzeichen for the check.
+    #
+    # Empty is a real state, not an omission: a case about a legal question
+    # SENTRA has no document for cannot be checked mechanically, and has to
+    # report that rather than reporting a failure.
+    referenz_korrekt_az: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    referenz_falsch_az: Mapped[str] = mapped_column(Text, nullable=False, default="")
     grund_fuer_aufnahme: Mapped[str] = mapped_column(Text, nullable=False, default="")
     # 4.4. A Grenzfall is never filtered out of human review, so triage needs to
     # know before any check has run.
@@ -214,6 +234,7 @@ class Call(Base):
             "case_version_id",
             "variant_key",
             "repeat_index",
+            "zweck",
             name="uq_calls_planned_once",
         ),
         CheckConstraint(f"status IN ('{OK}', '{FEHLER}')", name="ck_calls_status"),
@@ -232,6 +253,7 @@ class Call(Base):
     # 0, 1, 2 for the three repeats of 4.1.
     repeat_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
+    zweck: Mapped[str] = mapped_column(String(16), nullable=False, default=ZWECK_ANTWORT)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default=OK)
     endpoint: Mapped[str] = mapped_column(String(64), nullable=False)
     request_body: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
@@ -247,3 +269,42 @@ class Call(Base):
 
     run: Mapped[Run] = relationship(back_populates="calls")
     case_version: Mapped[CaseVersion] = relationship()
+
+
+class CheckResult(Base):
+    """What one deterministic check said about one call.
+
+    Structured rather than prose: check name, verdict, and the evidence behind
+    it. The trend report aggregates these across rounds, and prose cannot be
+    aggregated — "wo häufen sich Fußnotenfehler" is a group-by or it is a
+    person reading every sheet again.
+
+    Stored against the call rather than computed on read, because a round is
+    evidence: what the check said at the time is part of the record, and a
+    check whose thresholds changed later must not silently rewrite history.
+    Re-running checks writes new rows for the same call and verdict name.
+    """
+
+    __tablename__ = "check_results"
+    __table_args__ = (
+        UniqueConstraint("call_id", "pruefung", name="uq_check_results_one_per_check"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    call_id: Mapped[UUID] = mapped_column(ForeignKey("calls.id", ondelete="CASCADE"), index=True)
+
+    # Which check. "quellenauswahl" (4.3b), "retrieval_recall", and so on.
+    pruefung: Mapped[str] = mapped_column(String(48), nullable=False)
+    # The Vorlage's vocabulary where it has one, plus "nicht prüfbar".
+    ergebnis: Mapped[str] = mapped_column(String(48), nullable=False)
+    # True when this needs a human to look, which is what triage reads.
+    auffaellig: Mapped[bool] = mapped_column(nullable=False, default=False)
+    # Whatever the verdict was based on: which sources were seen, what rank the
+    # expected one was at. A verdict a reviewer cannot check is an assertion.
+    belege: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    call: Mapped[Call] = relationship()

@@ -22,7 +22,14 @@ from sentra.evaluation import runner
 from sentra.evaluation.categories import Kategorie
 from sentra.evaluation.config import get_eval_settings
 from sentra.evaluation.db import Base, get_engine
-from sentra.evaluation.models import FEHLER, OK, Call, Run
+from sentra.evaluation.models import FEHLER, OK, ZWECK_ANTWORT, Call, Run
+
+
+def _answers(session):
+    """Only the calls under test. A round also probes the document search once
+    per case, for recall, and those are not answers."""
+    return [c for c in session.execute(select(Call)).scalars() if c.zweck == ZWECK_ANTWORT]
+
 
 ANSWER = {
     "text": "Nach § 35 GOBT gilt eine Redezeit von 15 Minuten [1].",
@@ -82,7 +89,8 @@ class TestPlanning:
         _approved_case(session)
         run = runner.start_run(session, repeats=3)
 
-        assert len(runner.plan(session, run)) == 3
+        # Three answers, plus one probe of the document search for recall.
+        assert len(runner.plan(session, run)) == 4
 
     def test_a_case_with_only_a_draft_is_skipped(self, session):
         """A draft is not a yardstick. Running against one would measure an
@@ -92,7 +100,7 @@ class TestPlanning:
         session.commit()
         run = runner.start_run(session, repeats=1)
 
-        assert len(runner.plan(session, run)) == 1
+        assert len(runner.plan(session, run)) == 2  # one answer, one recall probe
 
     def test_the_approved_version_is_used_not_the_newest(self, session):
         """Drafting the next round's wording must not change what this round
@@ -126,7 +134,7 @@ class TestExecuting:
         runner.execute(run.id, _client(_always()))
 
         session.expire_all()
-        assert session.execute(select(Call)).scalars().all().__len__() == 3
+        assert len(_answers(session)) == 3
 
     def test_the_response_is_stored_whole(self, session):
         """Every later check is a pure function over this row, including checks
@@ -138,7 +146,7 @@ class TestExecuting:
         runner.execute(run.id, _client(_always()))
 
         session.expire_all()
-        call = session.execute(select(Call)).scalar_one()
+        call = _answers(session)[0]
         assert call.response_body["text"] == ANSWER["text"]
         assert call.response_body["system_prompt"] == ANSWER["system_prompt"]
 
@@ -150,9 +158,7 @@ class TestExecuting:
         runner.execute(run.id, _client(_always()))
 
         session.expire_all()
-        assert session.execute(select(Call)).scalar_one().request_body["query"] == (
-            "Sehr spezifische Frage"
-        )
+        assert _answers(session)[0].request_body["query"] == "Sehr spezifische Frage"
 
     def test_a_clean_round_is_abgeschlossen(self, session):
         _approved_case(session)
@@ -187,7 +193,7 @@ class TestFailures:
 
         session.expire_all()
         rows = session.execute(select(Call)).scalars().all()
-        assert len(rows) == 3
+        assert len(rows) == 4  # three answers plus the recall probe
         assert sum(1 for r in rows if r.status == FEHLER) == 1
 
     def test_a_transport_failure_is_stored_too(self, session):
@@ -202,7 +208,7 @@ class TestFailures:
         runner.execute(run.id, _client(unreachable))
 
         session.expire_all()
-        call = session.execute(select(Call)).scalar_one()
+        call = _answers(session)[0]
         assert call.status == FEHLER
         assert "ConnectError" in call.fehler
 
@@ -241,7 +247,7 @@ class TestResuming:
 
         session.expire_all()
         run = session.get(Run, run.id)
-        assert len(runner.outstanding(session, run)) == 2
+        assert len(runner.outstanding(session, run)) == 3  # two answers, one recall probe
 
     def test_resuming_completes_the_round(self, session):
         _approved_case(session)
@@ -253,7 +259,7 @@ class TestResuming:
 
         session.expire_all()
         rows = session.execute(select(Call)).scalars().all()
-        assert len(rows) == 2, "retrying created extra rows instead of replacing"
+        assert len(rows) == 3, "retrying created extra rows instead of replacing"
         assert all(r.status == OK for r in rows)
         assert session.get(Run, run.id).status == "abgeschlossen"
 
@@ -276,7 +282,7 @@ class TestResuming:
         session.expire_all()
         run = session.get(Run, run.id)
         assert len(session.execute(select(Call)).scalars().all()) == 2
-        assert len(runner.outstanding(session, run)) == 2
+        assert len(runner.outstanding(session, run)) == 3  # two answers and the recall probe
 
 
 # ── The audit property ──────────────────────────────────────────────
@@ -311,3 +317,115 @@ class TestAudit:
         session.commit()
 
         assert runner.audit_is_sound(session, run) is False
+
+
+# ── Checks run with the round ───────────────────────────────────────
+
+
+class TestChecksDuringARun:
+    """Scored as each call is stored, because what the check said at the time
+    is part of the round's record."""
+
+    def _case_with_reference(self, session, az="WD 3 - 3000 - 029/23"):
+        case, version = case_store.create_case(
+            session,
+            kategorie=Kategorie.GO,
+            ausgangsfrage="Wie lange darf ein Redner sprechen?",
+            erwartete_antwort="15 Minuten.",
+            referenz_korrekt="GOBT § 35",
+            referenz_korrekt_az=az,
+        )
+        case_store.approve(session, version)
+        session.commit()
+        return case
+
+    def _handler(self, az):
+        def handler(request: httpx.Request) -> httpx.Response:
+            if "documents" in str(request.url):
+                return httpx.Response(200, json={"documents": [{"aktenzeichen": az}]})
+            return httpx.Response(
+                200, json={"text": "Antwort [1].", "sources": [{"aktenzeichen": az}]}
+            )
+
+        return handler
+
+    def test_a_round_probes_the_document_search_too(self, session):
+        """Once per case, not per repeat: what retrieval can find does not vary
+        with the repeat."""
+        self._case_with_reference(session)
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+
+        runner.execute(run.id, _client(self._handler("WD 3 - 3000 - 029/23")))
+
+        session.expire_all()
+        calls = session.execute(select(Call)).scalars().all()
+        assert sum(1 for c in calls if c.zweck == "antwort") == 3
+        assert sum(1 for c in calls if c.zweck == "recall") == 1
+
+    def test_a_correct_citation_is_scored_unauffaellig(self, session):
+        from sentra.evaluation.models import CheckResult
+
+        self._case_with_reference(session)
+        run = runner.start_run(session, repeats=1)
+        session.commit()
+
+        runner.execute(run.id, _client(self._handler("WD 3 - 3000 - 029/23")))
+
+        session.expire_all()
+        results = session.execute(select(CheckResult)).scalars().all()
+        assert {r.pruefung for r in results} == {"quellenauswahl", "retrieval_recall"}
+        assert all(r.auffaellig is False for r in results)
+
+    def test_a_wrong_citation_is_flagged(self, session):
+        from sentra.evaluation.models import CheckResult
+
+        self._case_with_reference(session)
+        run = runner.start_run(session, repeats=1)
+        session.commit()
+
+        runner.execute(run.id, _client(self._handler("WD 9 - 3000 - 999/25")))
+
+        session.expire_all()
+        flagged = (
+            session.execute(select(CheckResult).where(CheckResult.auffaellig.is_(True)))
+            .scalars()
+            .all()
+        )
+        assert len(flagged) == 2  # cited the wrong source, and it was not retrievable
+
+    def test_a_failed_call_is_not_scored(self, session):
+        """There is nothing to check in a 503, and a verdict on one would be a
+        finding about SENTRA being down rather than about its answer."""
+        from sentra.evaluation.models import CheckResult
+
+        self._case_with_reference(session)
+        run = runner.start_run(session, repeats=1)
+        session.commit()
+
+        runner.execute(run.id, _client(_always(503, {"detail": "kaputt"})))
+
+        session.expire_all()
+        assert session.execute(select(CheckResult)).scalars().all() == []
+
+    def test_a_round_can_be_rescored_without_calling_sentra(self, session):
+        """The property the checks were shaped around: pure functions over
+        stored rows, so a check that did not exist when a round ran can still
+        score it."""
+        from sentra.evaluation.models import CheckResult
+
+        self._case_with_reference(session)
+        run = runner.start_run(session, repeats=2)
+        session.commit()
+        runner.execute(run.id, _client(self._handler("WD 3 - 3000 - 029/23")))
+
+        session.expire_all()
+        for result in session.execute(select(CheckResult)).scalars():
+            session.delete(result)
+        session.commit()
+
+        scored = runner.recheck(session, session.get(Run, run.id))
+        session.commit()
+
+        assert scored == 3
+        assert len(session.execute(select(CheckResult)).scalars().all()) == 3

@@ -30,6 +30,8 @@ class CaseVersionResponse(BaseModel):
     erwartete_antwort: str
     referenz_korrekt: str
     referenz_falsch: str
+    referenz_korrekt_az: str
+    referenz_falsch_az: str
     grund_fuer_aufnahme: str
     grenzfall: bool
     created_at: datetime
@@ -53,6 +55,10 @@ class CreateCaseRequest(BaseModel):
     erwartete_antwort: str = ""
     referenz_korrekt: str = ""
     referenz_falsch: str = ""
+    # The Aktenzeichen the mechanical check matches on. The two fields above
+    # hold the citation a reviewer reads; these hold what SENTRA actually cites.
+    referenz_korrekt_az: str = ""
+    referenz_falsch_az: str = ""
     grund_fuer_aufnahme: str = ""
     grenzfall: bool = False
 
@@ -69,6 +75,8 @@ class UpdateCaseRequest(BaseModel):
     erwartete_antwort: str | None = None
     referenz_korrekt: str | None = None
     referenz_falsch: str | None = None
+    referenz_korrekt_az: str | None = None
+    referenz_falsch_az: str | None = None
     grund_fuer_aufnahme: str | None = None
     grenzfall: bool | None = None
 
@@ -109,5 +117,14 @@ class CallResponse(BaseModel):
     http_status: int | None
     dauer_ms: float | None
     fehler: str
+    zweck: str
     request_body: dict
     response_body: dict
+    checks: list["CheckResultResponse"] = []
+
+
+class CheckResultResponse(BaseModel):
+    pruefung: str
+    ergebnis: str
+    auffaellig: bool
+    belege: dict

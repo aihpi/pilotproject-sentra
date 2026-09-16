@@ -27,6 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from sentra.evaluation import cases as case_store
+from sentra.evaluation import checks
 from sentra.evaluation.config import get_eval_settings
 from sentra.evaluation.db import session_scope
 from sentra.evaluation.models import (
@@ -36,8 +37,11 @@ from sentra.evaluation.models import (
     LAUFEND,
     OK,
     ORIGINAL,
+    ZWECK_ANTWORT,
+    ZWECK_RECALL,
     Call,
     CaseVersion,
+    CheckResult,
     Run,
 )
 
@@ -47,6 +51,13 @@ logger = logging.getLogger(__name__)
 # exercises. Stored on every call rather than assumed, so a round that used
 # something else stays readable.
 ANSWER_ENDPOINT = "/api/explorer/answer"
+
+# The recall probe. Made once per case version, not per repeat: it asks what
+# the document search can find, which does not vary with the repeat. It has to
+# happen during the round because a check that calls SENTRA itself could not be
+# re-run over an old round, and because what retrieval returns changes as the
+# corpus is re-ingested.
+DOCUMENTS_ENDPOINT = "/api/explorer/documents"
 
 
 class RunnerError(RuntimeError):
@@ -62,6 +73,18 @@ class PlannedCall:
     frage: str
     variant_key: str
     repeat_index: int
+    zweck: str = ZWECK_ANTWORT
+
+    @property
+    def endpoint(self) -> str:
+        return DOCUMENTS_ENDPOINT if self.zweck == ZWECK_RECALL else ANSWER_ENDPOINT
+
+    def body(self) -> dict:
+        if self.zweck == ZWECK_RECALL:
+            # top_k mirrors what the explorer UI asks for, so recall is measured
+            # against the list a person would actually be shown.
+            return {"query": self.frage, "top_k": 20}
+        return {"query": self.frage}
 
 
 # ── Planning ────────────────────────────────────────────────────────
@@ -90,6 +113,16 @@ def plan(session: Session, run: Run) -> list[PlannedCall]:
                     repeat_index=repeat_index,
                 )
             )
+        planned.append(
+            PlannedCall(
+                case_version_id=version.id,
+                test_id=case.test_id,
+                frage=version.ausgangsfrage,
+                variant_key=ORIGINAL,
+                repeat_index=0,
+                zweck=ZWECK_RECALL,
+            )
+        )
     return planned
 
 
@@ -100,15 +133,15 @@ def outstanding(session: Session, run: Run, retry_failed: bool = True) -> list[P
     the reason to resume is usually that something went wrong. A successful
     call is never repeated: it would spend quota to overwrite evidence.
     """
-    done: set[tuple[UUID, str, int]] = set()
+    done: set[tuple[UUID, str, int, str]] = set()
     for call in session.execute(select(Call).where(Call.run_id == run.id)).scalars():
         if call.status == OK or not retry_failed:
-            done.add((call.case_version_id, call.variant_key, call.repeat_index))
+            done.add((call.case_version_id, call.variant_key, call.repeat_index, call.zweck))
 
     return [
         item
         for item in plan(session, run)
-        if (item.case_version_id, item.variant_key, item.repeat_index) not in done
+        if (item.case_version_id, item.variant_key, item.repeat_index, item.zweck) not in done
     ]
 
 
@@ -179,14 +212,14 @@ def _make_one_call(run_id: UUID, item: PlannedCall, client: httpx.Client) -> Non
     is a fact about that call, and the remaining cases still have to be tried —
     otherwise one blip costs the whole round.
     """
-    body = {"query": item.frage}
+    body = item.body()
     started = time.monotonic()
     status: int | None = None
     response_body: dict = {}
     error = ""
 
     try:
-        response = client.post(ANSWER_ENDPOINT, json=body)
+        response = client.post(item.endpoint, json=body)
         status = response.status_code
         try:
             response_body = response.json()
@@ -206,6 +239,7 @@ def _make_one_call(run_id: UUID, item: PlannedCall, client: httpx.Client) -> Non
                 Call.case_version_id == item.case_version_id,
                 Call.variant_key == item.variant_key,
                 Call.repeat_index == item.repeat_index,
+                Call.zweck == item.zweck,
             )
         ).scalar_one_or_none()
 
@@ -214,8 +248,9 @@ def _make_one_call(run_id: UUID, item: PlannedCall, client: httpx.Client) -> Non
             case_version_id=item.case_version_id,
             variant_key=item.variant_key,
             repeat_index=item.repeat_index,
+            zweck=item.zweck,
         )
-        call.endpoint = ANSWER_ENDPOINT
+        call.endpoint = item.endpoint
         call.request_body = body
         call.response_body = response_body
         call.http_status = status
@@ -223,6 +258,8 @@ def _make_one_call(run_id: UUID, item: PlannedCall, client: httpx.Client) -> Non
         call.fehler = error
         call.status = FEHLER if error else OK
         session.add(call)
+        session.flush()
+        _run_checks(session, call)
 
 
 def _finish(run_id: UUID, error: str = "") -> None:
@@ -286,3 +323,54 @@ def audit_is_sound(session: Session, run: Run) -> bool:
         if version.freigegeben_at > run.started_at:
             return False
     return True
+
+
+# ── Checks ──────────────────────────────────────────────────────────
+
+
+def _run_checks(session: Session, call: Call) -> None:
+    """Score a call as soon as it is stored.
+
+    At run time rather than on read, because what the check said is part of the
+    round's record. A check whose rules changed later must not silently rewrite
+    what a reported round concluded. Re-running checks over an old round is
+    still possible — they are pure functions over these rows — and writes a new
+    verdict rather than editing the old one in place.
+    """
+    if call.status != OK:
+        return
+
+    version = session.get(CaseVersion, call.case_version_id)
+    if version is None:
+        return
+
+    if call.zweck == ZWECK_ANTWORT:
+        outcomes = [checks.quellenauswahl(call.response_body, version)]
+    else:
+        outcomes = [checks.retrieval_recall(call.response_body, version)]
+
+    for outcome in outcomes:
+        existing = session.execute(
+            select(CheckResult).where(
+                CheckResult.call_id == call.id, CheckResult.pruefung == outcome.pruefung
+            )
+        ).scalar_one_or_none()
+        result = existing or CheckResult(call_id=call.id, pruefung=outcome.pruefung)
+        result.ergebnis = outcome.ergebnis
+        result.auffaellig = outcome.auffaellig
+        result.belege = outcome.belege
+        session.add(result)
+
+
+def recheck(session: Session, run: Run) -> int:
+    """Re-run every check over a finished round, without calling SENTRA.
+
+    The property the checks were shaped around: they are pure functions over
+    stored rows, so a round can be scored again by a check that did not exist
+    when it ran.
+    """
+    scored = 0
+    for call in session.execute(select(Call).where(Call.run_id == run.id)).scalars():
+        _run_checks(session, call)
+        scored += 1
+    return scored
