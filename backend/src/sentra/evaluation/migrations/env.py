@@ -9,6 +9,12 @@ from logging.config import fileConfig
 
 from alembic import context
 
+# Imported for its side effect: the models have to be loaded before
+# Base.metadata knows about them, or `revision --autogenerate` cheerfully
+# produces an empty migration and the schema silently stops being tracked.
+# It worked by accident before this line — through router importing models —
+# which is not something to leave a schema resting on.
+from sentra.evaluation import models  # noqa: F401
 from sentra.evaluation.config import get_eval_settings
 from sentra.evaluation.db import Base, get_engine
 

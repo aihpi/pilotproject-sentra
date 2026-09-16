@@ -67,6 +67,11 @@ extend-immutable-calls = [
 [tool.ruff.lint.per-file-ignores]
 # Long assertion messages and the ground-truth table read better unwrapped.
 "tests/**" = ["E501"]
+# Alembic writes these, one sa.Column per line, and a column with a
+# server_default clears 100 characters on its own. Hand-wrapping generated code
+# means re-wrapping it after every `revision --autogenerate`, and a migration
+# that has been tidied by hand is one nobody can regenerate to compare against.
+"src/sentra/evaluation/migrations/versions/**" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"

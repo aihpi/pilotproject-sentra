@@ -14,6 +14,7 @@ the import together, so an image built without the `eval` extra never loads
 this package. See mount_evaluation in sentra.main.
 """
 
+from sentra.evaluation.categories import Kategorie
 from sentra.evaluation.config import EvalSettings, get_eval_settings
 from sentra.evaluation.db import Base, EvalDatabaseUnavailable, session_scope
 from sentra.evaluation.judge import (
@@ -30,6 +31,7 @@ __all__ = [
     "EvalDatabaseUnavailable",
     "EvalSettings",
     "JudgeConfig",
+    "Kategorie",
     "JudgeNotIndependent",
     "MissingJudgeConfiguration",
     "assert_judge_is_independent",
