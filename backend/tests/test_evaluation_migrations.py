@@ -15,7 +15,9 @@ applied, the same way prepare_index leaves the test collections in place.
 
 import pytest
 from alembic import command
+from alembic.autogenerate import compare_metadata
 from alembic.config import Config
+from alembic.migration import MigrationContext
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -64,28 +66,42 @@ class TestMigrations:
 
         assert schema_revision() is not None
 
-    def test_the_version_table_is_the_only_thing_the_baseline_creates(
-        self, require_eval_db, alembic_config
-    ):
-        """The baseline creates no tables on purpose. The first real one
-        arrives with the case store, on top of it."""
+    def test_the_schema_matches_the_models(self, require_eval_db, alembic_config):
+        """The check worth having, and the one that keeps working as tables are
+        added: after upgrading, alembic finds nothing left to generate.
+
+        This replaces a pair of assertions that the baseline creates no tables.
+        Those were true while the baseline was the head and became false the
+        moment the case store landed — they described a moment rather than a
+        rule. A model changed without a migration is the failure that actually
+        happens, and it is what this catches.
+        """
+        command.upgrade(alembic_config, "head")
+
+        with get_engine().connect() as connection:
+            context = MigrationContext.configure(connection)
+            differences = compare_metadata(context, Base.metadata)
+
+        assert differences == [], (
+            "the models and the database disagree — run:\n"
+            "    uv run alembic revision --autogenerate -m '...'\n"
+            f"{differences}"
+        )
+
+    def test_every_model_table_exists(self, require_eval_db, alembic_config):
         command.upgrade(alembic_config, "head")
 
         tables = set(inspect(get_engine()).get_table_names())
 
         assert "alembic_version" in tables
-        assert tables - {"alembic_version"} == set(), (
-            "a migration created tables the baseline was not supposed to"
-        )
+        assert set(Base.metadata.tables) <= tables
 
-    def test_nothing_creates_the_schema_behind_alembic(self, require_eval_db, alembic_config):
-        """create_all would make the schema whatever the first process to boot
-        decided, which is a schema nobody reviewed."""
+    def test_downgrading_to_base_removes_them_again(self, require_eval_db, alembic_config):
+        """A migration that cannot be undone is one nobody can test twice."""
         command.downgrade(alembic_config, "base")
 
-        assert Base.metadata.tables == {}, (
-            "models exist but no migration creates them — run alembic revision --autogenerate"
-        )
+        tables = set(inspect(get_engine()).get_table_names())
+        assert set(Base.metadata.tables) & tables == set()
 
         command.upgrade(alembic_config, "head")
 
