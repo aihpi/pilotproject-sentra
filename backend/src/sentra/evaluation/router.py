@@ -20,11 +20,12 @@ from sentra.evaluation.categories import KATEGORIE_NAMEN
 from sentra.evaluation.config import EvalSettings, get_eval_settings
 from sentra.evaluation.db import EvalDatabaseUnavailable, schema_revision, session_scope
 from sentra.evaluation.judge import judge_config
-from sentra.evaluation.models import LAUFEND, Call, Case, CaseVersion, Run
+from sentra.evaluation.models import LAUFEND, Call, Case, CaseVersion, CheckResult, Run
 from sentra.evaluation.schemas import (
     CallResponse,
     CaseResponse,
     CaseVersionResponse,
+    CheckResultResponse,
     CreateCaseRequest,
     EvalHealthResponse,
     RunResponse,
@@ -107,6 +108,8 @@ def _as_response(case: Case) -> CaseResponse:
                 erwartete_antwort=v.erwartete_antwort,
                 referenz_korrekt=v.referenz_korrekt,
                 referenz_falsch=v.referenz_falsch,
+                referenz_korrekt_az=v.referenz_korrekt_az,
+                referenz_falsch_az=v.referenz_falsch_az,
                 grund_fuer_aufnahme=v.grund_fuer_aufnahme,
                 grenzfall=v.grenzfall,
                 created_at=v.created_at,
@@ -139,6 +142,8 @@ def create_case(body: CreateCaseRequest) -> CaseResponse:
             erwartete_antwort=body.erwartete_antwort,
             referenz_korrekt=body.referenz_korrekt,
             referenz_falsch=body.referenz_falsch,
+            referenz_korrekt_az=body.referenz_korrekt_az,
+            referenz_falsch_az=body.referenz_falsch_az,
             grund_fuer_aufnahme=body.grund_fuer_aufnahme,
             grenzfall=body.grenzfall,
         )
@@ -302,8 +307,20 @@ def list_calls(run_id: UUID) -> list[CallResponse]:
                 http_status=call.http_status,
                 dauer_ms=call.dauer_ms,
                 fehler=call.fehler,
+                zweck=call.zweck,
                 request_body=call.request_body,
                 response_body=call.response_body,
+                checks=[
+                    CheckResultResponse(
+                        pruefung=c.pruefung,
+                        ergebnis=c.ergebnis,
+                        auffaellig=c.auffaellig,
+                        belege=c.belege,
+                    )
+                    for c in session.execute(
+                        select(CheckResult).where(CheckResult.call_id == call.id)
+                    ).scalars()
+                ],
             )
             for call, _version, case in rows
         ]
