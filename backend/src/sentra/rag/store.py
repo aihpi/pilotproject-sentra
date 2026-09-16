@@ -205,6 +205,10 @@ class _Collection:
         logger.info("Upserted %d points into '%s'", len(points), self.name)
         return len(points)
 
+    def delete_by_filter(self, point_filter: Filter) -> None:
+        """Remove every point matching the filter."""
+        self._client.delete(collection_name=self.name, points_selector=point_filter, wait=True)
+
     def scroll(
         self,
         *,
@@ -291,13 +295,28 @@ class VectorStore:
         self._chunks.ensure()
 
     def upsert_chunks(self, chunks: list[Chunk], embeddings: list[list[float]]) -> int:
-        """Insert chunk embeddings and metadata into Qdrant.
+        """Replace a document's chunks in Qdrant.
 
-        Returns the number of points upserted.
+        Returns the number of points written.
+
+        Replace, not insert. An upsert overwrites the ids it writes and leaves
+        every other id alone, and a chunk id is the source file plus the chunk
+        index — so a document that chunked into twelve pieces and now chunks
+        into six kept points 6 to 11 from the earlier run. They carried the old
+        text, they stayed in the index, and they were still returned as sources
+        for a query they happened to match. Raising CHUNK_MAX_TOKENS was enough
+        to cause it, and so was editing a PDF.
+
+        force=True did not help, and could not: it bypasses the already-indexed
+        pre-filter in services/ingest.py, which decides whether to parse a file
+        at all. The write underneath was always this one.
+
+        The delete lives here rather than in the ingestion loop because this is
+        the only place that knows how a chunk id is built, so it is the only
+        place that can be sure the delete and the write agree about which
+        points belong to a document. Every caller gets the fix rather than the
+        one that happened to be found.
         """
-        # Point ID is derived from source_file (not aktenzeichen) because
-        # _Abstract pairs and multi-AZ documents can share an Aktenzeichen,
-        # but the filename is always unique on disk.
         points = [
             PointStruct(
                 id=uuid5(
@@ -322,6 +341,17 @@ class VectorStore:
             )
             for chunk, embedding in zip(chunks, embeddings, strict=True)
         ]
+
+        # Before writing: every point already recorded for these documents.
+        # Deleting by source_file rather than by the ids we are about to write
+        # is what removes the surplus — the ids we write are by definition the
+        # ones that would have been overwritten anyway.
+        for source_file in sorted({chunk.metadata.source_file for chunk in chunks}):
+            self._chunks.delete_by_filter(
+                Filter(
+                    must=[FieldCondition(key="source_file", match=MatchValue(value=source_file))]
+                )
+            )
 
         return self._chunks.upsert(points)
 
