@@ -200,7 +200,7 @@ As above: **Dokumente** → **Dokumente einlesen**, then **Suche**.
 
 ```bash
 cd backend
-uv run pytest -m "not integration"   # 401 tests, no services needed. This is what CI runs.
+uv run pytest -m "not integration"   # 425 tests, no services needed. This is what CI runs.
 uv run pytest -m integration         # 82 tests, needs Qdrant, the AI Hub and, for five of
                                      # them, the eval database
 
@@ -213,6 +213,12 @@ npm run lint
 ```bash
 uvx pre-commit run --all-files       # ruff, mypy and the layering contract
 ```
+
+Test cases for an evaluation round live in `backend/eval_cases/` as YAML and are
+applied with `uv run python -m sentra.evaluation.cli import <file>`. Import is
+idempotent, so the file is the thing under review: a case arrives as a diff in a
+pull request rather than as a row somebody typed into a database. See
+`backend/eval_cases/README.md`.
 
 "No services needed" includes `backend/.env`. The offline tier calls no AI Hub,
 so `tests/conftest.py` fills in placeholder credentials when there is no env

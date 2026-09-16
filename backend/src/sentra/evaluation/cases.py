@@ -179,6 +179,47 @@ def approve(session: Session, version: CaseVersion) -> CaseVersion:
     return version
 
 
+def seed_case(
+    session: Session, *, test_id: str, kategorie: Kategorie, **content: object
+) -> tuple[Case, CaseVersion]:
+    """Create a case at a Test-ID that was allocated elsewhere.
+
+    For restoring an exported file into an empty database, and for nothing
+    else. The counter is advanced past the number so it can never be handed out
+    again — without that, seeding TF-GO-007 and then creating a case normally
+    would produce a second TF-GO-007, which is the exact failure the allocator
+    exists to prevent.
+
+    Deliberately not reachable from the API. The import CLI asks for it with an
+    explicit flag, so it cannot happen as a side effect of a normal import.
+    """
+    match = TEST_ID_PATTERN.fullmatch(test_id)
+    if match is None or match.group("kategorie") != str(kategorie):
+        raise CaseError(
+            f"{test_id!r} is not a Test-ID for category {kategorie}. "
+            f"Expected the form TF-{kategorie}-001."
+        )
+
+    case = Case(test_id=test_id, kategorie=str(kategorie))
+    session.add(case)
+    session.flush()
+
+    number = int(match.group("number"))
+    row = session.execute(
+        select(TestIdSequence).where(TestIdSequence.kategorie == kategorie).with_for_update()
+    ).scalar_one_or_none()
+    if row is None:
+        row = TestIdSequence(kategorie=str(kategorie), next_number=number + 1)
+        session.add(row)
+    else:
+        row.next_number = max(row.next_number, number + 1)
+
+    version = CaseVersion(case_id=case.id, version=1, status=ENTWURF, **content)
+    session.add(version)
+    session.flush()
+    return case, version
+
+
 def withdraw(session: Session, case: Case) -> Case:
     """Take a case out of future rounds without freeing its Test-ID."""
     if case.zurueckgezogen_at is None:
