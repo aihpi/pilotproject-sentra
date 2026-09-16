@@ -38,6 +38,18 @@ class EvalSettings(BaseSettings):
     judge_api_key: str
     judge_model: str
 
+    # The eval database. Credentials rather than a secret in the API-key sense,
+    # and the default matches the compose service, so a developer who turns the
+    # harness on locally needs to set nothing. A deployment overrides it.
+    #
+    # postgresql+psycopg is psycopg 3. The bare postgresql:// prefix would pick
+    # psycopg2, which is not in the extra and would fail at connect rather than
+    # at configuration.
+    # 5433 is the host port compose publishes, not the container's 5432: this
+    # default is for running the backend on your own machine against the compose
+    # stack. Inside a container compose overrides it with eval-db:5432.
+    eval_database_url: str = "postgresql+psycopg://sentra:sentra@localhost:5433/sentra_eval"
+
     # Where the runner finds SENTRA. Over HTTP and never in process, because
     # the API layer is part of what is under test — in-process calls would skip
     # the request models, the routing and the error policy, which is where a

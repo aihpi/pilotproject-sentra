@@ -29,7 +29,10 @@ dependencies = [
 # the ones that do not. main imports sentra.evaluation only when EVAL_ENABLED
 # is set, which is what makes leaving it out safe.
 eval = [
-    "httpx>=0.27.0",  # the runner calls SENTRA over HTTP at SENTRA_BASE_URL
+    "httpx>=0.27.0",      # the runner calls SENTRA over HTTP at SENTRA_BASE_URL
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.2",  # psycopg 3, which is what the postgresql+psycopg driver wants
 ]
 
 [dependency-groups]

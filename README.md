@@ -200,8 +200,9 @@ As above: **Dokumente** → **Dokumente einlesen**, then **Suche**.
 
 ```bash
 cd backend
-uv run pytest -m "not integration"   # 342 tests, no services needed. This is what CI runs.
-uv run pytest -m integration         # 77 tests, needs Qdrant and the AI Hub
+uv run pytest -m "not integration"   # 363 tests, no services needed. This is what CI runs.
+uv run pytest -m integration         # 81 tests, needs Qdrant, the AI Hub and, for four of
+                                     # them, the eval database
 
 cd frontend
 npm test                             # 26 component tests in jsdom, no browser needed
@@ -221,7 +222,8 @@ alone, since environment variables outrank it.
 
 The integration tier is not in CI, and the reason is cost rather than
 difficulty: every run embeds live queries and calls the chat model. It needs
-`.env` for real. It uses its own index built from
+`.env` for real. Its four migration tests also want the eval database
+(`docker compose up -d eval-db`) and skip with instructions when it is absent. It uses its own index built from
 `backend/tests/fixtures/corpus`, so it never reads whatever you have ingested.
 
 The frontend tests are vitest plus testing-library, sharing `vite.config.ts`
