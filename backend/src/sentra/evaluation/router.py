@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from sentra.evaluation.config import EvalSettings, get_eval_settings
 from sentra.evaluation.db import EvalDatabaseUnavailable, schema_revision
+from sentra.evaluation.judge import judge_config
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ def health(settings: EvalSettings = Depends(get_eval_settings)) -> EvalHealthRes
     database, revision = _database_state()
     return EvalHealthResponse(
         status="ok",
-        judge_model=settings.judge_model,
+        judge_model=judge_config().model,
         sentra_base_url=settings.sentra_base_url,
         database=database,
         schema_revision=revision,

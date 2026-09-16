@@ -23,7 +23,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from sentra.api.routes import router as core_router
-from sentra.evaluation import EvalDatabaseUnavailable, get_eval_settings
+from sentra.evaluation import (
+    EvalDatabaseUnavailable,
+    MissingJudgeConfiguration,
+    get_eval_settings,
+)
 from sentra.evaluation.db import get_engine, schema_revision, session_scope
 from sentra.main import mount_evaluation
 
@@ -170,3 +174,58 @@ class TestTheGermanDetail:
 
         assert response.status_code == 503
         assert "Auswertung" in response.json()["detail"]
+
+
+# ── The database does not need a judge ──────────────────────────────
+
+
+class TestTheDatabaseIsNotTheJudge:
+    """Regression. Both of these were broken when the judge settings were
+    required rather than checked where they are used.
+
+    Symptom: `alembic upgrade head` — a deployment step with nothing to do with
+    a judge — failed with three missing pydantic fields, and the migration
+    tests skipped with "the eval database is not reachable" at somebody whose
+    database was running.
+    """
+
+    def test_the_engine_builds_with_no_judge_configured(self, monkeypatch):
+        for name in ("JUDGE_BASE_URL", "JUDGE_API_KEY", "JUDGE_MODEL"):
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv("EVAL_DATABASE_URL", NOWHERE)
+        _clear_caches()
+
+        assert get_engine() is not None  # no MissingJudgeConfiguration
+
+        _clear_caches()
+
+    def test_mounting_without_a_judge_says_which_values_are_missing(self, monkeypatch, enabled):
+        """The harness still refuses to start without one — the requirement
+        moved, it did not go away — and now names what is absent."""
+        for name in ("JUDGE_BASE_URL", "JUDGE_API_KEY", "JUDGE_MODEL"):
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv("EVAL_DATABASE_URL", NOWHERE)
+        _clear_caches()
+
+        with pytest.raises(MissingJudgeConfiguration) as caught:
+            mount_evaluation(FastAPI(), enabled)
+
+        message = str(caught.value)
+        assert "JUDGE_BASE_URL" in message
+        assert "JUDGE_MODEL" in message
+
+        _clear_caches()
+
+    def test_a_partial_judge_is_still_a_failure(self, monkeypatch, enabled):
+        """Two of three set is the configuration mistake most likely to survive
+        a review, so it fails naming only the one that is absent."""
+        monkeypatch.setenv("JUDGE_BASE_URL", JUDGE_HUB)
+        monkeypatch.setenv("JUDGE_MODEL", JUDGE_MODEL)
+        monkeypatch.delenv("JUDGE_API_KEY", raising=False)
+        monkeypatch.setenv("EVAL_DATABASE_URL", NOWHERE)
+        _clear_caches()
+
+        with pytest.raises(MissingJudgeConfiguration, match="JUDGE_API_KEY"):
+            mount_evaluation(FastAPI(), enabled)
+
+        _clear_caches()

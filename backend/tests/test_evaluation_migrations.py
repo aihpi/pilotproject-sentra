@@ -17,7 +17,9 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import inspect, text
+from sqlalchemy.exc import SQLAlchemyError
 
+from sentra.evaluation.config import get_eval_settings
 from sentra.evaluation.db import Base, EvalDatabaseUnavailable, get_engine, schema_revision
 from tests.conftest import BACKEND_DIR
 
@@ -37,10 +39,18 @@ def alembic_config() -> Config:
 
 @pytest.fixture
 def require_eval_db():
+    """Skip when the database is absent. Fail for anything else.
+
+    Catching bare Exception here was worse than no guard: with JUDGE_* unset,
+    building the settings failed and the suite reported "the eval database is
+    not reachable, start it with docker compose up -d eval-db" at somebody who
+    had already started it. A guard that misnames the cause sends people to fix
+    the wrong thing, which is the distinction #59 and #61 were both about.
+    """
     try:
         with get_engine().connect() as connection:
             connection.execute(text("SELECT 1"))
-    except Exception as exc:
+    except (EvalDatabaseUnavailable, SQLAlchemyError) as exc:
         pytest.skip(
             "The eval database is not reachable. Start it with:\n"
             "    docker compose up -d eval-db\n"
@@ -85,9 +95,15 @@ class TestUnreachableIsStillItsOwnFailure:
         """The offline tier proves this against a closed port; this proves the
         same class comes back when a real server was there and then was not."""
         monkeypatch.setenv("EVAL_DATABASE_URL", "postgresql+psycopg://sentra:sentra@127.0.0.1:1/x")
+        # Both caches. get_eval_settings is lru_cached as well, so clearing only
+        # the engine rebuilt it from the settings it had already memoised and
+        # the test passed against the working database — it did not raise, and
+        # it was right not to.
+        get_eval_settings.cache_clear()
         get_engine.cache_clear()
 
         with pytest.raises(EvalDatabaseUnavailable):
             schema_revision()
 
+        get_eval_settings.cache_clear()
         get_engine.cache_clear()
