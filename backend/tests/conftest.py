@@ -20,6 +20,46 @@ from sentra.rag.embeddings import EmbeddingClient
 from sentra.rag.generator import AnswerGenerator
 from sentra.rag.store import VectorStore
 
+# ── Credentials the offline tier does not have and does not need ────
+
+ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+
+# A host that cannot resolve, per RFC 2606's reserved .invalid TLD. If an
+# offline test ever does reach for the hub, it fails on DNS rather than quietly
+# finding something real. A placeholder that worked would be worse than the bug
+# this replaces.
+PLACEHOLDER_HUB = "http://ai-hub.invalid/v1"
+PLACEHOLDER_KEY = "offline-tests-do-not-call-the-hub"
+
+
+def _placeholder_credentials_if_absent(env_file: Path) -> None:
+    """Let Settings build when there is no .env and no credentials around.
+
+    ai_hub_base_url and ai_hub_api_key are required with no defaults, and that
+    is deliberate: a server booting against a placeholder hub and failing on
+    the first search is worse than one refusing to start. The offline tier
+    inherited the requirement without needing it — none of those tests calls
+    the hub, they want a Settings for its collection names and paths — so CI,
+    which has no .env and no secrets, could not run the suite at all.
+
+    Set in the environment rather than passed to the settings fixture, because
+    not every Settings() in the suite comes from that fixture: store_with in
+    test_incremental_skip.py builds its own. They all read this.
+
+    Nothing is set when an env file exists. Environment variables outrank the
+    dotenv file in pydantic-settings, so doing it unconditionally would replace
+    a developer's real credentials with a hub that cannot be reached, and take
+    the integration tier down with it.
+    """
+    if env_file.is_file():
+        return
+    os.environ.setdefault("AI_HUB_BASE_URL", PLACEHOLDER_HUB)
+    os.environ.setdefault("AI_HUB_API_KEY", PLACEHOLDER_KEY)
+
+
+_placeholder_credentials_if_absent(ENV_FILE)
+
+
 # ── Constants ───────────────────────────────────────────────────────
 
 # The fixture corpus, versioned alongside the tests. Deliberately not data/:
@@ -192,15 +232,15 @@ TOTAL_PDFS = len(GROUND_TRUTH)  # 17
 def settings() -> Settings:
     """Backend settings, redirected at the test collections and fixture corpus.
 
-    Credentials and the Qdrant URL come from the real .env; everything that says
+    Credentials and the Qdrant URL come from the real .env where there is one,
+    and from the placeholders above where there is not; everything that says
     *which data* comes from here, so a test run can never touch the operator's
     index or read their corpus.
     """
-    env_path = Path(__file__).resolve().parents[1] / ".env"
-    if env_path.is_file():
-        os.environ.setdefault("ENV_FILE", str(env_path))
+    if ENV_FILE.is_file():
+        os.environ.setdefault("ENV_FILE", str(ENV_FILE))
     return Settings(
-        _env_file=str(env_path),
+        _env_file=str(ENV_FILE),
         collection_name=TEST_COLLECTION,
         doc_collection_name=TEST_DOC_COLLECTION,
         documents_dir=str(DATA_DIR),

@@ -123,13 +123,17 @@ class TestABadYearIsRejected:
 
     @pytest.mark.parametrize("path", DATE_FILTERED_ENDPOINTS)
     def test_answers_422(self, client, path):
-        response = client.post(path, json={"query": "Redezeit", "date_range": {"date_from": "2O23"}})
+        response = client.post(
+            path, json={"query": "Redezeit", "date_range": {"date_from": "2O23"}}
+        )
 
         assert response.status_code == 422
 
     @pytest.mark.parametrize("path", DATE_FILTERED_ENDPOINTS)
     def test_names_the_field_that_was_wrong(self, client, path):
-        response = client.post(path, json={"query": "Redezeit", "date_range": {"date_from": "2O23"}})
+        response = client.post(
+            path, json={"query": "Redezeit", "date_range": {"date_from": "2O23"}}
+        )
 
         assert "date_from" in str(response.json()["detail"])
 
