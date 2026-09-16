@@ -8,26 +8,40 @@ ended up importing from the API layer.
 """
 
 import logging
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from sentra.evaluation import cases as case_store
+from sentra.evaluation import runner as run_store
 from sentra.evaluation.categories import KATEGORIE_NAMEN
 from sentra.evaluation.config import EvalSettings, get_eval_settings
 from sentra.evaluation.db import EvalDatabaseUnavailable, schema_revision, session_scope
 from sentra.evaluation.judge import judge_config
-from sentra.evaluation.models import Case
+from sentra.evaluation.models import LAUFEND, Call, Case, CaseVersion, Run
 from sentra.evaluation.schemas import (
+    CallResponse,
     CaseResponse,
     CaseVersionResponse,
     CreateCaseRequest,
     EvalHealthResponse,
+    RunResponse,
+    StartRunRequest,
     UpdateCaseRequest,
 )
+from sentra.jobs import BackgroundJob
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/eval", tags=["evaluation"])
+
+# One round at a time, per process. A second round against the same SENTRA
+# would double the hub spend and interleave two sets of answers in the same
+# collection of rows. BackgroundJob is #81's, extracted so the harness could
+# reuse ingestion's hard-won check-and-start-under-one-lock.
+_EVAL_JOB = BackgroundJob("eval-run")
 
 
 @router.get("/health", response_model=EvalHealthResponse)
@@ -191,3 +205,112 @@ def _lookup(session: object, test_id: str) -> Case:
         return case_store.get_case(session, test_id)  # type: ignore[arg-type]
     except case_store.UnknownCase as exc:
         raise HTTPException(status_code=404, detail=f"Testfall {test_id} nicht gefunden.") from exc
+
+
+# ── Rounds (Phase 2 of the Vorlage) ─────────────────────────────────
+
+
+def _run_response(session: Session, run: Run) -> RunResponse:
+    state = run_store.progress(session, run)
+    return RunResponse(
+        id=run.id,
+        label=run.label,
+        status=run.status,
+        sentra_base_url=run.sentra_base_url,
+        repeats=run.repeats,
+        started_at=run.started_at,
+        completed_at=run.completed_at,
+        fehler=run.fehler,
+        total=state.total,
+        done=state.done,
+        failed=state.failed,
+        audit_ok=run_store.audit_is_sound(session, run),
+    )
+
+
+@router.post("/runs", response_model=RunResponse, status_code=201)
+def start_run(body: StartRunRequest, background: BackgroundTasks) -> RunResponse:
+    """Start a round. Returns immediately; poll GET /runs/{id} for progress.
+
+    A round is roughly 180 generation calls at 20 to 29 seconds each, so this
+    cannot be a request that waits for its own result.
+    """
+    with session_scope() as session:
+        try:
+            run = run_store.start_run(session, label=body.label, repeats=body.repeats)
+        except run_store.RunnerError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        session.flush()
+        response = _run_response(session, run)
+
+    _EVAL_JOB.start(lambda: run_store.execute(response.id))
+    return response
+
+
+@router.get("/runs", response_model=list[RunResponse])
+def list_runs() -> list[RunResponse]:
+    with session_scope() as session:
+        runs = session.execute(select(Run).order_by(Run.started_at.desc())).scalars()
+        return [_run_response(session, run) for run in runs]
+
+
+@router.get("/runs/{run_id}", response_model=RunResponse)
+def get_run(run_id: UUID) -> RunResponse:
+    with session_scope() as session:
+        return _run_response(session, _lookup_run(session, run_id))
+
+
+@router.post("/runs/{run_id}/fortsetzen", response_model=RunResponse)
+def resume_run(run_id: UUID) -> RunResponse:
+    """Continue a round: make the calls that are missing, retry the ones that failed.
+
+    A successful call is never repeated — it would spend quota to overwrite
+    evidence that is already good.
+    """
+    with session_scope() as session:
+        run = _lookup_run(session, run_id)
+        run.status = LAUFEND
+        run.completed_at = None
+        run.fehler = ""
+        response = _run_response(session, run)
+
+    if not _EVAL_JOB.start(lambda: run_store.execute(run_id)):
+        raise HTTPException(status_code=409, detail="Es läuft bereits eine Testrunde.")
+    return response
+
+
+@router.get("/runs/{run_id}/calls", response_model=list[CallResponse])
+def list_calls(run_id: UUID) -> list[CallResponse]:
+    """Every call the round has made so far, visible while it is still running."""
+    with session_scope() as session:
+        _lookup_run(session, run_id)
+        rows = session.execute(
+            select(Call, CaseVersion, Case)
+            .join(CaseVersion, Call.case_version_id == CaseVersion.id)
+            .join(Case, CaseVersion.case_id == Case.id)
+            .where(Call.run_id == run_id)
+            .order_by(Case.test_id, Call.variant_key, Call.repeat_index)
+        ).all()
+        return [
+            CallResponse(
+                id=call.id,
+                test_id=case.test_id,
+                variant_key=call.variant_key,
+                repeat_index=call.repeat_index,
+                status=call.status,
+                endpoint=call.endpoint,
+                http_status=call.http_status,
+                dauer_ms=call.dauer_ms,
+                fehler=call.fehler,
+                request_body=call.request_body,
+                response_body=call.response_body,
+            )
+            for call, _version, case in rows
+        ]
+
+
+def _lookup_run(session: Session, run_id: UUID) -> Run:
+    try:
+        return run_store.get_run(session, run_id)
+    except run_store.RunnerError as exc:
+        raise HTTPException(status_code=404, detail=f"Testrunde {run_id} nicht gefunden.") from exc

@@ -18,12 +18,14 @@ measured against it yet. Approval is the moment it becomes evidence, and
 `freigegeben_at` is what a later audit compares against a run's start.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    JSON,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -38,6 +40,19 @@ from sentra.evaluation.db import Base
 # Status values, German because the reviewer-facing vocabulary is German.
 ENTWURF = "entwurf"
 FREIGEGEBEN = "freigegeben"
+
+# Run states.
+LAUFEND = "laufend"
+ABGESCHLOSSEN = "abgeschlossen"
+FEHLGESCHLAGEN = "fehlgeschlagen"
+
+# Call outcomes.
+OK = "ok"
+FEHLER = "fehler"
+
+# The variant key for the unmodified Ausgangsfrage. Paraphrases (4.2) get their
+# own keys when they exist; until then every call carries this one.
+ORIGINAL = "original"
 
 
 class TestIdSequence(Base):
@@ -136,3 +151,99 @@ class CaseVersion(Base):
     @property
     def is_approved(self) -> bool:
         return self.status == FREIGEGEBEN
+
+
+class Run(Base):
+    """One test round.
+
+    Carries where it called and when it started, because a stored answer is
+    only evidence if you can say what produced it. `started_at` is the other
+    half of the audit property the case store set up: a call may only use an
+    approved version, and that version's `freigegeben_at` has to precede this.
+    """
+
+    __tablename__ = "runs"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    label: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default=LAUFEND)
+    # Recorded rather than read from settings later: a round run against
+    # staging and a round run against production are different evidence, and
+    # the setting will have moved on by the time anybody asks.
+    sentra_base_url: Mapped[str] = mapped_column(String(255), nullable=False)
+    # 4.1 asks for the same prompt three times in separate sessions. SENTRA
+    # holds no session state, so that is three POSTs — but the number is stored
+    # because a round that used a different one is not comparable.
+    repeats: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+
+    # Python-side, not server_default=func.now(), and this is load-bearing.
+    # The audit property compares this against a version's freigegeben_at,
+    # which is stamped in Python. Two clocks at two precisions make that
+    # comparison quietly wrong: SQLite's CURRENT_TIMESTAMP truncates to the
+    # second, so a run started milliseconds after an approval read as having
+    # started before it, and on Postgres now() is transaction-start time, which
+    # has the same effect for a different reason. One clock for both.
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    fehler: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    calls: Mapped[list["Call"]] = relationship(back_populates="run", cascade="all, delete-orphan")
+
+
+class Call(Base):
+    """One request to SENTRA and what came back.
+
+    There is exactly one row per planned call, which is what makes a round
+    resumable: the rows *are* the progress record, so continuing means working
+    out the plan again and skipping what is already there. A round is about 180
+    generation calls at 20 to 29 seconds each, so losing 45 of them to a restart
+    is an hour and a slice of hub quota.
+
+    Request and response are stored whole. Every check in this feature is a
+    pure function over one of these rows, which is what lets a round be
+    re-checked later without calling SENTRA again — including with checks that
+    did not exist when the round ran.
+    """
+
+    __tablename__ = "calls"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "case_version_id",
+            "variant_key",
+            "repeat_index",
+            name="uq_calls_planned_once",
+        ),
+        CheckConstraint(f"status IN ('{OK}', '{FEHLER}')", name="ck_calls_status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    run_id: Mapped[UUID] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), index=True)
+    # The version, not the case. What a round measured against has to stay
+    # readable exactly as it was, and a later draft must not change it.
+    case_version_id: Mapped[UUID] = mapped_column(
+        ForeignKey("case_versions.id", ondelete="RESTRICT"), index=True
+    )
+
+    # "original", or the key of an approved paraphrase once 4.2 exists.
+    variant_key: Mapped[str] = mapped_column(String(32), nullable=False, default=ORIGINAL)
+    # 0, 1, 2 for the three repeats of 4.1.
+    repeat_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default=OK)
+    endpoint: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_body: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    response_body: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    http_status: Mapped[int | None] = mapped_column(Integer)
+    # Wall time, not model time. What a reviewer waits for is the whole call.
+    dauer_ms: Mapped[float | None] = mapped_column(Float)
+    fehler: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    run: Mapped[Run] = relationship(back_populates="calls")
+    case_version: Mapped[CaseVersion] = relationship()

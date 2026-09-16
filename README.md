@@ -200,7 +200,7 @@ As above: **Dokumente** → **Dokumente einlesen**, then **Suche**.
 
 ```bash
 cd backend
-uv run pytest -m "not integration"   # 430 tests, no services needed. This is what CI runs.
+uv run pytest -m "not integration"   # 447 tests, no services needed. This is what CI runs.
 uv run pytest -m integration         # 89 tests, needs Qdrant and the AI Hub, and for five of
                                      # them the eval database
 

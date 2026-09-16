@@ -7,6 +7,7 @@ filled in from them and translating twice is how two vocabularies drift apart.
 """
 
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -70,3 +71,43 @@ class UpdateCaseRequest(BaseModel):
     referenz_falsch: str | None = None
     grund_fuer_aufnahme: str | None = None
     grenzfall: bool | None = None
+
+
+class StartRunRequest(BaseModel):
+    label: str = ""
+    # 4.1 asks for three. Configurable because a smoke run of one is useful and
+    # a round of three is what the Vorlage specifies.
+    repeats: int = Field(default=3, ge=1, le=10)
+
+
+class RunResponse(BaseModel):
+    id: UUID
+    label: str
+    status: str
+    sentra_base_url: str
+    repeats: int
+    started_at: datetime
+    completed_at: datetime | None
+    fehler: str
+    # Progress, so a caller polling this can see a round move.
+    total: int
+    done: int
+    failed: int
+    # Whether every version used was approved before the round began. False
+    # means the round measured against an expectation that could have been
+    # written to fit the answers.
+    audit_ok: bool
+
+
+class CallResponse(BaseModel):
+    id: UUID
+    test_id: str
+    variant_key: str
+    repeat_index: int
+    status: str
+    endpoint: str
+    http_status: int | None
+    dauer_ms: float | None
+    fehler: str
+    request_body: dict
+    response_body: dict

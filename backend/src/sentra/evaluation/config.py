@@ -60,6 +60,12 @@ class EvalSettings(BaseSettings):
     # stack. Inside a container compose overrides it with eval-db:5432.
     eval_database_url: str = "postgresql+psycopg://sentra:sentra@localhost:5433/sentra_eval"
 
+    # How long the runner waits on one SENTRA call. Above SENTRA's own
+    # generation timeout of 120s on purpose: a call that SENTRA gives up on
+    # should come back as its 503, which is a finding, rather than as the
+    # runner timing out first, which is noise about the harness.
+    runner_timeout_seconds: float = 180.0
+
     # Where the runner finds SENTRA. Over HTTP and never in process, because
     # the API layer is part of what is under test — in-process calls would skip
     # the request models, the routing and the error policy, which is where a
