@@ -200,7 +200,7 @@ As above: **Dokumente** → **Dokumente einlesen**, then **Suche**.
 
 ```bash
 cd backend
-uv run pytest -m "not integration"   # 287 tests, no services needed. This is what CI runs.
+uv run pytest -m "not integration"   # 342 tests, no services needed. This is what CI runs.
 uv run pytest -m integration         # 77 tests, needs Qdrant and the AI Hub
 
 cd frontend
@@ -213,10 +213,16 @@ npm run lint
 uvx pre-commit run --all-files       # ruff, mypy and the layering contract
 ```
 
+"No services needed" includes `backend/.env`. The offline tier calls no AI Hub,
+so `tests/conftest.py` fills in placeholder credentials when there is no env
+file and none in the environment, pointing at a host that cannot resolve. That
+is what lets CI, which has neither, run the suite at all. A real `.env` is left
+alone, since environment variables outrank it.
+
 The integration tier is not in CI, and the reason is cost rather than
-difficulty: every run embeds live queries and calls the chat model. It uses its
-own index built from `backend/tests/fixtures/corpus`, so it never reads whatever
-you have ingested.
+difficulty: every run embeds live queries and calls the chat model. It needs
+`.env` for real. It uses its own index built from
+`backend/tests/fixtures/corpus`, so it never reads whatever you have ingested.
 
 The frontend tests are vitest plus testing-library, sharing `vite.config.ts`
 so the `@` alias is defined once. They cover the explorer components that take
