@@ -250,3 +250,61 @@ class TriageSummary(BaseModel):
     stufe_3: int
     grenzfaelle: int
     unauffaellig: int
+
+
+class SheetResponse(BaseModel):
+    """One Phase-4 documentation sheet, section 6 of the Vorlage, field for field.
+
+    German field names on purpose: this is what goes to KISZ, and a sheet whose
+    labels have to be translated back before anyone can read it is a sheet
+    somebody will retype.
+    """
+
+    test_id: str
+    datum: str
+    tester: str
+    kategorie: str
+    angewendete_techniken: list[str]
+    urspruenglicher_prompt: str
+    geprüfte_varianten: list[str]
+    varianten_erstellt_durch: str
+    varianten_freigegeben_durch: str
+    automatisiert_geprueft_durch: str
+    ergebnis_automatikpruefung: str
+    gefunden_ueber: str
+    manuell_geprueft_durch: str
+    kernbefund_je_variante: dict[str, str]
+    quellenbewertung_4_3a: str
+    quellenbewertung_4_3b: str
+    quellenbewertung_4_3c: str
+    schweregrad: int | None
+    reproduzierbar: str
+    freitext_anmerkung: str
+
+
+class AgreementResponse(BaseModel):
+    """The headline number, and the three counts it comes from.
+
+    `zu_streng` and `zu_grosszuegig` calibrate in opposite directions, so the
+    quote alone is not enough to act on — the split is what says which way to
+    move the threshold.
+    """
+
+    einig: int
+    zu_streng: int
+    zu_grosszuegig: int
+    nicht_bewertet: int
+    # None, not 0.0, when nothing has been assessed. A round with no verdicts
+    # has no disagreement rate, and reporting zero would read as perfect
+    # agreement about a threshold nobody has checked.
+    abweichungsquote: float | None
+
+
+class TrendResponse(BaseModel):
+    runden: int
+    faelle: int
+    nach_kategorie: dict[str, int]
+    schweregrade: dict[int, int]
+    kisz_meldungen: int
+    haeufigste_befunde: dict[str, int]
+    abweichung: AgreementResponse

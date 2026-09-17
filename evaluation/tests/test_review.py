@@ -372,3 +372,113 @@ class TestVorlageOptions:
         ]
         assert body["quelle_4_3c"] == ["Quelle stützt Aussage", "stützt Aussage nicht"]
         assert body["schweregrad"]["4"] == "kritisch"
+
+
+# ── Phase 4, over HTTP ──────────────────────────────────────────────
+
+
+class TestTheReportEndpoints:
+    """Exercised through the API, not only as functions.
+
+    Two report endpoints shipped in an earlier task referencing a module the
+    router had not imported. The tests passed because nothing called them, and
+    ruff caught it — these make the tests catch it too.
+    """
+
+    def test_the_sheets_come_back(self, client):
+        run_id, queue = _round(client)
+
+        response = client.get(f"/api/eval/runs/{run_id}/boegen")
+
+        assert response.status_code == 200
+        assert response.json()[0]["test_id"] == "TF-GO-001"
+
+    def test_a_sheet_carries_the_machine_verdict(self, client):
+        """Withheld from the queue, present in the record."""
+        run_id, _ = _round(client)
+
+        sheet = client.get(f"/api/eval/runs/{run_id}/boegen").json()[0]
+
+        assert sheet["ergebnis_automatikpruefung"].startswith("auffällig")
+
+    def test_the_disagreement_rate_comes_back(self, client):
+        run_id, _ = _round(client)
+
+        response = client.get(f"/api/eval/runs/{run_id}/abweichung")
+
+        assert response.status_code == 200
+        # Nothing assessed yet, so there is no rate rather than a flattering zero.
+        assert response.json()["abweichungsquote"] is None
+
+    def test_the_rate_appears_once_somebody_assesses(self, client):
+        run_id, queue = _round(client)
+
+        _submit(client, run_id, queue[0], quelle_4_3b="falsche bzw. veraltete Quelle")
+
+        body = client.get(f"/api/eval/runs/{run_id}/abweichung").json()
+        assert body["einig"] == 1
+        assert body["abweichungsquote"] == 0.0
+
+    def test_the_trend_report_comes_back(self, client):
+        _round(client)
+
+        response = client.get("/api/eval/trend")
+
+        assert response.status_code == 200
+        assert response.json()["runden"] >= 1
+
+    def test_the_triage_summary_comes_back(self, client):
+        run_id, _ = _round(client)
+
+        body = client.get(f"/api/eval/runs/{run_id}/triage").json()
+
+        assert body["gesamt"] == 1
+        assert body["stufe_2"] == 1
+
+
+class TestTheRemainingRunEndpoints:
+    """The two endpoints nothing was calling.
+
+    Found by listing every route and grepping the tests for it, after ruff
+    twice caught runtime errors in handlers no test exercised. A handler with
+    no test is a handler whose only check is that it parses.
+    """
+
+    def test_the_calls_of_a_round_can_be_listed(self, client):
+        run_id, _ = _round(client)
+
+        response = client.get(f"/api/eval/runs/{run_id}/calls")
+
+        assert response.status_code == 200
+        body = response.json()
+        # Two answers and the recall probe.
+        assert len(body) == 3
+        assert {c["zweck"] for c in body} == {"antwort", "recall"}
+
+    def test_the_calls_carry_their_check_results(self, client):
+        """This is the raw view, not the review queue — so unlike the queue it
+        may show machine verdicts, because nobody is forming an assessment
+        from it."""
+        run_id, _ = _round(client)
+
+        body = client.get(f"/api/eval/runs/{run_id}/calls").json()
+
+        answers = [c for c in body if c["zweck"] == "antwort"]
+        assert answers[0]["checks"]
+
+    def test_resuming_a_finished_round_is_accepted(self, client):
+        """Nothing is outstanding, so it completes again without calling
+        SENTRA. The endpoint existing and returning the run is what is being
+        checked."""
+        run_id, _ = _round(client)
+
+        response = client.post(f"/api/eval/runs/{run_id}/fortsetzen")
+
+        assert response.status_code == 200
+        assert response.json()["id"] == str(run_id)
+
+    def test_an_unknown_run_is_a_404_everywhere(self, client):
+        missing = "00000000-0000-0000-0000-000000000000"
+
+        for path in ("calls", "queue", "boegen", "triage", "abweichung", "kisz"):
+            assert client.get(f"/api/eval/runs/{missing}/{path}").status_code == 404, path
