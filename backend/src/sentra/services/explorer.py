@@ -217,6 +217,7 @@ def _generate(
     fachbereich: str | None = None,
     document_type: str | None = None,
     system_prompt: str | None = None,
+    debug: bool = False,
 ) -> AnswerResult:
     query_embedding = embedder.embed_query(query)
 
@@ -240,9 +241,19 @@ def _generate(
 
     sources = _build_source_refs(results)
     context = format_context(results)
-    text = generate(query, context, system_prompt=system_prompt)
+    generated = generate(query, context, system_prompt=system_prompt)
 
-    return AnswerResult(text=text, sources=sources, system_prompt=effective_prompt)
+    return AnswerResult(
+        text=generated.text,
+        sources=sources,
+        system_prompt=effective_prompt,
+        # Only when asked. The chunks are the whole retrieved context and the
+        # explorer UI never shows them, so carrying them by default would make
+        # every answer response several times larger for nobody's benefit.
+        hits=results if debug else [],
+        finish_reason=generated.finish_reason if debug else None,
+        model=generated.model if debug else None,
+    )
 
 
 # ── UC#10: Answer question ──────────────────────────────────────────
@@ -259,6 +270,7 @@ def answer_question(
     fachbereich: str | None = None,
     document_type: str | None = None,
     system_prompt: str | None = None,
+    debug: bool = False,
 ) -> AnswerResult:
     """Answer a specific Fachfrage with source citations."""
     return _generate(
@@ -273,6 +285,7 @@ def answer_question(
         fachbereich,
         document_type,
         system_prompt,
+        debug,
     )
 
 
@@ -290,6 +303,7 @@ def generate_overview(
     fachbereich: str | None = None,
     document_type: str | None = None,
     system_prompt: str | None = None,
+    debug: bool = False,
 ) -> AnswerResult:
     """Generate a structured topic overview."""
     return _generate(
@@ -304,4 +318,5 @@ def generate_overview(
         fachbereich,
         document_type,
         system_prompt,
+        debug,
     )

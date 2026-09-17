@@ -14,7 +14,7 @@ Offline, which is itself a consequence of the change. Passing the callable in
 means these no longer need a live AnswerGenerator.
 """
 
-from sentra.domain import Hit
+from sentra.domain import Generation, Hit
 from sentra.services.explorer import _generate, answer_question, generate_overview
 
 
@@ -63,11 +63,11 @@ class RecordingGenerator:
 
     def generate_answer(self, question: str, context: str, system_prompt: str | None = None):
         self.calls.append(("generate_answer", question, context, system_prompt))
-        return "eine Antwort"
+        return Generation(text="eine Antwort")
 
     def generate_overview(self, topic: str, context: str, system_prompt: str | None = None):
         self.calls.append(("generate_overview", topic, context, system_prompt))
-        return "ein Überblick"
+        return Generation(text="ein Überblick")
 
 
 def call(entry_point, store, generator, **kwargs):
@@ -168,9 +168,11 @@ class TestAnyConformingCallable:
     def test_a_plain_function_works(self):
         seen: list[tuple[str, str, str | None]] = []
 
-        def generate(question: str, context: str, *, system_prompt: str | None = None) -> str:
+        def generate(
+            question: str, context: str, *, system_prompt: str | None = None
+        ) -> Generation:
             seen.append((question, context, system_prompt))
-            return "aus einer Funktion"
+            return Generation(text="aus einer Funktion")
 
         result = _generate(
             "Frage?",
