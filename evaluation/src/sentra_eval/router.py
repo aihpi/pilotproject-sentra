@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from sentra_eval import cases as case_store
-from sentra_eval import models
+from sentra_eval import models, triage
 from sentra_eval import review as review_store
 from sentra_eval import runner as run_store
 from sentra_eval.categories import KATEGORIE_NAMEN
@@ -46,6 +46,7 @@ from sentra_eval.schemas import (
     RunResponse,
     StartRunRequest,
     SubmitVerdictRequest,
+    TriageSummary,
     UpdateCaseRequest,
     VerdictResponse,
     VorlageOptions,
@@ -243,6 +244,8 @@ def _run_response(session: Session, run: Run) -> RunResponse:
         started_at=run.started_at,
         completed_at=run.completed_at,
         fehler=run.fehler,
+        stichprobe_seed=run.stichprobe_seed,
+        stichprobe_anteil=run.stichprobe_anteil,
         total=state.total,
         done=state.done,
         failed=state.failed,
@@ -259,7 +262,13 @@ def start_run(body: StartRunRequest, background: BackgroundTasks) -> RunResponse
     """
     with session_scope() as session:
         try:
-            run = run_store.start_run(session, label=body.label, repeats=body.repeats)
+            run = run_store.start_run(
+                session,
+                label=body.label,
+                repeats=body.repeats,
+                stichprobe_anteil=body.stichprobe_anteil,
+                stichprobe_seed=body.stichprobe_seed,
+            )
         except run_store.RunnerError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         session.flush()
@@ -521,3 +530,24 @@ def _verdict_response(verdict: Verdict) -> VerdictResponse:
         kisz_meldung=verdict.kisz_meldung,
         created_at=verdict.created_at,
     )
+
+
+@router.get("/runs/{run_id}/triage", response_model=TriageSummary)
+def triage_summary(run_id: UUID) -> TriageSummary:
+    """What Stufe 1 decided, in aggregate.
+
+    A round where everything is flagged means the threshold filters nothing; a
+    round where nothing is may mean it filters too much. That ratio is what the
+    Vorlage's headline metric is calibrating, so it is worth seeing without
+    counting a queue by hand.
+    """
+    with session_scope() as session:
+        run = _lookup_run(session, run_id)
+        decisions = triage.triage_run(session, run)
+        return TriageSummary(
+            gesamt=len(decisions),
+            stufe_2=sum(1 for d in decisions if d.gefunden_ueber == models.STUFE_2),
+            stufe_3=sum(1 for d in decisions if d.gefunden_ueber == models.STUFE_3),
+            grenzfaelle=sum(1 for d in decisions if d.gefunden_ueber == models.GRENZFALL_IMMER),
+            unauffaellig=sum(1 for d in decisions if not d.needs_review),
+        )

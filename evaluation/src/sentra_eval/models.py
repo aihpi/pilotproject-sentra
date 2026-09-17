@@ -234,6 +234,19 @@ class Run(Base):
     # second, so a run started milliseconds after an approval read as having
     # started before it, and on Postgres now() is transaction-start time, which
     # has the same effect for a different reason. One clock for both.
+    # Stufe 3's sample, fixed at the start of the round.
+    #
+    # Stored rather than drawn fresh so the sample can be recomputed months
+    # later and shown to be what it claims. "Why was this case not reviewed"
+    # then has an answer better than a shrug — which matters, because Stufe 3
+    # exists to detect Stufe 1 systematically missing things, and a sample
+    # nobody can reconstruct cannot support that claim.
+    stichprobe_seed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # The Vorlage leaves the rate open and suggests 10 percent as a starting
+    # point. Stored on the run because changing it later must not change what a
+    # finished round did.
+    stichprobe_anteil: Mapped[float] = mapped_column(Float, nullable=False, default=0.1)
+
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
