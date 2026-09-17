@@ -183,12 +183,22 @@ def marker_ausrichtung(response: dict) -> CheckOutcome:
         # A marker pointing at a source that is not there. The model invented a
         # number, and a reviewer following it finds nothing.
         "marker_ohne_quelle": dangling,
-        # A source the answer never referred to. Not wrong, but it means the
-        # answer used less of its context than it was given.
+        # A source the answer never referred to. Evidence, not a finding — see
+        # below.
         "quellen_ohne_marker": uncited,
     }
 
-    if dangling or uncited:
+    # Only a dangling marker is a finding. An uncited source is recorded and
+    # not flagged, which is a change made after the first real round: both
+    # answers in it hedged rather than answering, cited nothing, and so had
+    # every source uncited. That produced an auffällig on ordinary behaviour,
+    # alongside the ablehnung finding the same hedge already caused — one fact,
+    # two findings — and it buried the error class this check exists for, which
+    # is a [3] against two sources.
+    #
+    # The count stays in belege, so the trend report can still ask how often
+    # answers ignore their context. It just does not send anybody to read one.
+    if dangling:
         return CheckOutcome(MARKER_AUSRICHTUNG, NICHT_AUSGERICHTET, auffaellig=True, belege=belege)
     return CheckOutcome(MARKER_AUSRICHTUNG, AUSGERICHTET, auffaellig=False, belege=belege)
 
@@ -199,6 +209,11 @@ ABLEHNUNG = "ablehnung"
 KORREKT_ABGELEHNT = "korrekt abgelehnt"
 NICHT_ABGELEHNT = "nicht abgelehnt"
 ABLEHNUNG_UNERWARTET = "unerwartet abgelehnt"
+# The fourth state, and the one that was missing: an ordinary question that was
+# answered. It used to report "korrekt abgelehnt", which says the opposite of
+# what happened and contradicted its own evidence — `abgelehnt: false` under a
+# verdict reading "correctly refused". A reviewer stops on that every time.
+KEINE_ABLEHNUNG_ERWARTET = "keine Ablehnung erwartet"
 
 # Exactly what services/explorer.py returns when nothing was retrieved. Copied
 # deliberately rather than imported: the harness is a separate distribution and
@@ -238,7 +253,7 @@ def ablehnung(response: dict, *, grenzfall: bool) -> CheckOutcome:
         return CheckOutcome(ABLEHNUNG, NICHT_ABGELEHNT, auffaellig=True, belege=belege)
     if refused:
         return CheckOutcome(ABLEHNUNG, ABLEHNUNG_UNERWARTET, auffaellig=True, belege=belege)
-    return CheckOutcome(ABLEHNUNG, KORREKT_ABGELEHNT, auffaellig=False, belege=belege)
+    return CheckOutcome(ABLEHNUNG, KEINE_ABLEHNUNG_ERWARTET, auffaellig=False, belege=belege)
 
 
 # ── Truncation, which is not inconsistency ──────────────────────────

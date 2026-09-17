@@ -227,13 +227,30 @@ class TestMarkerAusrichtung:
         assert outcome.ergebnis == checks.NICHT_AUSGERICHTET
         assert outcome.belege["marker_ohne_quelle"] == [3]
 
-    def test_a_source_nobody_cited_is_a_finding(self):
-        """The quieter half. Not wrong, but the answer used less of its context
-        than it was given, and that is worth a look."""
+    def test_a_source_nobody_cited_is_recorded_but_not_flagged(self):
+        """Evidence, not a finding, and that is a decision from the first real
+        round: both answers in it hedged, cited nothing, and had every source
+        uncited — an auffällig on ordinary behaviour, on top of the ablehnung
+        finding the same hedge already caused. One fact, two findings, and the
+        real error class buried under them."""
         outcome = checks.marker_ausrichtung(_answer_text("Nur [1].", "A", "B", "C"))
 
-        assert outcome.ergebnis == checks.NICHT_AUSGERICHTET
+        assert outcome.ergebnis == checks.AUSGERICHTET
+        assert outcome.auffaellig is False
+        # Still counted, so the trend report can ask how often answers ignore
+        # their context.
         assert outcome.belege["quellen_ohne_marker"] == [2, 3]
+
+    def test_a_hedge_that_cites_nothing_is_not_a_marker_finding(self):
+        """The shape that actually came back from the live corpus: an answer
+        explaining that the context does not cover the question, with sources
+        attached and no markers at all."""
+        outcome = checks.marker_ausrichtung(
+            _answer_text("Die Frage kann auf Basis der Auszüge nicht beantwortet werden.", "A", "B")
+        )
+
+        assert outcome.auffaellig is False
+        assert outcome.belege["quellen_ohne_marker"] == [1, 2]
 
     def test_markdown_bold_around_a_marker_still_counts(self):
         """The prompts ask for **[1]**, which is what the model emits."""
@@ -252,8 +269,12 @@ class TestMarkerAusrichtung:
         assert outcome.ergebnis == checks.AUSGERICHTET
 
     def test_the_evidence_names_both_directions(self):
+        """A dangling marker still is a finding — it is the model inventing a
+        citation, and a reviewer following [4] finds nothing."""
         outcome = checks.marker_ausrichtung(_answer_text("[1] und [4].", "A", "B"))
 
+        assert outcome.ergebnis == checks.NICHT_AUSGERICHTET
+        assert outcome.auffaellig is True
         assert outcome.belege["marker_ohne_quelle"] == [4]
         assert outcome.belege["quellen_ohne_marker"] == [2]
 
@@ -286,10 +307,14 @@ class TestAblehnung:
         assert outcome.ergebnis == checks.ABLEHNUNG_UNERWARTET
         assert outcome.auffaellig is True
 
-    def test_an_ordinary_question_that_is_answered_is_fine(self):
+    def test_an_ordinary_question_that_is_answered_says_so(self):
+        """Not "korrekt abgelehnt", which is what it used to say about answers
+        that were never refused — a verdict contradicting its own evidence,
+        which a reviewer stops on every time."""
         outcome = checks.ablehnung(_answer_text("Antwort [1].", "A"), grenzfall=False)
 
-        assert outcome.ergebnis == checks.KORREKT_ABGELEHNT
+        assert outcome.ergebnis == checks.KEINE_ABLEHNUNG_ERWARTET
+        assert outcome.auffaellig is False
 
     def test_the_refusal_text_with_sources_does_not_count(self):
         """The refusal means nothing was retrieved. The same sentence with
