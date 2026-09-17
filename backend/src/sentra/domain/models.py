@@ -139,9 +139,31 @@ class ExternalSource:
 
 
 @dataclass
+class Generation:
+    """What one call to the chat model produced.
+
+    finish_reason and model used to be discarded. Both matter to anything
+    judging the answer: "length" means the model was cut off at a ceiling
+    rather than finishing, which reads as an inconsistency if you only see the
+    text; and the model name we send is not a guarantee of what answered.
+    """
+
+    text: str
+    finish_reason: str | None = None
+    model: str | None = None
+
+
+@dataclass
 class AnswerResult:
     """A generated answer together with the sources it drew on."""
 
     text: str
     sources: list[SourceRef]
     system_prompt: str | None = None
+    # Only populated when the caller asked for it. The chunks are large and the
+    # explorer UI has no use for them, so the default response does not carry
+    # them — but without them nothing can check whether a claim is in the
+    # context at all.
+    hits: list[Hit] = field(default_factory=list)
+    finish_reason: str | None = None
+    model: str | None = None

@@ -203,6 +203,11 @@ class AnswerRequest(BaseModel):
     # because they count documents rather than chunks.
     top_k: int | None = None
     system_prompt: str | None = None
+    # Opt in to the retrieved context, the finish reason and the model the hub
+    # served. Off by default and deliberately so: the chunks are large and the
+    # explorer UI has no use for them. The evaluation harness is the caller
+    # this exists for.
+    debug: bool = False
 
 
 class AnswerSourceRef(BaseModel):
@@ -223,10 +228,46 @@ class AnswerSourceRef(BaseModel):
         )
 
 
+class RetrievedChunk(BaseModel):
+    """One chunk the answer was generated from.
+
+    Only present when the request asked for it. This is the whole universe the
+    model saw for this source, which is what lets a check ask whether a claim
+    is in the context at all rather than inferring it from the answer.
+    """
+
+    aktenzeichen: str
+    section_title: str
+    chunk_index: int
+    score: float
+    text: str
+
+    @classmethod
+    def from_domain(cls, hit: domain.Hit) -> "RetrievedChunk":
+        return cls(
+            aktenzeichen=hit.aktenzeichen,
+            section_title=hit.section_title,
+            chunk_index=hit.chunk_index,
+            score=hit.score,
+            text=hit.text,
+        )
+
+
 class GeneratedAnswerResponse(BaseModel):
     text: str
     sources: list[AnswerSourceRef]
     system_prompt: str | None = None
+
+    # All three are absent unless the request set debug. Without it this model
+    # serialises exactly as it did before, which is what keeps the frontend and
+    # every existing caller untouched.
+    hits: list[RetrievedChunk] | None = None
+    # "stop" if the model finished, "length" if it hit the ceiling — 2048 for a
+    # Fachfrage, 3072 for an Überblick. A truncated answer looks like an
+    # inconsistent one unless you can see this.
+    finish_reason: str | None = None
+    # What the hub actually ran, which is not necessarily the name we sent.
+    model: str | None = None
 
 
 # ── Client configuration ────────────────────────────────────────────
