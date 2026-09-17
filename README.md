@@ -208,7 +208,7 @@ uv run pytest -m "not integration"   # 175 tests, no services needed
 uv run pytest -m integration         # 5 tests, needs the eval database
 
 cd frontend
-npm test                             # 39 component tests in jsdom, no browser needed
+npm test                             # 47 component tests in jsdom, no browser needed
 npm run build                        # tsc -b, then vite build
 npm run lint
 ```
