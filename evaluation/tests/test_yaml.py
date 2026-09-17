@@ -17,9 +17,9 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from sentra.evaluation import cases as case_store
-from sentra.evaluation import yaml_io
-from sentra.evaluation.db import Base
+from sentra_eval import cases as case_store
+from sentra_eval import yaml_io
+from sentra_eval.db import Base
 
 ONE_CASE = """
 - kategorie: GO
@@ -211,16 +211,16 @@ class TestTheCli:
 
     @pytest.fixture
     def cli(self, monkeypatch, tmp_path):
-        from sentra.evaluation.config import get_eval_settings
-        from sentra.evaluation.db import Base as DbBase
-        from sentra.evaluation.db import get_engine
+        from sentra_eval.config import get_eval_settings
+        from sentra_eval.db import Base as DbBase
+        from sentra_eval.db import get_engine
 
         monkeypatch.setenv("EVAL_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'cli.db'}")
         get_eval_settings.cache_clear()
         get_engine.cache_clear()
         DbBase.metadata.create_all(get_engine())
 
-        from sentra.evaluation.cli import main
+        from sentra_eval.cli import main
 
         yield main
         get_eval_settings.cache_clear()
@@ -257,6 +257,6 @@ class TestTheCli:
         """The file that documents the format has to be a file that works."""
         from pathlib import Path
 
-        example = Path(__file__).resolve().parents[1] / "eval_cases" / "beispiel.yaml"
+        example = Path(__file__).resolve().parents[1] / "cases" / "beispiel.yaml"
 
         assert cli(["import", str(example)]) == 0

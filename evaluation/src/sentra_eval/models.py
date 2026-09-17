@@ -35,7 +35,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from sentra.evaluation.db import Base
+from sentra_eval.db import Base
 
 # Status values, German because the reviewer-facing vocabulary is German.
 ENTWURF = "entwurf"

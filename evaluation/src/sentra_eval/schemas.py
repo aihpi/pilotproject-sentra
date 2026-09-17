@@ -11,7 +11,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from sentra.evaluation.categories import Kategorie
+from sentra_eval.categories import Kategorie
 
 
 class EvalHealthResponse(BaseModel):

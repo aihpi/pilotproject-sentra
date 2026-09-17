@@ -14,14 +14,15 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from sentra.evaluation import cases as case_store
-from sentra.evaluation import runner as run_store
-from sentra.evaluation.categories import KATEGORIE_NAMEN
-from sentra.evaluation.config import EvalSettings, get_eval_settings
-from sentra.evaluation.db import EvalDatabaseUnavailable, schema_revision, session_scope
-from sentra.evaluation.judge import judge_config
-from sentra.evaluation.models import LAUFEND, Call, Case, CaseVersion, CheckResult, Run
-from sentra.evaluation.schemas import (
+from sentra_eval import cases as case_store
+from sentra_eval import runner as run_store
+from sentra_eval.categories import KATEGORIE_NAMEN
+from sentra_eval.config import EvalSettings, get_eval_settings
+from sentra_eval.db import EvalDatabaseUnavailable, schema_revision, session_scope
+from sentra_eval.jobs import BackgroundJob
+from sentra_eval.judge import judge_config
+from sentra_eval.models import LAUFEND, Call, Case, CaseVersion, CheckResult, Run
+from sentra_eval.schemas import (
     CallResponse,
     CaseResponse,
     CaseVersionResponse,
@@ -32,7 +33,6 @@ from sentra.evaluation.schemas import (
     StartRunRequest,
     UpdateCaseRequest,
 )
-from sentra.jobs import BackgroundJob
 
 logger = logging.getLogger(__name__)
 

@@ -200,9 +200,12 @@ As above: **Dokumente** → **Dokumente einlesen**, then **Suche**.
 
 ```bash
 cd backend
-uv run pytest -m "not integration"   # 473 tests, no services needed. This is what CI runs.
-uv run pytest -m integration         # 89 tests, needs Qdrant and the AI Hub, and for five of
-                                     # them the eval database
+uv run pytest -m "not integration"   # 354 tests, no services needed. This is what CI runs.
+uv run pytest -m integration         # 84 tests, needs Qdrant and the AI Hub
+
+cd ../evaluation                     # the harness is its own distribution
+uv run pytest -m "not integration"   # 119 tests, no services needed
+uv run pytest -m integration         # 5 tests, needs the eval database
 
 cd frontend
 npm test                             # 26 component tests in jsdom, no browser needed
@@ -214,11 +217,12 @@ npm run lint
 uvx pre-commit run --all-files       # ruff, mypy and the layering contract
 ```
 
-Test cases for an evaluation round live in `backend/eval_cases/` as YAML and are
-applied with `uv run python -m sentra.evaluation.cli import <file>`. Import is
-idempotent, so the file is the thing under review: a case arrives as a diff in a
-pull request rather than as a row somebody typed into a database. See
-`backend/eval_cases/README.md`.
+The evaluation harness lives in `evaluation/`, as its own distribution with its
+own process and image. It depends on nothing of SENTRA's and reaches it over
+HTTP, because SENTRA's API layer is part of what it is testing. Start it with
+`docker compose --profile eval up` — a profile, because most people bringing the
+stack up are working on SENTRA rather than measuring it. See
+`evaluation/README.md`.
 
 "No services needed" includes `backend/.env`. The offline tier calls no AI Hub,
 so `tests/conftest.py` fills in placeholder credentials when there is no env

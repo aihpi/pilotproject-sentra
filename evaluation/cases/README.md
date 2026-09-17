@@ -4,8 +4,8 @@ One YAML file per test round, applied with:
 
 ```bash
 cd backend
-uv run python -m sentra.evaluation.cli import eval_cases/<file>.yaml
-uv run python -m sentra.evaluation.cli export eval_cases/<file>.yaml   # writes back
+uv run python -m sentra_eval.cli import eval_cases/<file>.yaml
+uv run python -m sentra_eval.cli export eval_cases/<file>.yaml   # writes back
 ```
 
 Import is idempotent: running it twice changes nothing the second time. That is

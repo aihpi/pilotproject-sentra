@@ -26,9 +26,9 @@ import yaml
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session
 
-from sentra.evaluation import cases as case_store
-from sentra.evaluation.categories import Kategorie
-from sentra.evaluation.models import FREIGEGEBEN, Case, CaseVersion
+from sentra_eval import cases as case_store
+from sentra_eval.categories import Kategorie
+from sentra_eval.models import FREIGEGEBEN, Case, CaseVersion
 
 # The fields that make up a case's content. Identity (test_id) and bookkeeping
 # (timestamps, version numbers) are deliberately not here: those belong to the

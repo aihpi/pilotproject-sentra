@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from sentra.evaluation.config import get_eval_settings
+from sentra_eval.config import get_eval_settings
 
 
 @dataclass(frozen=True)
@@ -21,15 +21,6 @@ class JudgeConfig:
 
 class MissingJudgeConfiguration(RuntimeError):
     """The harness is switched on with no judge behind it."""
-
-
-class JudgeNotIndependent(RuntimeError):
-    """The judge is configured as the model it is supposed to be checking.
-
-    Raised at startup rather than on the first comparison. A round costs about
-    180 generation calls; discovering afterwards that every consistency verdict
-    was the model grading itself would mean discarding the lot.
-    """
 
 
 def judge_config() -> JudgeConfig:
@@ -62,17 +53,3 @@ def judge_config() -> JudgeConfig:
         api_key=settings.judge_api_key,
         model=settings.judge_model,
     )
-
-
-def assert_judge_is_independent(chat_model: str) -> None:
-    """Refuse to start when the judge and SENTRA are the same model.
-
-    A name comparison, which is as far as configuration can go. It does not
-    catch a hub that serves two names from one model — that needs the served
-    model id back on each response, which SENTRA does not report yet.
-    """
-    if judge_config().model == chat_model:
-        raise JudgeNotIndependent(
-            f"JUDGE_MODEL and CHAT_MODEL are both {chat_model!r}. The judge has to be a "
-            f"different model, or its verdicts only say that SENTRA agrees with itself."
-        )

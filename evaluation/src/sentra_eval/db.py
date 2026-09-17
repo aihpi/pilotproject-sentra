@@ -22,7 +22,7 @@ from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Session
 
-from sentra.evaluation.config import get_eval_settings
+from sentra_eval.config import get_eval_settings
 
 logger = logging.getLogger(__name__)
 

@@ -16,7 +16,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from sentra.evaluation.models import CaseVersion
+from sentra_eval.models import CaseVersion
 
 # Check names, used as stable keys in the database and the trend report.
 QUELLENAUSWAHL = "quellenauswahl"  # 4.3b

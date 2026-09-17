@@ -29,12 +29,14 @@ repos:
     hooks:
       - id: ruff-check
         args: [--fix]
-        files: ^backend/
+        files: ^(backend|evaluation)/
       - id: ruff-format
-        files: ^backend/
+        files: ^(backend|evaluation)/
 
-  # mypy needs the project's own dependencies to resolve imports, so it runs
-  # inside the backend's uv environment rather than an isolated hook env.
+  # mypy needs each project's own dependencies to resolve imports, so it runs
+  # inside that project's uv environment rather than an isolated hook env. Two
+  # distributions, two environments — the harness depends on nothing of
+  # SENTRA's, which is the point of it being separate.
   - repo: local
     hooks:
       - id: mypy
@@ -43,6 +45,13 @@ repos:
         language: system
         types: [python]
         files: ^backend/src/
+        pass_filenames: false
+      - id: mypy-eval
+        name: mypy (evaluation)
+        entry: bash -c 'cd evaluation && uv run mypy'
+        language: system
+        types: [python]
+        files: ^evaluation/src/
         pass_filenames: false
       - id: import-linter
         name: import-linter (backend)
