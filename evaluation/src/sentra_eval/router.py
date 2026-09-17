@@ -19,11 +19,12 @@ from sentra_eval import models, triage
 from sentra_eval import report as report_store
 from sentra_eval import review as review_store
 from sentra_eval import runner as run_store
+from sentra_eval import variants as variant_store
 from sentra_eval.categories import KATEGORIE_NAMEN
 from sentra_eval.config import EvalSettings, get_eval_settings
 from sentra_eval.db import EvalDatabaseUnavailable, schema_revision, session_scope
 from sentra_eval.jobs import BackgroundJob
-from sentra_eval.judge import judge_config
+from sentra_eval.judge import JudgeUnavailable, judge_config
 from sentra_eval.models import (
     LAUFEND,
     Call,
@@ -36,11 +37,13 @@ from sentra_eval.models import (
 )
 from sentra_eval.schemas import (
     AgreementResponse,
+    ApproveVariantRequest,
     CallResponse,
     CaseResponse,
     CaseVersionResponse,
     CheckResultResponse,
     CreateCaseRequest,
+    EditVariantRequest,
     EvalHealthResponse,
     MachineVerdictsResponse,
     QueueCall,
@@ -52,6 +55,7 @@ from sentra_eval.schemas import (
     TrendResponse,
     TriageSummary,
     UpdateCaseRequest,
+    VariantResponse,
     VerdictResponse,
     VorlageOptions,
 )
@@ -612,3 +616,84 @@ def trend_report() -> TrendResponse:
             haeufigste_befunde=found.haeufigste_befunde,
             abweichung=AgreementResponse(**found.abweichung),
         )
+
+
+# ── 4.2: paraphrase variants ────────────────────────────────────────
+
+
+def _variant_response(variant: models.Variant) -> VariantResponse:
+    return VariantResponse(
+        stil=variant.stil,
+        wortlaut=variant.wortlaut,
+        status=variant.status,
+        erstellt_durch=variant.erstellt_durch,
+        freigegeben_durch=variant.freigegeben_durch,
+        freigegeben_at=variant.freigegeben_at,
+    )
+
+
+@router.get("/cases/{test_id}/varianten", response_model=list[VariantResponse])
+def list_variants(test_id: str) -> list[VariantResponse]:
+    """The paraphrases for the case's latest version, proposed or approved."""
+    with session_scope() as session:
+        case = _lookup(session, test_id)
+        return [
+            _variant_response(v) for v in variant_store.for_version(session, case.versions[-1].id)
+        ]
+
+
+@router.post("/cases/{test_id}/varianten/vorschlagen", response_model=list[VariantResponse])
+def propose_variants(test_id: str) -> list[VariantResponse]:
+    """Ask the judge model for three paraphrases.
+
+    The judge model rather than CHAT_MODEL: letting the system under test write
+    its own paraphrases would let it rephrase in whatever way it finds easiest
+    to answer, which is the opposite of a robustness check.
+
+    They arrive as proposals. Only a person can approve one, because a variant
+    that quietly asks a different question does not measure robustness.
+    """
+    with session_scope() as session:
+        case = _lookup(session, test_id)
+        try:
+            proposed = variant_store.propose(session, case.versions[-1])
+        except JudgeUnavailable as exc:
+            raise HTTPException(
+                status_code=503, detail=f"Varianten konnten nicht erzeugt werden: {exc}"
+            ) from exc
+        return [_variant_response(v) for v in proposed]
+
+
+@router.patch("/cases/{test_id}/varianten/{stil}", response_model=VariantResponse)
+def edit_variant(test_id: str, stil: str, body: EditVariantRequest) -> VariantResponse:
+    """Correct a proposal. An approved variant is frozen."""
+    with session_scope() as session:
+        variant = _lookup_variant(session, test_id, stil)
+        try:
+            variant_store.edit(session, variant, body.wortlaut)
+        except variant_store.ApprovedVariantIsFrozen as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return _variant_response(variant)
+
+
+@router.post("/cases/{test_id}/varianten/{stil}/freigeben", response_model=VariantResponse)
+def approve_variant(test_id: str, stil: str, body: ApproveVariantRequest) -> VariantResponse:
+    """A person has read this and confirmed it asks the same question.
+
+    Only approved variants are ever run, so this is what puts one into a round.
+    """
+    with session_scope() as session:
+        variant = _lookup_variant(session, test_id, stil)
+        try:
+            variant_store.approve(session, variant, freigegeben_durch=body.freigegeben_durch)
+        except variant_store.VariantError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return _variant_response(variant)
+
+
+def _lookup_variant(session: Session, test_id: str, stil: str) -> models.Variant:
+    case = _lookup(session, test_id)
+    for variant in variant_store.for_version(session, case.versions[-1].id):
+        if variant.stil == stil:
+            return variant
+    raise HTTPException(status_code=404, detail=f"Variante {stil} nicht gefunden.")
