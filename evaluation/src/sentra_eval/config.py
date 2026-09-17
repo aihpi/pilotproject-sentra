@@ -62,6 +62,11 @@ class EvalSettings(BaseSettings):
     # stack. Inside a container compose overrides it with eval-db:5432.
     eval_database_url: str = "postgresql+psycopg://sentra:sentra@localhost:5433/sentra_eval"
 
+    # The embedding model ragas uses, when the optional extra is installed.
+    # ragas defaults to OpenAI's text-embedding-ada-002, which this hub does
+    # not serve — and the failure surfaces as a NaN score rather than an error.
+    ragas_embedding_model: str = "minilm-embedding"
+
     # How long the runner waits on one SENTRA call. Above SENTRA's own
     # generation timeout of 120s on purpose: a call that SENTRA gives up on
     # should come back as its 503, which is a finding, rather than as the

@@ -272,6 +272,12 @@ class Run(Base):
     # finished round did.
     stichprobe_anteil: Mapped[float] = mapped_column(Float, nullable=False, default=0.1)
 
+    # Whether ragas scored this round. Off by default and stored, because it
+    # roughly doubles a round's model calls — three LLM-scored metrics per
+    # answer on top of the answer itself — and because a round scored with it
+    # and a round scored without it are not the same evidence.
+    ragas_aktiv: Mapped[bool] = mapped_column(nullable=False, default=False)
+
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )

@@ -51,6 +51,22 @@ every verdict was SENTRA grading itself means discarding all of them.
 `cases/` holds them as YAML — see `cases/README.md`. Import is idempotent, so
 the file is the thing under review.
 
+## ragas (optional)
+
+```bash
+uv sync --extra ragas
+```
+
+Adds three LLM-scored metrics — faithfulness, answer correctness, context
+precision — behind the same check interface, asked for per round with
+`ragas_aktiv`. Off by default: it roughly doubles a round's model calls, and
+it pulls 97 packages against the twelve the harness otherwise needs.
+
+Note what faithfulness is not. It asks whether a claim is grounded in *any*
+retrieved context; 4.3c asks whether it is supported by *the cited* source. A
+claim taken from chunk 5 and cited as [1] passes one and fails the other, so it
+is reported under its own name and never as 4.3c.
+
 ## Tests
 
 ```bash
