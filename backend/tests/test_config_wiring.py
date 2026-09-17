@@ -235,7 +235,16 @@ class TestTheEnvFileIsShared:
     error also quoted each value back, which put an API key in a traceback.
     """
 
-    def test_settings_ignores_keys_belonging_to_the_harness(self, tmp_path):
+    def test_settings_ignores_keys_belonging_to_the_harness(self, monkeypatch, tmp_path):
+        # The file has to be the only source. conftest puts placeholder hub
+        # credentials into the environment when there is no .env — which is
+        # CI — and environment variables outrank a dotenv file, so without this
+        # the assertion below read the placeholder instead of the file and the
+        # test passed locally while failing in CI. Which is the same asymmetry
+        # this class exists to pin.
+        for name in ("AI_HUB_BASE_URL", "AI_HUB_API_KEY"):
+            monkeypatch.delenv(name, raising=False)
+
         env_file = tmp_path / ".env"
         env_file.write_text(
             "AI_HUB_BASE_URL=http://hub.invalid/v1\n"
@@ -252,7 +261,7 @@ class TestTheEnvFileIsShared:
         assert settings.ai_hub_base_url == "http://hub.invalid/v1"
         assert not hasattr(settings, "judge_model")
 
-    def test_a_secret_it_does_not_own_never_reaches_an_error(self, tmp_path):
+    def test_a_secret_it_does_not_own_never_reaches_an_error(self, monkeypatch, tmp_path):
         """The failure mode worth keeping out: pydantic quotes offending values
         into the exception, so a forbidden JUDGE_API_KEY ended up in the
         traceback."""
