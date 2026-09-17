@@ -3,8 +3,17 @@ name: CI
 on:
   push:
     branches: [main, dev]
+  # Deliberately unfiltered. The branching model is feature branches from dev
+  # and task branches from the feature branch, so a task PR targets neither
+  # main nor dev — and with a base filter here, it got no checks at all. Ten
+  # task PRs on the evaluation harness merged that way before anybody noticed,
+  # and the first CI run over any of them was the 7645-line feature merge.
+  #
+  # This does not mean a run per pushed branch: GitHub starts a pull_request
+  # run only once a PR exists. It means a run per proposed merge, which is what
+  # the gate is for. The push filter above stays, because a PR branch does not
+  # need a second run on top of its PR run.
   pull_request:
-    branches: [main, dev]
   workflow_dispatch:
 
 # A newer push to the same branch makes the previous run pointless.
