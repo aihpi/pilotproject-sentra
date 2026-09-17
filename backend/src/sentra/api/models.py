@@ -53,6 +53,27 @@ class FeedbackResponse(BaseModel):
     status: str
 
 
+class FeedbackEntry(BaseModel):
+    """One recorded rating, as stored in feedback.jsonl.
+
+    Served because the evaluation harness needs it: the Vorlage asks for known
+    problem cases from earlier feedback to be taken into a round deliberately,
+    and the harness is a separate process with no access to this file.
+
+    The id is derived rather than stored. The file is append-only lines written
+    since #16 with no identifier, and giving it one retroactively would mean
+    rewriting a log in place — the more expensive of the two changes. A uuid5
+    over timestamp and question is stable for lines already written.
+    """
+
+    id: str
+    timestamp: str
+    question: str
+    answer: str
+    rating: str
+    comment: str | None = None
+
+
 class HealthResponse(BaseModel):
     status: str
     qdrant: str

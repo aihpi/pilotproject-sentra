@@ -82,6 +82,7 @@ def create_case(
     referenz_falsch_az: str = "",
     grund_fuer_aufnahme: str = "",
     grenzfall: bool = False,
+    feedback_id: str = "",
 ) -> tuple[Case, CaseVersion]:
     """A new case with its first version, as a draft.
 
@@ -107,6 +108,7 @@ def create_case(
         referenz_falsch_az=referenz_falsch_az,
         grund_fuer_aufnahme=grund_fuer_aufnahme,
         grenzfall=grenzfall,
+        feedback_id=feedback_id,
     )
     session.add(version)
     session.flush()
@@ -145,6 +147,7 @@ def add_version(session: Session, case: Case, **fields: object) -> CaseVersion:
         "referenz_falsch_az": latest.referenz_falsch_az,
         "grund_fuer_aufnahme": latest.grund_fuer_aufnahme,
         "grenzfall": latest.grenzfall,
+        "feedback_id": latest.feedback_id,
     }
     carried.update({k: v for k, v in fields.items() if v is not None})
 
@@ -261,3 +264,16 @@ def latest_approved(case: Case) -> CaseVersion | None:
     """
     approved = [v for v in case.versions if v.is_approved]
     return approved[-1] if approved else None
+
+
+def from_feedback(session: Session, feedback_id: str) -> Case | None:
+    """The case already drafted from this feedback entry, if there is one."""
+    return (
+        session.execute(
+            select(Case)
+            .join(CaseVersion, CaseVersion.case_id == Case.id)
+            .where(CaseVersion.feedback_id == feedback_id)
+        )
+        .scalars()
+        .first()
+    )

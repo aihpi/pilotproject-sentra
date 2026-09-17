@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from sentra_eval import cases as case_store
+from sentra_eval import feedback as feedback_store
 from sentra_eval import models, triage
 from sentra_eval import report as report_store
 from sentra_eval import review as review_store
@@ -43,8 +44,11 @@ from sentra_eval.schemas import (
     CaseVersionResponse,
     CheckResultResponse,
     CreateCaseRequest,
+    DraftFromFeedbackRequest,
+    DraftFromFeedbackResponse,
     EditVariantRequest,
     EvalHealthResponse,
+    FeedbackEntryResponse,
     MachineVerdictsResponse,
     QueueCall,
     QueueEntryResponse,
@@ -697,3 +701,54 @@ def _lookup_variant(session: Session, test_id: str, stil: str) -> models.Variant
         if variant.stil == stil:
             return variant
     raise HTTPException(status_code=404, detail=f"Variante {stil} nicht gefunden.")
+
+
+# ── Phase 1: cases from real complaints ─────────────────────────────
+
+
+@router.get("/rueckmeldungen", response_model=list[FeedbackEntryResponse])
+def list_feedback(rating: str = "negative") -> list[FeedbackEntryResponse]:
+    """Feedback SENTRA has recorded, newest first.
+
+    The Vorlage asks for known problem cases from earlier feedback to be taken
+    into a round deliberately, "da sich dort erfahrungsgemäß Schwachstellen
+    wiederholen". SENTRA has been recording ratings since #16 and nothing has
+    read them back until now.
+    """
+    try:
+        entries = feedback_store.fetch(rating=rating or None)
+    except feedback_store.FeedbackError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return [FeedbackEntryResponse(**vars(entry)) for entry in entries]
+
+
+@router.post(
+    "/rueckmeldungen/uebernehmen", response_model=DraftFromFeedbackResponse, status_code=201
+)
+def draft_from_feedback(body: DraftFromFeedbackRequest) -> DraftFromFeedbackResponse:
+    """Start a test case from a complaint.
+
+    Only the question and the reason come across. The answer that caused the
+    complaint is returned so a reviewer can see what went wrong while writing
+    the expected answer, and is not stored on the case — prefilling the
+    yardstick from the system under test would let it define what counts as
+    correct.
+    """
+    try:
+        entries = {e.id: e for e in feedback_store.fetch(rating=None)}
+    except feedback_store.FeedbackError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    entry = entries.get(body.feedback_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Rückmeldung nicht gefunden.")
+
+    with session_scope() as session:
+        try:
+            case, beanstandet = feedback_store.draft_case(session, entry, kategorie=body.kategorie)
+        except feedback_store.AlreadyImported as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except feedback_store.FeedbackError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        session.refresh(case)
+        return DraftFromFeedbackResponse(case=_as_response(case), beanstandete_antwort=beanstandet)
