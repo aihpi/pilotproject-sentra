@@ -34,6 +34,7 @@ from sentra_eval.models import (
     CaseVersion,
     CheckResult,
     GroupCheckResult,
+    Run,
     Verdict,
 )
 
@@ -43,13 +44,12 @@ class ReviewError(RuntimeError):
 
 
 class AlreadyAssessed(ReviewError):
-    """This call already has a human verdict.
+    """This case already has a human verdict for this round.
 
-    Rejected rather than versioned. A second verdict on the same call is
-    almost always somebody re-submitting a form, not somebody changing their
-    mind — and if it is the latter, the disagreement-rate metric needs to know
-    which assessment was the first one, because that is the one Stufe 1 was
-    being compared against.
+    Rejected rather than versioned. A second verdict is almost always somebody
+    re-submitting a form, not somebody changing their mind — and if it is the
+    latter, the disagreement-rate metric needs to know which assessment was the
+    first one, because that is the one Stufe 1 was being compared against.
     """
 
 
@@ -71,7 +71,9 @@ class QueueEntry:
     grenzfall: bool
     gefunden_ueber: str
     calls: list[Call] = field(default_factory=list)
-    assessed: int = 0
+    # One sheet per case, so this is a fact about the case rather than a count
+    # of how many of its answers somebody has got through.
+    assessed: bool = False
 
 
 def queue(session: Session, run_id: UUID) -> list[QueueEntry]:
@@ -89,10 +91,8 @@ def queue(session: Session, run_id: UUID) -> list[QueueEntry]:
     ).all()
 
     assessed = {
-        verdict.call_id
-        for verdict in session.execute(
-            select(Verdict).join(Call, Verdict.call_id == Call.id).where(Call.run_id == run_id)
-        ).scalars()
+        verdict.case_version_id
+        for verdict in session.execute(select(Verdict).where(Verdict.run_id == run_id)).scalars()
     }
 
     entries: dict[UUID, QueueEntry] = {}
@@ -116,8 +116,7 @@ def queue(session: Session, run_id: UUID) -> list[QueueEntry]:
             )
             entries[version.id] = entry
         entry.calls.append(call)
-        if call.id in assessed:
-            entry.assessed += 1
+        entry.assessed = version.id in assessed
 
     return list(entries.values())
 
@@ -152,10 +151,11 @@ def machine_verdicts(
 
 def record_verdict(
     session: Session,
-    call_id: UUID,
+    run_id: UUID,
+    case_version_id: UUID,
     *,
     tester: str,
-    gefunden_ueber: str,
+    kernbefunde: dict[str, str],
     quelle_4_3a: str,
     quelle_4_3b: str,
     quelle_4_3c: str,
@@ -163,24 +163,34 @@ def record_verdict(
     reproduzierbar: str,
     anmerkung: str = "",
 ) -> Verdict:
-    """Store a human assessment. Leaves every machine verdict where it is."""
-    call = session.get(Call, call_id)
-    if call is None:
-        raise ReviewError(f"No call {call_id}")
+    """Store a human assessment of one case. Leaves every machine verdict alone.
+
+    `gefunden_ueber` is derived here rather than taken from the caller. It says
+    how the case reached a reviewer, which is half of what the trend report
+    measures, and a client asserting it could misattribute a finding to the
+    wrong Stufe without anyone noticing.
+    """
+    version = session.get(CaseVersion, case_version_id)
+    if version is None:
+        raise ReviewError(f"No case version {case_version_id}")
+    if session.get(Run, run_id) is None:
+        raise ReviewError(f"No run {run_id}")
 
     existing = session.execute(
-        select(Verdict).where(Verdict.call_id == call_id)
+        select(Verdict).where(Verdict.run_id == run_id, Verdict.case_version_id == case_version_id)
     ).scalar_one_or_none()
     if existing is not None:
         raise AlreadyAssessed(
-            f"This answer was already assessed by {existing.tester!r}. The first assessment is "
-            f"what Stufe 1 is measured against, so it is not replaced."
+            f"This case was already assessed by {existing.tester!r} in this round. The first "
+            f"assessment is what Stufe 1 is measured against, so it is not replaced."
         )
 
     verdict = Verdict(
-        call_id=call_id,
+        run_id=run_id,
+        case_version_id=case_version_id,
         tester=tester,
-        gefunden_ueber=gefunden_ueber,
+        gefunden_ueber=gefunden_ueber_for(version),
+        kernbefunde=kernbefunde,
         quelle_4_3a=quelle_4_3a,
         quelle_4_3b=quelle_4_3b,
         quelle_4_3c=quelle_4_3c,
@@ -195,13 +205,23 @@ def record_verdict(
     return verdict
 
 
+def gefunden_ueber_for(version: CaseVersion) -> str:
+    """How this case reached a reviewer.
+
+    Until triage exists there are two answers: a Grenzfall is never filtered
+    out of review per 4.4, and everything else arrives because Stufe 1 flagged
+    it — which is currently everything. Stufe 3's sampled cases get their
+    answer from triage when it lands, and this is the one place that changes.
+    """
+    return GRENZFALL_IMMER if version.grenzfall else STUFE_2
+
+
 def kisz_escalations(session: Session, run_id: UUID) -> list[Verdict]:
     """Every verdict in the round that has to be reported to KISZ separately."""
     return list(
         session.execute(
             select(Verdict)
-            .join(Call, Verdict.call_id == Call.id)
-            .where(Call.run_id == run_id, Verdict.kisz_meldung.is_(True))
+            .where(Verdict.run_id == run_id, Verdict.kisz_meldung.is_(True))
             .order_by(Verdict.schweregrad.desc())
         ).scalars()
     )

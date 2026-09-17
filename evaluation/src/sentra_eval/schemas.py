@@ -143,7 +143,6 @@ class QueueCall(BaseModel):
     sources: list[dict]
     http_status: int | None
     dauer_ms: float | None
-    assessed: bool
 
 
 class QueueEntryResponse(BaseModel):
@@ -161,7 +160,9 @@ class QueueEntryResponse(BaseModel):
     grenzfall: bool
     gefunden_ueber: str
     calls: list[QueueCall]
-    assessed: int
+    # One sheet per case, so this is a fact about the case rather than a count
+    # of how many of its answers somebody got through.
+    assessed: bool
 
 
 class MachineVerdictsResponse(BaseModel):
@@ -172,11 +173,18 @@ class MachineVerdictsResponse(BaseModel):
 
 
 class SubmitVerdictRequest(BaseModel):
+    """One sheet, per section 6 of the Vorlage: Dokumentation je Testfall."""
+
     # No authentication exists anywhere in this project, so this is typed. It
     # is required because a finding nobody has to own is a finding nobody
     # follows up.
     tester: str = Field(min_length=1)
-    gefunden_ueber: str
+    # "Kernbefund je Variante", keyed "<variant_key>#<repeat_index>". One field
+    # on the sheet, one field here.
+    kernbefunde: dict[str, str] = Field(default_factory=dict)
+    # gefunden_ueber is deliberately absent: the server derives it. It says how
+    # the case reached a reviewer, which is half of what the trend report
+    # measures, and a client asserting it could misattribute a finding.
     quelle_4_3a: str
     quelle_4_3b: str
     # Never prefilled from a check. Whether a source actually supports a claim
@@ -189,8 +197,10 @@ class SubmitVerdictRequest(BaseModel):
 
 class VerdictResponse(BaseModel):
     id: UUID
-    call_id: UUID
+    run_id: UUID
+    case_version_id: UUID
     tester: str
+    kernbefunde: dict[str, str]
     gefunden_ueber: str
     quelle_4_3a: str
     quelle_4_3b: str

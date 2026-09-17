@@ -366,12 +366,6 @@ def review_queue(run_id: UUID) -> list[QueueEntryResponse]:
     """
     with session_scope() as session:
         _lookup_run(session, run_id)
-        assessed = {
-            v.call_id
-            for v in session.execute(
-                select(Verdict).join(Call, Verdict.call_id == Call.id).where(Call.run_id == run_id)
-            ).scalars()
-        }
         return [
             QueueEntryResponse(
                 test_id=entry.test_id,
@@ -394,7 +388,6 @@ def review_queue(run_id: UUID) -> list[QueueEntryResponse]:
                         sources=call.response_body.get("sources") or [],
                         http_status=call.http_status,
                         dauer_ms=call.dauer_ms,
-                        assessed=call.id in assessed,
                     )
                     for call in entry.calls
                 ],
@@ -421,16 +414,29 @@ def machine_verdicts(call_id: UUID) -> MachineVerdictsResponse:
         )
 
 
-@router.post("/calls/{call_id}/verdict", response_model=VerdictResponse, status_code=201)
-def submit_verdict(call_id: UUID, body: SubmitVerdictRequest) -> VerdictResponse:
-    """Record a human assessment. Every machine verdict stays where it is."""
+@router.post(
+    "/runs/{run_id}/cases/{case_version_id}/verdict",
+    response_model=VerdictResponse,
+    status_code=201,
+)
+def submit_verdict(
+    run_id: UUID, case_version_id: UUID, body: SubmitVerdictRequest
+) -> VerdictResponse:
+    """Record one Phase-4 sheet. Every machine verdict stays where it is.
+
+    Per case, not per call: `Reproduzierbar?` asks whether a finding recurred
+    across the repeats, which no single answer can be asked, and
+    `Kernbefund je Variante` is a field inside one sheet rather than a reason
+    for several.
+    """
     with session_scope() as session:
         try:
             verdict = review_store.record_verdict(
                 session,
-                call_id,
+                run_id,
+                case_version_id,
                 tester=body.tester,
-                gefunden_ueber=body.gefunden_ueber,
+                kernbefunde=body.kernbefunde,
                 quelle_4_3a=body.quelle_4_3a,
                 quelle_4_3b=body.quelle_4_3b,
                 quelle_4_3c=body.quelle_4_3c,
@@ -479,6 +485,8 @@ def vorlage_optionen() -> VorlageOptions:
             models.REPRO_WIEDERHOLT,
             models.REPRO_ENTFAELLT,
         ],
+        # Reported back so a screen can show how the case arrived; it is not
+        # a field the form submits, because the server derives it.
         gefunden_ueber=[models.STUFE_2, models.STUFE_3, models.GRENZFALL_IMMER],
         schweregrad={1: "geringfügig", 2: "moderat", 3: "erheblich", 4: "kritisch"},
     )
@@ -499,8 +507,10 @@ def _check_response(result: CheckResult | GroupCheckResult) -> CheckResultRespon
 def _verdict_response(verdict: Verdict) -> VerdictResponse:
     return VerdictResponse(
         id=verdict.id,
-        call_id=verdict.call_id,
+        run_id=verdict.run_id,
+        case_version_id=verdict.case_version_id,
         tester=verdict.tester,
+        kernbefunde=verdict.kernbefunde,
         gefunden_ueber=verdict.gefunden_ueber,
         quelle_4_3a=verdict.quelle_4_3a,
         quelle_4_3b=verdict.quelle_4_3b,
