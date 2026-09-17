@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 
 import sentra_eval.triage as triage
 from sentra_eval import checks
+from sentra_eval import variants as variant_store
 from sentra_eval.categories import KATEGORIE_NAMEN
 from sentra_eval.models import (
     OK,
@@ -109,6 +110,7 @@ def sheets(session: Session, run: Run) -> list[Sheet]:
         verdict = verdicts.get(version.id)
         machine = _machine_summary(session, run, version.id)
         variants = sorted({c.variant_key for c in _calls_for(session, run, version.id)})
+        approved = variant_store.approved_for(session, version.id)
 
         out.append(
             Sheet(
@@ -121,8 +123,18 @@ def sheets(session: Session, run: Run) -> list[Sheet]:
                 angewendete_techniken=_techniques(run, version, variants),
                 urspruenglicher_prompt=version.ausgangsfrage,
                 geprüfte_varianten=variants,
-                varianten_erstellt_durch="LLM (Erststellung)" if len(variants) > 1 else "entfällt",
-                varianten_freigegeben_durch="Hotline / WD" if len(variants) > 1 else "entfällt",
+                # Read off the variants rather than assumed: one written by
+                # hand has a different provenance, and the sheet asks which.
+                varianten_erstellt_durch=(
+                    ", ".join(sorted({v.erstellt_durch for v in approved if v.erstellt_durch}))
+                    or "entfällt"
+                ),
+                varianten_freigegeben_durch=(
+                    ", ".join(
+                        sorted({v.freigegeben_durch for v in approved if v.freigegeben_durch})
+                    )
+                    or "entfällt"
+                ),
                 automatisiert_geprueft_durch="Skript / LLM-Prüfmodell",
                 ergebnis_automatikpruefung=machine,
                 gefunden_ueber=(decision.gefunden_ueber if decision else "") or "nicht geprüft",

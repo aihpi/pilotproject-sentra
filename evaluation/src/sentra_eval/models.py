@@ -58,6 +58,22 @@ ORIGINAL = "original"
 # asks the document search whether the expected source was findable at all, so
 # that "the answer did not cite it" can be told apart from "retrieval never
 # offered it".
+# The three paraphrase styles 4.2 asks for. The keys are stored on calls and
+# on Kernbefund entries, so they are part of two contracts and do not change
+# casually.
+VARIANTE_UMGANGSSPRACHLICH = "umgangssprachlich"
+VARIANTE_FACHSPRACHLICH = "fachsprachlich"
+VARIANTE_VERKUERZT = "verkuerzt"
+VARIANTEN_STILE = (
+    VARIANTE_UMGANGSSPRACHLICH,
+    VARIANTE_FACHSPRACHLICH,
+    VARIANTE_VERKUERZT,
+)
+
+# A proposed variant is not yet evidence. The Vorlage: "Freigegeben wird nur,
+# was inhaltlich eindeutig dasselbe meint."
+VORGESCHLAGEN = "vorgeschlagen"
+
 ZWECK_ANTWORT = "antwort"
 ZWECK_RECALL = "recall"
 
@@ -469,3 +485,50 @@ class Verdict(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class Variant(Base):
+    """One paraphrase of a case's Ausgangsfrage, per 4.2.
+
+    Proposed by the judge model and then read by a human, because a variant
+    that quietly asks a different question invalidates the robustness check it
+    exists to run — the Vorlage requires that only what unambiguously means the
+    same thing is approved.
+
+    Attached to a case *version*, so approving one freezes it the same way the
+    expected answer is frozen. Variants that changed between rounds would make
+    the rounds incomparable, which is exactly what 4.2 measures.
+    """
+
+    __tablename__ = "variants"
+    __table_args__ = (
+        UniqueConstraint("case_version_id", "stil", name="uq_variants_one_per_style"),
+        CheckConstraint(
+            f"status IN ('{VORGESCHLAGEN}', '{FREIGEGEBEN}')", name="ck_variants_status"
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    case_version_id: Mapped[UUID] = mapped_column(
+        ForeignKey("case_versions.id", ondelete="CASCADE"), index=True
+    )
+    # umgangssprachlich | fachsprachlich | verkuerzt. Also the variant_key on
+    # any call made with it.
+    stil: Mapped[str] = mapped_column(String(32), nullable=False)
+    wortlaut: Mapped[str] = mapped_column(Text, nullable=False)
+
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default=VORGESCHLAGEN)
+    # "LLM (Erststellung)", for the Phase-4 sheet. Stored rather than assumed:
+    # a variant somebody wrote by hand is a different provenance and the sheet
+    # asks which it was.
+    erstellt_durch: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    freigegeben_durch: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    freigegeben_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    @property
+    def is_approved(self) -> bool:
+        return self.status == FREIGEGEBEN

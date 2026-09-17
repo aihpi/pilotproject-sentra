@@ -28,7 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from sentra_eval import cases as case_store
-from sentra_eval import checks, judge
+from sentra_eval import checks, judge, variants
 from sentra_eval.config import get_eval_settings
 from sentra_eval.db import session_scope
 from sentra_eval.models import (
@@ -118,6 +118,23 @@ def plan(session: Session, run: Run) -> list[PlannedCall]:
                     repeat_index=repeat_index,
                 )
             )
+        # 4.2: each approved paraphrase once, not repeated.
+        #
+        # The Vorlage repeats the *original* prompt three times (4.1) and asks
+        # each variant once (4.2). Repeating the variants too would triple the
+        # cost of a round — twelve generation calls per case instead of six —
+        # for signal 4.1 already provides.
+        for variant in variants.approved_for(session, version.id):
+            planned.append(
+                PlannedCall(
+                    case_version_id=version.id,
+                    test_id=case.test_id,
+                    frage=variant.wortlaut,
+                    variant_key=variant.stil,
+                    repeat_index=0,
+                )
+            )
+
         planned.append(
             PlannedCall(
                 case_version_id=version.id,
@@ -407,6 +424,16 @@ def _run_group_checks(session: Session, run: Run) -> None:
         if call.status == OK:
             groups.setdefault((call.case_version_id, call.variant_key), []).append(call)
 
+    # 4.2 compares the answer to the original against the answers to its
+    # paraphrases — across variants rather than within one, which is what makes
+    # it a different check from 4.1 rather than a repeat of it.
+    across_variants: dict[UUID, dict[str, str]] = {}
+    for call in calls:
+        if call.status == OK and call.repeat_index == 0:
+            across_variants.setdefault(call.case_version_id, {})[call.variant_key] = (
+                call.response_body.get("text") or ""
+            )
+
     for (case_version_id, variant_key), group in groups.items():
         group.sort(key=lambda c: c.repeat_index)
         texts = [c.response_body.get("text") or "" for c in group]
@@ -439,6 +466,19 @@ def _run_group_checks(session: Session, run: Run) -> None:
         if outcome.ergebnis == checks.ABWEICHEND:
             _ask_the_judge(session, run, case_version_id, variant_key, texts)
 
+    for case_version_id, by_variant in across_variants.items():
+        if len(by_variant) < 2:
+            # No approved paraphrases, so there is no robustness to measure.
+            continue
+        _ask_the_judge(
+            session,
+            run,
+            case_version_id,
+            ORIGINAL,
+            [by_variant[k] for k in sorted(by_variant)],
+            pruefung=judge.ROBUSTHEIT,
+        )
+
 
 def _ask_the_judge(
     session: Session,
@@ -446,8 +486,12 @@ def _ask_the_judge(
     case_version_id: UUID,
     variant_key: str,
     texts: list[str],
+    pruefung: str = judge.KONSISTENZ,
 ) -> None:
-    """4.1: do these answers differ in substance, or only in wording?
+    """Do these answers differ in substance, or only in wording?
+
+    4.1 over the repeats of one prompt, 4.2 over the answers to a question and
+    its paraphrases. Same question to the judge; different sets of answers.
 
     A judge failure is recorded rather than swallowed. Treating "the judge did
     not answer" as "unauffällig" would mark a case clean because a request
@@ -479,14 +523,14 @@ def _ask_the_judge(
             GroupCheckResult.run_id == run.id,
             GroupCheckResult.case_version_id == case_version_id,
             GroupCheckResult.variant_key == variant_key,
-            GroupCheckResult.pruefung == judge.KONSISTENZ,
+            GroupCheckResult.pruefung == pruefung,
         )
     ).scalar_one_or_none()
     result = existing or GroupCheckResult(
         run_id=run.id,
         case_version_id=case_version_id,
         variant_key=variant_key,
-        pruefung=judge.KONSISTENZ,
+        pruefung=pruefung,
     )
     result.ergebnis = ergebnis
     result.auffaellig = auffaellig

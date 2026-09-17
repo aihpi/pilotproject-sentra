@@ -308,3 +308,29 @@ class TrendResponse(BaseModel):
     kisz_meldungen: int
     haeufigste_befunde: dict[str, int]
     abweichung: AgreementResponse
+
+
+class VariantResponse(BaseModel):
+    stil: str
+    wortlaut: str
+    status: str
+    erstellt_durch: str
+    freigegeben_durch: str
+    freigegeben_at: datetime | None
+
+
+class EditVariantRequest(BaseModel):
+    """Correcting a proposal before approving it.
+
+    A reviewer who can only accept or reject rejects three good variants over
+    one clumsy word.
+    """
+
+    wortlaut: str = Field(min_length=1)
+
+
+class ApproveVariantRequest(BaseModel):
+    # "Varianten freigegeben durch" on the Phase-4 sheet. Required for the
+    # same reason a verdict needs a tester: an approval nobody owns is one
+    # nobody can be asked about.
+    freigegeben_durch: str = Field(min_length=1)
