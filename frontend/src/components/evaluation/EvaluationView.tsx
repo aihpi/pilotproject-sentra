@@ -3,6 +3,7 @@ import type {
   EvalRun,
   MachineVerdicts,
   QueueEntry,
+  SourceRef,
   SubmitVerdict,
   VorlageOptions,
 } from "@/types";
@@ -16,6 +17,7 @@ import {
 import { AnswerPane } from "@/components/evaluation/AnswerPane";
 import { CasePane } from "@/components/evaluation/CasePane";
 import { MachineVerdictPane } from "@/components/evaluation/MachineVerdictPane";
+import { PdfPane } from "@/components/evaluation/PdfPane";
 import { QueueList } from "@/components/evaluation/QueueList";
 import { VerdictForm } from "@/components/evaluation/VerdictForm";
 
@@ -38,6 +40,9 @@ export function EvaluationView() {
   const [selected, setSelected] = useState<string | null>(null);
   const [activeCall, setActiveCall] = useState(0);
   const [verdicts, setVerdicts] = useState<MachineVerdicts | null>(null);
+  // The document open for 4.3c. Cleared with the case, because a passage from
+  // the previous case beside this one's answer is worse than no passage.
+  const [openSource, setOpenSource] = useState<SourceRef | null>(null);
   const [tester, setTester] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +84,7 @@ export function EvaluationView() {
     setSelected(caseVersionId);
     setActiveCall(0);
     setVerdicts(null);
+    setOpenSource(null);
     setError(null);
   }
 
@@ -149,7 +155,12 @@ export function EvaluationView() {
               calls={entry.calls}
               activeIndex={activeCall}
               onSelectCall={setActiveCall}
+              onSelectSource={setOpenSource}
+              selectedSource={openSource?.aktenzeichen}
             />
+            {openSource && (
+              <PdfPane source={openSource} onClose={() => setOpenSource(null)} />
+            )}
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">

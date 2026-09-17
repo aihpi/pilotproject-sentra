@@ -47,7 +47,13 @@ const ENTRY: QueueEntry = {
       variant_key: "original",
       repeat_index: 0,
       text: "Nach § 35 GOBT gilt eine Redezeit von 15 Minuten [1].",
-      sources: [{ aktenzeichen: "WD 3 - 3000 - 029/23", title: "Redezeit im Plenum" }],
+      sources: [
+        {
+          aktenzeichen: "WD 3 - 3000 - 029/23",
+          title: "Redezeit im Plenum",
+          source_file: "WD 3-029-23.pdf",
+        },
+      ],
       http_status: 200,
       dauer_ms: 24000,
     },
@@ -56,7 +62,13 @@ const ENTRY: QueueEntry = {
       variant_key: "original",
       repeat_index: 1,
       text: "Die Redezeit beträgt 15 Minuten je Fraktion [1].",
-      sources: [{ aktenzeichen: "WD 3 - 3000 - 029/23", title: "Redezeit im Plenum" }],
+      sources: [
+        {
+          aktenzeichen: "WD 3 - 3000 - 029/23",
+          title: "Redezeit im Plenum",
+          source_file: "WD 3-029-23.pdf",
+        },
+      ],
       http_status: 200,
       dauer_ms: 25000,
     },
@@ -234,3 +246,31 @@ async function submitSheet() {
   await userEvent.type(screen.getAllByRole("textbox")[0], "Stimmt.");
   await userEvent.click(screen.getByRole("button", { name: /Bewertung abschicken/ }));
 }
+
+describe("the cited document", () => {
+  it("is not shown until a source is picked", async () => {
+    await renderAndWait();
+
+    expect(screen.queryByTitle(/^PDF:/)).not.toBeInTheDocument();
+  });
+
+  it("opens in the same column as the answer, which stays visible", async () => {
+    await renderAndWait();
+
+    await userEvent.click(screen.getByRole("button", { name: /Redezeit im Plenum/ }));
+
+    expect(screen.getByTitle("PDF: Redezeit im Plenum")).toBeInTheDocument();
+    // 4.3c is a judgement about the claim and the passage together, so losing
+    // the answer to open the source would defeat the point.
+    expect(screen.getByText(/Nach § 35 GOBT gilt eine Redezeit/)).toBeInTheDocument();
+  });
+
+  it("closes again", async () => {
+    await renderAndWait();
+    await userEvent.click(screen.getByRole("button", { name: /Redezeit im Plenum/ }));
+
+    await userEvent.click(screen.getByLabelText("Dokument schließen"));
+
+    expect(screen.queryByTitle(/^PDF:/)).not.toBeInTheDocument();
+  });
+});
