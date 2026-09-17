@@ -83,18 +83,31 @@ As drafted, and all of it holds.
 | source set diff | 4.3b | built (#87) |
 | retrieval recall | new | built (#87) |
 | marker alignment | 4.3a partial | built (#93) |
-| refusal | 4.4 | built (#93), but see below |
+| refusal | 4.4 | built (#93), judged rather than literal since #109 |
 | truncation | new | built (#93) |
 | byte dupe: 2 of 3 repeats identical | 4.1 shortcut | built (#93); saves a judge call when repeats match |
 
-**4.4 does not work as the draft assumed, and this is open (#109).** The exact
-refusal string only appears when retrieval returns nothing, and vector search
-always returns the top-k however irrelevant. Asked a deliberately absurd
-question, SENTRA retrieved ten unrelated chunks and answered *"Die Frage kann
-nicht ausreichend beantwortet werden, da der Kontext keine Informationen über
-… enthält"*. That is good behaviour — it invented nothing — but it is prose,
-not the refusal path, so the check fires on every Grenzfall. Three ways out are
-in #109; the choice is WD's and KISZ's.
+**4.4 did not work as the draft assumed, and the decision has been taken
+(#109).** The exact refusal string only appears when retrieval returns nothing,
+and vector search always returns the top-k however irrelevant. Asked a
+deliberately absurd question, SENTRA retrieved ten unrelated chunks and
+answered *"Die Frage kann nicht ausreichend beantwortet werden, da der Kontext
+keine Informationen über … enthält"*. That is good behaviour — it invented
+nothing — but it is prose, not the refusal path, so the check fired on every
+Grenzfall.
+
+**Prose hedging now satisfies 4.4.** An answer that says it cannot answer from
+the retrieved context, rather than inventing one, meets what the technique is
+asking for. The cost, and it is a real one: recognising that is not a string
+comparison, so Stufe 1 traded a deterministic check for a judged one. The exact
+string is still the cheap path and needs no model call; everything else is
+asked of the judge, once per case on the first repeat. A judge that cannot be
+reached falls back to the literal comparison, which is the old behaviour and
+sends a human to look.
+
+The second direction was previously invisible and is now caught: an *ordinary*
+question that gets hedged means retrieval found nothing useful for something
+the corpus should cover.
 
 ## Judge
 
@@ -176,8 +189,6 @@ read-only right, one assessment sheet below.
 ## Open
 
 - **section vs page citations** → blocks 4.3a. Needs WD.
-- **what 4.4 means**, given SENTRA hedges rather than refusing (#109). Needs WD
-  and KISZ.
 - **auth**: still none. `Tester/in` and `Varianten freigegeben durch` are typed
   names, required so a finding has an owner, but unverified.
 - **the Aktenzeichen on every case** has to be looked up by hand. Deliberately
