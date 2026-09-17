@@ -23,4 +23,10 @@ RUN uv sync --frozen --no-dev
 # The schema is applied deliberately, not at startup: a process that migrates
 # when it boots decides the schema by whichever replica won the race.
 #   docker compose --profile eval run --rm eval-harness uv run alembic upgrade head
-CMD ["uv", "run", "uvicorn", "sentra_eval.app:app", "--host", "0.0.0.0", "--port", "8100"]
+# --no-dev matters here as much as in the sync above. `uv run` re-resolves the
+# environment before running and includes the dev group by default, so without
+# it every container start downloaded ruff, mypy and pytest — undoing the
+# --no-dev from the build layer, requiring network access to the package index
+# to start an image that was already on the host, and putting development
+# tooling in a production image.
+CMD ["uv", "run", "--no-dev", "uvicorn", "sentra_eval.app:app", "--host", "0.0.0.0", "--port", "8100"]
