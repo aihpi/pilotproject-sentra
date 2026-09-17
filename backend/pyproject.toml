@@ -103,7 +103,11 @@ layers = [
     "api",
     "services",
     "rag | ingestion",
-    "(evaluation)",
+    # Generic background-job orchestration. Extracted from services in #81 and
+    # left here: the evaluation harness has since moved to its own
+    # distribution and carries its own copy, so this serves ingestion and
+    # whatever comes next.
+    "jobs",
     "domain",
     "config",
 ]

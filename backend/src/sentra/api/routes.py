@@ -24,10 +24,12 @@ from sentra.api.models import (
     IngestionStatusResponse,
     IngestStartResponse,
     ReferatOption,
+    RetrievedChunk,
     SimilarDocumentsRequest,
     date_range_params,
 )
 from sentra.config import Settings, get_settings
+from sentra.domain import AnswerResult
 from sentra.ingestion.metadata import DOCUMENT_TYPE_VALUES, FACHBEREICH_NAMES
 from sentra.rag.embeddings import EmbeddingClient
 from sentra.rag.generator import DEFAULT_PROMPTS, AnswerGenerator
@@ -307,7 +309,32 @@ def explorer_sources(
     return ExternalSourcesResponse(sources=[ExternalSourceResult.from_domain(s) for s in sources])
 
 
-@router.post("/explorer/answer", response_model=GeneratedAnswerResponse)
+def _answer_response(result: AnswerResult, *, debug: bool) -> GeneratedAnswerResponse:
+    """Shape a generated answer for the wire.
+
+    Without debug the three extra fields stay None and pydantic leaves them
+    out, so the response is what every existing caller already parses.
+    """
+    return GeneratedAnswerResponse(
+        text=result.text,
+        sources=[AnswerSourceRef.from_domain(s) for s in result.sources],
+        system_prompt=result.system_prompt,
+        hits=[RetrievedChunk.from_domain(h) for h in result.hits] if debug else None,
+        finish_reason=result.finish_reason,
+        model=result.model,
+    )
+
+
+@router.post(
+    "/explorer/answer",
+    response_model=GeneratedAnswerResponse,
+    # Without this the three debug fields serialise as explicit nulls and every
+    # existing caller sees new keys. `system_prompt` is always populated by the
+    # service, on the no-results path too, so nothing a caller reads today can
+    # disappear — and a test pins that, because this is the kind of setting
+    # whose blast radius is invisible until something downstream breaks.
+    response_model_exclude_none=True,
+)
 def explorer_answer(
     body: AnswerRequest,
     store: VectorStore = Depends(get_store),
@@ -328,15 +355,16 @@ def explorer_answer(
         fachbereich=body.fachbereich,
         document_type=body.document_type,
         system_prompt=body.system_prompt,
+        debug=body.debug,
     )
-    return GeneratedAnswerResponse(
-        text=result.text,
-        sources=[AnswerSourceRef.from_domain(s) for s in result.sources],
-        system_prompt=result.system_prompt,
-    )
+    return _answer_response(result, debug=body.debug)
 
 
-@router.post("/explorer/overview", response_model=GeneratedAnswerResponse)
+@router.post(
+    "/explorer/overview",
+    response_model=GeneratedAnswerResponse,
+    response_model_exclude_none=True,
+)
 def explorer_overview(
     body: AnswerRequest,
     store: VectorStore = Depends(get_store),
@@ -357,9 +385,6 @@ def explorer_overview(
         fachbereich=body.fachbereich,
         document_type=body.document_type,
         system_prompt=body.system_prompt,
+        debug=body.debug,
     )
-    return GeneratedAnswerResponse(
-        text=result.text,
-        sources=[AnswerSourceRef.from_domain(s) for s in result.sources],
-        system_prompt=result.system_prompt,
-    )
+    return _answer_response(result, debug=body.debug)

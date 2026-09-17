@@ -4,7 +4,7 @@ from typing import Protocol
 from openai import OpenAI
 
 from sentra.config import Settings
-from sentra.domain import Hit
+from sentra.domain import Generation, Hit
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ class AnswerMethod(Protocol):
 
     def __call__(
         self, question: str, context: str, /, *, system_prompt: str | None = None
-    ) -> str: ...
+    ) -> Generation: ...
 
 
 # The prompt each question sub-mode starts from, served by GET /api/config so
@@ -106,7 +106,7 @@ class AnswerGenerator:
         question: str,
         context: str,
         system_prompt: str | None = None,
-    ) -> str:
+    ) -> Generation:
         """Generate a focused answer for a Fachfrage (UC#10)."""
         return self._complete(
             system_prompt or FACHFRAGE_PROMPT,
@@ -118,7 +118,7 @@ class AnswerGenerator:
         topic: str,
         context: str,
         system_prompt: str | None = None,
-    ) -> str:
+    ) -> Generation:
         """Generate a structured topic overview (UC#2)."""
         return self._complete(
             system_prompt or OVERVIEW_PROMPT,
@@ -131,7 +131,7 @@ class AnswerGenerator:
         system_prompt: str,
         user_message: str,
         max_tokens: int = 2048,
-    ) -> str:
+    ) -> Generation:
         response = self._client.chat.completions.create(
             model=self._model,
             messages=[
@@ -141,4 +141,14 @@ class AnswerGenerator:
             temperature=0.1,
             max_tokens=max_tokens,
         )
-        return response.choices[0].message.content or ""
+        choice = response.choices[0]
+        # finish_reason and the served model name were both discarded here.
+        # "length" means the answer stopped at the ceiling rather than ending,
+        # which is a different finding from an inconsistent answer; and
+        # response.model is what the hub actually ran, which is not necessarily
+        # the name we asked for.
+        return Generation(
+            text=choice.message.content or "",
+            finish_reason=choice.finish_reason,
+            model=response.model,
+        )

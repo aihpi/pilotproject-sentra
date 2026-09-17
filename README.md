@@ -200,8 +200,12 @@ As above: **Dokumente** → **Dokumente einlesen**, then **Suche**.
 
 ```bash
 cd backend
-uv run pytest -m "not integration"   # 342 tests, no services needed. This is what CI runs.
+uv run pytest -m "not integration"   # 382 tests, no services needed. This is what CI runs.
 uv run pytest -m integration         # 84 tests, needs Qdrant and the AI Hub
+
+cd ../evaluation                     # the harness is its own distribution
+uv run pytest -m "not integration"   # 145 tests, no services needed
+uv run pytest -m integration         # 5 tests, needs the eval database
 
 cd frontend
 npm test                             # 26 component tests in jsdom, no browser needed
@@ -213,6 +217,13 @@ npm run lint
 uvx pre-commit run --all-files       # ruff, mypy and the layering contract
 ```
 
+The evaluation harness lives in `evaluation/`, as its own distribution with its
+own process and image. It depends on nothing of SENTRA's and reaches it over
+HTTP, because SENTRA's API layer is part of what it is testing. Start it with
+`docker compose --profile eval up` — a profile, because most people bringing the
+stack up are working on SENTRA rather than measuring it. See
+`evaluation/README.md`.
+
 "No services needed" includes `backend/.env`. The offline tier calls no AI Hub,
 so `tests/conftest.py` fills in placeholder credentials when there is no env
 file and none in the environment, pointing at a host that cannot resolve. That
@@ -221,7 +232,8 @@ alone, since environment variables outrank it.
 
 The integration tier is not in CI, and the reason is cost rather than
 difficulty: every run embeds live queries and calls the chat model. It needs
-`.env` for real. It uses its own index built from
+`.env` for real. Its four migration tests also want the eval database
+(`docker compose up -d eval-db`) and skip with instructions when it is absent. It uses its own index built from
 `backend/tests/fixtures/corpus`, so it never reads whatever you have ingested.
 
 The frontend tests are vitest plus testing-library, sharing `vite.config.ts`

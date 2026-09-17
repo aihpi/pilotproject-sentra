@@ -58,6 +58,41 @@ jobs:
       - name: Offline test suite
         run: uv run pytest -m "not integration" -q
 
+  evaluation:
+    name: Evaluation harness
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: evaluation
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "evaluation/uv.lock"
+
+      - name: Install the project and its dev dependencies
+        run: uv sync --frozen
+
+      # Its own job rather than a step in the backend one, because it is its
+      # own distribution with its own lockfile and depends on nothing of
+      # SENTRA's. A break in one should not hide a break in the other.
+      #
+      # The linters run through the repository-wide pre-commit job above, which
+      # now covers evaluation/ as well.
+      #
+      # The integration tier is excluded: it needs Postgres, and the offline
+      # tier covers the database being unreachable, which is the behaviour that
+      # has to hold here.
+      - name: Offline test suite
+        run: uv run pytest -m "not integration" -q
+
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
