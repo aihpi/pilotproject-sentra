@@ -374,8 +374,16 @@ class TestChecksDuringARun:
 
         session.expire_all()
         results = session.execute(select(CheckResult)).scalars().all()
-        assert {r.pruefung for r in results} == {"quellenauswahl", "retrieval_recall"}
-        assert all(r.auffaellig is False for r in results)
+        assert {r.pruefung for r in results} == {
+            "quellenauswahl",
+            "marker_ausrichtung",
+            "ablehnung",
+            "abschneidung",
+            "retrieval_recall",
+        }
+        assert all(r.auffaellig is False for r in results), [
+            (r.pruefung, r.ergebnis) for r in results if r.auffaellig
+        ]
 
     def test_a_wrong_citation_is_flagged(self, session):
         from sentra_eval.models import CheckResult
@@ -427,5 +435,100 @@ class TestChecksDuringARun:
         scored = runner.recheck(session, session.get(Run, run.id))
         session.commit()
 
+        # Three calls rescored: two answers and the recall probe.
         assert scored == 3
-        assert len(session.execute(select(CheckResult)).scalars().all()) == 3
+        # Four checks on each answer, one on the probe.
+        assert len(session.execute(select(CheckResult)).scalars().all()) == 9
+
+
+# ── Group checks ────────────────────────────────────────────────────
+
+
+class TestGroupChecksDuringARun:
+    """4.1's cheap half: a verdict about the repeats, not about any one of them."""
+
+    def _case(self, session):
+        case, version = case_store.create_case(
+            session,
+            kategorie=Kategorie.GO,
+            ausgangsfrage="Wie lange darf ein Redner sprechen?",
+            erwartete_antwort="15 Minuten.",
+            referenz_korrekt="GOBT § 35",
+        )
+        case_store.approve(session, version)
+        session.commit()
+        return case
+
+    def test_identical_repeats_are_recorded_as_identical(self, session):
+        from sentra_eval.models import GroupCheckResult
+
+        self._case(session)
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+
+        runner.execute(run.id, _client(_always()))
+
+        session.expire_all()
+        group = session.execute(select(GroupCheckResult)).scalar_one()
+        assert group.pruefung == "wiederholbarkeit"
+        assert group.ergebnis == "identisch"
+
+    def test_differing_repeats_are_recorded_as_differing(self, session):
+        from sentra_eval.models import GroupCheckResult
+
+        self._case(session)
+        seen = {"n": 0}
+
+        def varying(request: httpx.Request) -> httpx.Response:
+            if "documents" in str(request.url):
+                return httpx.Response(200, json={"documents": []})
+            seen["n"] += 1
+            return httpx.Response(200, json={**ANSWER, "text": f"Antwort Nummer {seen['n']}."})
+
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+
+        runner.execute(run.id, _client(varying))
+
+        session.expire_all()
+        group = session.execute(select(GroupCheckResult)).scalar_one()
+        assert group.ergebnis == "abweichend"
+        assert group.belege["verschiedene_antworten"] == 3
+        # Not a finding on its own: differing wording is what the judge reads.
+        assert group.auffaellig is False
+
+    def test_there_is_one_verdict_per_case_not_per_repeat(self, session):
+        """Anchoring it to a repeat would make a reviewer ask what was wrong
+        with repeat 0, when the answer is nothing."""
+        from sentra_eval.models import GroupCheckResult
+
+        self._case(session)
+        self._case(session)
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+
+        runner.execute(run.id, _client(_always()))
+
+        session.expire_all()
+        assert len(session.execute(select(GroupCheckResult)).scalars().all()) == 2
+
+    def test_the_runner_asks_sentra_for_the_debug_payload(self, session):
+        """Without it there is no finish_reason, so no truncation check."""
+        self._case(session)
+        bodies: list[dict] = []
+
+        def recording(request: httpx.Request) -> httpx.Response:
+            import json as _json
+
+            bodies.append(_json.loads(request.content))
+            if "documents" in str(request.url):
+                return httpx.Response(200, json={"documents": []})
+            return httpx.Response(200, json=ANSWER)
+
+        run = runner.start_run(session, repeats=1)
+        session.commit()
+
+        runner.execute(run.id, _client(recording))
+
+        answer_bodies = [b for b in bodies if "top_k" not in b]
+        assert answer_bodies and all(b["debug"] is True for b in answer_bodies)

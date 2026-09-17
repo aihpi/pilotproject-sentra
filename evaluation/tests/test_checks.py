@@ -198,3 +198,181 @@ class TestTheDistinctionThatMatters:
 
         assert answer.auffaellig is True
         assert recall.ergebnis == checks.NICHT_GEFUNDEN
+
+
+# ── Marker alignment ────────────────────────────────────────────────
+
+
+def _answer_text(text: str, *aktenzeichen: str) -> dict:
+    return {
+        "text": text,
+        "sources": [{"aktenzeichen": az, "title": "x"} for az in aktenzeichen],
+    }
+
+
+class TestMarkerAusrichtung:
+    """Both prompts say [n] is the nth source in order of first appearance.
+    Nothing enforces it: the model counts for itself."""
+
+    def test_markers_matching_sources_are_unauffaellig(self):
+        outcome = checks.marker_ausrichtung(_answer_text("Erstens [1], zweitens [2].", "A", "B"))
+
+        assert outcome.ergebnis == checks.AUSGERICHTET
+        assert outcome.auffaellig is False
+
+    def test_a_marker_with_no_source_is_a_finding(self):
+        """The visible half: a reviewer following [3] finds nothing there."""
+        outcome = checks.marker_ausrichtung(_answer_text("Laut [3] gilt ...", "A", "B"))
+
+        assert outcome.ergebnis == checks.NICHT_AUSGERICHTET
+        assert outcome.belege["marker_ohne_quelle"] == [3]
+
+    def test_a_source_nobody_cited_is_a_finding(self):
+        """The quieter half. Not wrong, but the answer used less of its context
+        than it was given, and that is worth a look."""
+        outcome = checks.marker_ausrichtung(_answer_text("Nur [1].", "A", "B", "C"))
+
+        assert outcome.ergebnis == checks.NICHT_AUSGERICHTET
+        assert outcome.belege["quellen_ohne_marker"] == [2, 3]
+
+    def test_markdown_bold_around_a_marker_still_counts(self):
+        """The prompts ask for **[1]**, which is what the model emits."""
+        outcome = checks.marker_ausrichtung(_answer_text("Laut **[1]** gilt ...", "A"))
+
+        assert outcome.ergebnis == checks.AUSGERICHTET
+
+    def test_a_marker_used_twice_is_not_a_problem(self):
+        outcome = checks.marker_ausrichtung(_answer_text("[1] und später wieder [1].", "A"))
+
+        assert outcome.ergebnis == checks.AUSGERICHTET
+
+    def test_an_answer_with_no_markers_and_no_sources_is_fine(self):
+        outcome = checks.marker_ausrichtung(_answer_text("Keine Quellenangabe nötig."))
+
+        assert outcome.ergebnis == checks.AUSGERICHTET
+
+    def test_the_evidence_names_both_directions(self):
+        outcome = checks.marker_ausrichtung(_answer_text("[1] und [4].", "A", "B"))
+
+        assert outcome.belege["marker_ohne_quelle"] == [4]
+        assert outcome.belege["quellen_ohne_marker"] == [2]
+
+
+# ── 4.4, the refusal ────────────────────────────────────────────────
+
+
+REFUSAL = {"text": checks.REFUSAL_TEXT, "sources": []}
+
+
+class TestAblehnung:
+    def test_a_grenzfall_that_is_refused_is_correct(self):
+        outcome = checks.ablehnung(REFUSAL, grenzfall=True)
+
+        assert outcome.ergebnis == checks.KORREKT_ABGELEHNT
+        assert outcome.auffaellig is False
+
+    def test_a_grenzfall_that_gets_an_answer_is_a_finding(self):
+        """Where the real risk sits: a system that invents rather than saying
+        it has nothing is worse than one that finds nothing."""
+        outcome = checks.ablehnung(_answer_text("Dazu gilt Folgendes [1].", "A"), grenzfall=True)
+
+        assert outcome.ergebnis == checks.NICHT_ABGELEHNT
+        assert outcome.auffaellig is True
+
+    def test_an_ordinary_question_that_is_refused_is_also_a_finding(self):
+        """Retrieval returned nothing for something the corpus should cover."""
+        outcome = checks.ablehnung(REFUSAL, grenzfall=False)
+
+        assert outcome.ergebnis == checks.ABLEHNUNG_UNERWARTET
+        assert outcome.auffaellig is True
+
+    def test_an_ordinary_question_that_is_answered_is_fine(self):
+        outcome = checks.ablehnung(_answer_text("Antwort [1].", "A"), grenzfall=False)
+
+        assert outcome.ergebnis == checks.KORREKT_ABGELEHNT
+
+    def test_the_refusal_text_with_sources_does_not_count(self):
+        """The refusal means nothing was retrieved. The same sentence with
+        sources attached is something else, and not a refusal."""
+        outcome = checks.ablehnung(
+            {"text": checks.REFUSAL_TEXT, "sources": [{"aktenzeichen": "A"}]}, grenzfall=True
+        )
+
+        assert outcome.ergebnis == checks.NICHT_ABGELEHNT
+
+    def test_nearly_the_refusal_text_does_not_count(self):
+        outcome = checks.ablehnung(
+            {"text": "Es wurden leider keine relevanten Dokumente gefunden.", "sources": []},
+            grenzfall=True,
+        )
+
+        assert outcome.ergebnis == checks.NICHT_ABGELEHNT
+
+    def test_the_expected_string_is_pinned(self):
+        """The harness is a separate distribution and cannot import SENTRA's
+        copy of this sentence. So it asserts it: rewording the refusal over
+        there has to fail here loudly, rather than silently passing every
+        Grenzfall from then on."""
+        assert checks.REFUSAL_TEXT == "Es wurden keine relevanten Dokumente gefunden."
+
+
+# ── Truncation is not inconsistency ─────────────────────────────────
+
+
+class TestAbschneidung:
+    def test_a_finished_answer_is_vollstaendig(self):
+        outcome = checks.abschneidung({"text": "Fertig.", "finish_reason": "stop"})
+
+        assert outcome.ergebnis == checks.VOLLSTAENDIG
+        assert outcome.auffaellig is False
+
+    def test_hitting_the_ceiling_is_a_finding(self):
+        """Fachfrage generates at 2048 tokens and Überblick at 3072. Without
+        finish_reason this reads as an inconsistent answer and gets filed
+        against the model instead of against a configured limit."""
+        outcome = checks.abschneidung({"text": "Angefangen ...", "finish_reason": "length"})
+
+        assert outcome.ergebnis == checks.ABGESCHNITTEN
+        assert outcome.auffaellig is True
+
+    def test_without_the_debug_flag_it_is_not_checkable(self):
+        outcome = checks.abschneidung({"text": "Etwas."})
+
+        assert outcome.ergebnis == checks.NICHT_PRUEFBAR
+        assert outcome.auffaellig is False
+
+
+# ── The cheap half of 4.1 ───────────────────────────────────────────
+
+
+class TestWiederholbarkeit:
+    def test_identical_repeats_answer_4_1_without_a_judge(self):
+        outcome = checks.wiederholbarkeit(["Die Antwort.", "Die Antwort.", "Die Antwort."])
+
+        assert outcome.ergebnis == checks.IDENTISCH
+        assert outcome.auffaellig is False
+
+    def test_whitespace_alone_does_not_make_them_different(self):
+        outcome = checks.wiederholbarkeit(["Die Antwort.", "Die Antwort.\n"])
+
+        assert outcome.ergebnis == checks.IDENTISCH
+
+    def test_differing_repeats_are_not_a_finding_on_their_own(self):
+        """Differing wording is exactly what the judge exists to read. Flagging
+        it here would send every case to a human for being phrased differently
+        twice, which is the opposite of what Stufe 1 is for."""
+        outcome = checks.wiederholbarkeit(["Die Antwort.", "Eine andere Antwort."])
+
+        assert outcome.ergebnis == checks.ABWEICHEND
+        assert outcome.auffaellig is False
+
+    def test_the_evidence_says_how_many_differed(self):
+        outcome = checks.wiederholbarkeit(["A", "B", "B"])
+
+        assert outcome.belege["anzahl_laeufe"] == 3
+        assert outcome.belege["verschiedene_antworten"] == 2
+
+    def test_one_repeat_cannot_be_compared(self):
+        outcome = checks.wiederholbarkeit(["Nur eine."])
+
+        assert outcome.ergebnis == checks.NICHT_PRUEFBAR
