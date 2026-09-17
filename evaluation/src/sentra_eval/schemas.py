@@ -86,6 +86,12 @@ class StartRunRequest(BaseModel):
     # 4.1 asks for three. Configurable because a smoke run of one is useful and
     # a round of three is what the Vorlage specifies.
     repeats: int = Field(default=3, ge=1, le=10)
+    # Stufe 3's rate. The Vorlage leaves it open and suggests 10 percent as a
+    # starting point; it is stored on the run, so changing it later cannot
+    # change what a finished round did.
+    stichprobe_anteil: float = Field(default=0.1, ge=0.0, le=1.0)
+    # Fixed explicitly only to reproduce a round. Otherwise drawn once and kept.
+    stichprobe_seed: int | None = None
 
 
 class RunResponse(BaseModel):
@@ -97,6 +103,8 @@ class RunResponse(BaseModel):
     started_at: datetime
     completed_at: datetime | None
     fehler: str
+    stichprobe_seed: int
+    stichprobe_anteil: float
     # Progress, so a caller polling this can see a round move.
     total: int
     done: int
@@ -226,3 +234,19 @@ class VorlageOptions(BaseModel):
     reproduzierbar: list[str]
     gefunden_ueber: list[str]
     schweregrad: dict[int, str]
+
+
+class TriageSummary(BaseModel):
+    """What Stufe 1 decided, in aggregate.
+
+    Worth being able to see at a glance: a round where everything is flagged
+    means the threshold is filtering nothing, and a round where nothing is
+    means it may be filtering too much. That ratio is the thing being
+    calibrated.
+    """
+
+    gesamt: int
+    stufe_2: int
+    stufe_3: int
+    grenzfaelle: int
+    unauffaellig: int

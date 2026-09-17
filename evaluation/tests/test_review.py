@@ -77,21 +77,30 @@ def _sentra(handler=None):
     )
 
 
-def _round(client, *, grenzfall=False, repeats=2, handler=None):
-    """An approved case, run, and its queue."""
+def _round(client, *, grenzfall=False, repeats=2, handler=None, clean=False):
+    """An approved case, run, and its queue.
+
+    Flagged by default. Triage only queues cases a human has to look at, so a
+    case that passes every check does not appear — which is the point of Stufe
+    1 and would make these tests about the queue's contents inspect an empty
+    list. The flag comes from the reference Aktenzeichen not matching what the
+    stubbed answer cites, which is a real 4.3b finding rather than a fixture
+    trick. `clean=True` is for the tests that are about triage filtering.
+    """
     body = {
         "kategorie": "GO",
         "ausgangsfrage": "Wie lange darf ein Redner sprechen?",
         "erwartete_antwort": "15 Minuten nach § 35 GOBT.",
         "referenz_korrekt": "GOBT § 35",
-        "referenz_korrekt_az": "WD 3 - 3000 - 029/23",
+        "referenz_korrekt_az": ("WD 3 - 3000 - 029/23" if clean else "WD 9 - 3000 - 999/25"),
         "grenzfall": grenzfall,
     }
     test_id = client.post("/api/eval/cases", json=body).json()["test_id"]
     client.post(f"/api/eval/cases/{test_id}/freigeben")
 
     with session_scope() as session:
-        run = runner.start_run(session, repeats=repeats)
+        # Seeded explicitly so a test never depends on a random draw.
+        run = runner.start_run(session, repeats=repeats, stichprobe_seed=1, stichprobe_anteil=0.0)
         run_id = run.id
     runner.execute(run_id, _sentra(handler))
 

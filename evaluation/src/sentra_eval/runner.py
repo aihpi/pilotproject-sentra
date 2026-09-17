@@ -17,6 +17,7 @@ what every later check is a pure function over.
 """
 
 import logging
+import secrets
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -152,7 +153,14 @@ def outstanding(session: Session, run: Run, retry_failed: bool = True) -> list[P
 # ── Executing ───────────────────────────────────────────────────────
 
 
-def start_run(session: Session, *, label: str = "", repeats: int = 3) -> Run:
+def start_run(
+    session: Session,
+    *,
+    label: str = "",
+    repeats: int = 3,
+    stichprobe_anteil: float = 0.1,
+    stichprobe_seed: int | None = None,
+) -> Run:
     """Create a round. Refuses one with nothing to do.
 
     A round over zero approved cases would sit at "completed, 0 calls" and look
@@ -164,6 +172,14 @@ def start_run(session: Session, *, label: str = "", repeats: int = 3) -> Run:
         status=LAUFEND,
         sentra_base_url=settings.sentra_base_url,
         repeats=repeats,
+        stichprobe_anteil=stichprobe_anteil,
+        # Drawn once, at the start, and kept. Stufe 3's job is to detect Stufe 1
+        # systematically missing things, which a sample nobody can reconstruct
+        # cannot support — so the seed is part of the round's record rather
+        # than something regenerated on read.
+        stichprobe_seed=stichprobe_seed
+        if stichprobe_seed is not None
+        else secrets.randbelow(2**31),
     )
     session.add(run)
     session.flush()

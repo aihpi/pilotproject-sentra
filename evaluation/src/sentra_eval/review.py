@@ -24,8 +24,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from sentra_eval import triage
 from sentra_eval.models import (
-    GRENZFALL_IMMER,
     OK,
     STUFE_2,
     ZWECK_ANTWORT,
@@ -77,11 +77,17 @@ class QueueEntry:
 
 
 def queue(session: Session, run_id: UUID) -> list[QueueEntry]:
-    """Every case in the round that a human still has to work through.
+    """The cases a human has to work through, and only those.
 
-    Until triage exists this is all of them. The shape does not change when it
-    arrives: triage decides which entries appear, not what an entry contains.
+    Which ones is triage's decision: a Grenzfall always, anything a check or
+    the judge flagged, and a seeded sample of the rest. A case that is clean
+    and unsampled does not appear at all — that is the point of Stufe 1, and
+    returning everything was Stufe 2 doing its job.
     """
+    run = session.get(Run, run_id)
+    if run is None:
+        raise ReviewError(f"No run {run_id}")
+    decisions = triage.by_case(session, run)
     rows = session.execute(
         select(Call, CaseVersion, Case)
         .join(CaseVersion, Call.case_version_id == CaseVersion.id)
@@ -97,6 +103,9 @@ def queue(session: Session, run_id: UUID) -> list[QueueEntry]:
 
     entries: dict[UUID, QueueEntry] = {}
     for call, version, case in rows:
+        decision = decisions.get(version.id)
+        if decision is None or not decision.needs_review:
+            continue
         entry = entries.get(version.id)
         if entry is None:
             entry = QueueEntry(
@@ -109,10 +118,10 @@ def queue(session: Session, run_id: UUID) -> list[QueueEntry]:
                 referenz_korrekt=version.referenz_korrekt,
                 referenz_falsch=version.referenz_falsch,
                 grenzfall=version.grenzfall,
-                # A Grenzfall is never filtered out of review, per 4.4, so it
-                # is labelled as such from the start rather than by whatever
-                # triage later decides.
-                gefunden_ueber=GRENZFALL_IMMER if version.grenzfall else STUFE_2,
+                # Why this case is in front of somebody: Stufe 2 because a
+                # check flagged it, Stufe 3 because the sample drew it, or
+                # Grenzfall because 4.4 never filters one.
+                gefunden_ueber=decision.gefunden_ueber or STUFE_2,
             )
             entries[version.id] = entry
         entry.calls.append(call)
@@ -189,7 +198,7 @@ def record_verdict(
         run_id=run_id,
         case_version_id=case_version_id,
         tester=tester,
-        gefunden_ueber=gefunden_ueber_for(version),
+        gefunden_ueber=gefunden_ueber_for(session, run_id, version),
         kernbefunde=kernbefunde,
         quelle_4_3a=quelle_4_3a,
         quelle_4_3b=quelle_4_3b,
@@ -205,15 +214,19 @@ def record_verdict(
     return verdict
 
 
-def gefunden_ueber_for(version: CaseVersion) -> str:
-    """How this case reached a reviewer.
+def gefunden_ueber_for(session: Session, run_id: UUID, version: CaseVersion) -> str:
+    """How this case reached a reviewer, as triage decided.
 
-    Until triage exists there are two answers: a Grenzfall is never filtered
-    out of review per 4.4, and everything else arrives because Stufe 1 flagged
-    it — which is currently everything. Stufe 3's sampled cases get their
-    answer from triage when it lands, and this is the one place that changes.
+    Derived rather than submitted: it is half of what the trend report
+    measures, and a client asserting it could record a case as caught by
+    Stufe 1 when the sample found it, which is the difference between "the
+    threshold works" and "we got lucky".
     """
-    return GRENZFALL_IMMER if version.grenzfall else STUFE_2
+    run = session.get(Run, run_id)
+    if run is None:
+        raise ReviewError(f"No run {run_id}")
+    decision = triage.by_case(session, run).get(version.id)
+    return (decision.gefunden_ueber if decision else None) or STUFE_2
 
 
 def kisz_escalations(session: Session, run_id: UUID) -> list[Verdict]:
