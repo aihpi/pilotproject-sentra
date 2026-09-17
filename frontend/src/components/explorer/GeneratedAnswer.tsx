@@ -1,21 +1,12 @@
 import { useState } from "react";
 import type { GeneratedAnswerResult } from "@/types";
 import { cn } from "@/lib/utils";
-import { pdfUrl, formatDate, submitFeedback } from "@/lib/api";
+import { submitFeedback } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { SourceCards } from "@/components/explorer/SourceCards";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import {
-  BookOpen,
-  Calendar,
-  ChevronDown,
-  ChevronRight,
-  Code2,
-  ExternalLink,
-  ThumbsDown,
-  ThumbsUp,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, Code2, ThumbsDown, ThumbsUp } from "lucide-react";
 
 interface GeneratedAnswerProps {
   result: GeneratedAnswerResult;
@@ -146,47 +137,7 @@ export function GeneratedAnswer({ result, query }: GeneratedAnswerProps) {
         </div>
       )}
 
-      <div className="space-y-2">
-        <h4 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          <BookOpen className="h-3.5 w-3.5" />
-          Quellen ({result.sources.length})
-        </h4>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {result.sources.map((source, i) => (
-            <a
-              key={source.aktenzeichen}
-              href={source.source_file ? pdfUrl(source.source_file) : undefined}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-start gap-3 rounded-lg border bg-card p-3 transition-colors hover:border-primary/30 hover:shadow-sm no-underline cursor-pointer group"
-            >
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-primary/10 text-[11px] font-bold text-primary">
-                {i + 1}
-              </span>
-              <div className="min-w-0 flex-1 space-y-1">
-                <div className="flex items-start justify-between gap-1">
-                  <p className="text-xs font-medium leading-snug text-foreground line-clamp-2 group-hover:text-primary transition-colors">
-                    {source.title}
-                  </p>
-                  <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity mt-0.5" />
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge
-                    variant="outline"
-                    className="font-mono text-[10px] px-1 py-0"
-                  >
-                    {source.aktenzeichen}
-                  </Badge>
-                  <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
-                    <Calendar className="h-2.5 w-2.5" />
-                    {formatDate(source.completion_date)}
-                  </span>
-                </div>
-              </div>
-            </a>
-          ))}
-        </div>
-      </div>
+      <SourceCards sources={result.sources} />
     </div>
   );
 }

@@ -2,8 +2,9 @@ import { useState } from "react";
 import { Header } from "@/components/Header";
 import { DocumentsView } from "@/components/DocumentsView";
 import { ExplorerView } from "@/components/explorer/ExplorerView";
+import { EvaluationView } from "@/components/evaluation/EvaluationView";
 
-export type ViewType = "explorer" | "documents";
+export type ViewType = "explorer" | "documents" | "evaluation";
 
 export default function App() {
   const [activeView, setActiveView] = useState<ViewType>("explorer");
@@ -14,6 +15,7 @@ export default function App() {
       <main>
         {activeView === "explorer" && <ExplorerView />}
         {activeView === "documents" && <DocumentsView />}
+        {activeView === "evaluation" && <EvaluationView />}
       </main>
     </div>
   );
