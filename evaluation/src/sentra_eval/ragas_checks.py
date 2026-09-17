@@ -152,7 +152,11 @@ def _run_ragas(
         # runtime; the declared fields are openai_api_base and openai_api_key,
         # which is why mypy objects. Verified against the live hub rather than
         # swapped for the declared names untested.
-        embeddings=OpenAIEmbeddings(  # type: ignore[call-arg]
+        # unused-ignore is listed alongside call-arg on purpose: with the extra
+        # installed mypy resolves the class and objects to these kwargs, and
+        # without it the class is Any and the ignore itself becomes the error.
+        # Both are true depending on the environment, so both are suppressed.
+        embeddings=OpenAIEmbeddings(  # type: ignore[call-arg, unused-ignore]
             model=get_eval_settings().ragas_embedding_model,
             base_url=config.base_url,
             api_key=config.api_key,

@@ -84,7 +84,11 @@ disallow_untyped_defs = true
 # ragas ships no py.typed marker. It is an optional extra that most
 # deployments will not install, so the alternative to this is a file full of
 # ignores for a dependency that is usually absent.
-module = ["ragas.*"]
+# ragas ships no py.typed marker, and neither it nor langchain is installed
+# unless the optional extra is. mypy therefore sees a different world in CI
+# (extra absent) from a machine that has run `uv sync --extra ragas`, which is
+# how a type: ignore that was necessary locally became an error in CI.
+module = ["ragas.*", "langchain_openai.*", "langchain.*", "langchain_core.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
