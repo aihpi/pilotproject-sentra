@@ -383,34 +383,56 @@ class GroupCheckResult(Base):
 
 
 class Verdict(Base):
-    """A human's assessment of one call. The Phase-4 sheet, as a row.
+    """A human's assessment of one test case in one round.
+
+    Section 6 of the Vorlage is "Dokumentation **je Testfall**", and three of
+    its fields say so rather than it being a matter of preference. `Reproduzierbar?
+    einmalig / wiederholt / entfällt (nur ein Lauf vorhanden)` asks whether a
+    finding recurred across the repeats, which no single answer can be asked.
+    `Kernbefund je Variante` is a field inside one sheet, so the plural lives
+    within the singular. And `Geprüfte Varianten (Wortlaut)` is plural on one
+    sheet against one Ursprünglicher Prompt, one Schweregrad and one set of
+    4.3a/b/c.
 
     Kept separately from CheckResult rather than updating it, and that is the
-    point rather than tidiness. Section 6 of the Vorlage names the disagreement
-    rate between the automatic and the human verdict as the most important
-    number in the whole process: it is what says whether the Stufe-1 threshold
-    is set too loosely or too strictly. A human verdict that overwrote the
-    machine one would destroy the only input to that metric.
-
-    So both rows are kept forever, and neither is authoritative over the other.
+    point rather than tidiness. Section 6 names the disagreement rate between
+    the automatic verdict and the human one as the most important number in the
+    whole process: it is what says whether the Stufe-1 threshold is set too
+    loosely or too strictly. A human verdict that overwrote the machine one
+    would destroy the only input to that metric.
     """
 
     __tablename__ = "verdicts"
     __table_args__ = (
-        UniqueConstraint("call_id", name="uq_verdicts_one_per_call"),
+        UniqueConstraint("run_id", "case_version_id", name="uq_verdicts_one_per_case_per_run"),
         CheckConstraint("schweregrad BETWEEN 1 AND 4", name="ck_verdicts_schweregrad"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    call_id: Mapped[UUID] = mapped_column(
-        ForeignKey("calls.id", ondelete="CASCADE"), nullable=False, index=True
+    run_id: Mapped[UUID] = mapped_column(
+        ForeignKey("runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # The version, not the case: what this assessment was made against has to
+    # stay readable exactly as it was.
+    case_version_id: Mapped[UUID] = mapped_column(
+        ForeignKey("case_versions.id", ondelete="RESTRICT"), nullable=False, index=True
     )
 
     # There is no authentication anywhere in this project, so this is a name
-    # somebody types. It is required because a verdict with no author cannot be
-    # followed up, and an unattributable finding is one nobody has to own.
+    # somebody types. Required, because a finding nobody has to own is a
+    # finding nobody follows up.
     tester: Mapped[str] = mapped_column(String(120), nullable=False)
+    # Derived by the server, not submitted. Stufe 2 / Stufe 3 / Grenzfall is a
+    # fact about how the case reached the reviewer; triage knows it and a
+    # client asserting it could quietly misattribute how a finding was caught,
+    # which is half of what the trend report measures.
     gefunden_ueber: Mapped[str] = mapped_column(String(48), nullable=False)
+
+    # "Kernbefund je Variante": the finding for each answer, keyed
+    # "<variant_key>#<repeat_index>" — "original#0", "original#1", and once 4.2
+    # exists "umgangssprachlich#0" and so on. One field on the sheet, so one
+    # field here, rather than a table of free text nothing will ever query.
+    kernbefunde: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
     # 4.3a and 4.3b arrive prefilled from the machine checks and stay editable;
     # 4.3c is never prefilled, because whether a source actually supports a
@@ -420,6 +442,8 @@ class Verdict(Base):
     quelle_4_3c: Mapped[str] = mapped_column(String(48), nullable=False)
 
     schweregrad: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Answerable now: it is a statement about the repeats, and this row is
+    # about all of them.
     reproduzierbar: Mapped[str] = mapped_column(String(24), nullable=False)
     anmerkung: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
@@ -432,5 +456,3 @@ class Verdict(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-
-    call: Mapped[Call] = relationship()

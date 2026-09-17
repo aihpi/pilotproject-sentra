@@ -35,7 +35,7 @@ ANSWER = {
 
 VERDICT = {
     "tester": "Hotline / M. Schmidt",
-    "gefunden_ueber": "Stufe 2 (auffällig markiert)",
+    "kernbefunde": {"original#0": "Antwort korrekt.", "original#1": "Identisch."},
     "quelle_4_3a": "entfällt",
     "quelle_4_3b": "korrekte Quelle",
     "quelle_4_3c": "Quelle stützt Aussage",
@@ -96,6 +96,14 @@ def _round(client, *, grenzfall=False, repeats=2, handler=None):
     runner.execute(run_id, _sentra(handler))
 
     return run_id, client.get(f"/api/eval/runs/{run_id}/queue").json()
+
+
+def _submit(client, run_id, entry, **overrides):
+    """One Phase-4 sheet for a case."""
+    return client.post(
+        f"/api/eval/runs/{run_id}/cases/{entry['case_version_id']}/verdict",
+        json={**VERDICT, **overrides},
+    )
 
 
 # ── The queue ───────────────────────────────────────────────────────
@@ -200,78 +208,109 @@ class TestMachineVerdicts:
 
 
 class TestSubmittingAVerdict:
-    def test_it_is_recorded(self, client):
-        _, queue = _round(client)
-        call_id = queue[0]["calls"][0]["id"]
+    def test_one_sheet_covers_the_whole_case(self, client):
+        """Section 6 is "Dokumentation je Testfall": one sheet for the case,
+        with a Kernbefund per answer inside it — not one sheet per answer."""
+        run_id, queue = _round(client, repeats=3)
 
-        response = client.post(f"/api/eval/calls/{call_id}/verdict", json=VERDICT)
+        response = _submit(client, run_id, queue[0])
 
         assert response.status_code == 201
-        assert response.json()["tester"] == "Hotline / M. Schmidt"
+        assert len(queue[0]["calls"]) == 3
+
+    def test_the_per_answer_findings_are_kept(self, client):
+        run_id, queue = _round(client)
+
+        body = _submit(client, run_id, queue[0]).json()
+
+        assert body["kernbefunde"]["original#0"] == "Antwort korrekt."
+
+    def test_reproduzierbar_is_now_answerable(self, client):
+        """It asks whether a finding recurred across the repeats. Against a
+        single call it was a question the row could not answer."""
+        run_id, queue = _round(client, repeats=3)
+
+        body = _submit(client, run_id, queue[0], reproduzierbar="wiederholt").json()
+
+        assert body["reproduzierbar"] == "wiederholt"
 
     def test_the_machine_verdicts_survive_it(self, client):
-        """The whole point. A human verdict that overwrote the machine one
-        would destroy the only input to the disagreement rate."""
-        _, queue = _round(client)
+        """A human verdict that overwrote the machine one would destroy the
+        only input to the disagreement rate."""
+        run_id, queue = _round(client)
         call_id = queue[0]["calls"][0]["id"]
         before = client.get(f"/api/eval/calls/{call_id}/machine-verdicts").json()
 
-        client.post(f"/api/eval/calls/{call_id}/verdict", json=VERDICT)
+        _submit(client, run_id, queue[0])
 
-        after = client.get(f"/api/eval/calls/{call_id}/machine-verdicts").json()
-        assert after == before
+        assert client.get(f"/api/eval/calls/{call_id}/machine-verdicts").json() == before
 
     def test_both_rows_exist_afterwards(self, client):
-        _, queue = _round(client)
-        call_id = queue[0]["calls"][0]["id"]
-        client.post(f"/api/eval/calls/{call_id}/verdict", json=VERDICT)
+        run_id, queue = _round(client)
+        _submit(client, run_id, queue[0])
 
         with session_scope() as session:
             assert session.execute(select(Verdict)).scalars().all()
             assert session.execute(select(CheckResult)).scalars().all()
 
-    def test_the_queue_marks_it_assessed(self, client):
+    def test_the_queue_marks_the_case_assessed(self, client):
         run_id, queue = _round(client)
-        call_id = queue[0]["calls"][0]["id"]
-        client.post(f"/api/eval/calls/{call_id}/verdict", json=VERDICT)
+        _submit(client, run_id, queue[0])
 
         again = client.get(f"/api/eval/runs/{run_id}/queue").json()
 
-        assert again[0]["assessed"] == 1
-        assert [c["assessed"] for c in again[0]["calls"]] == [True, False]
+        assert again[0]["assessed"] is True
 
-    def test_a_second_verdict_is_refused(self, client):
-        """Rejected rather than versioned: the first assessment is the one
-        Stufe 1 is measured against."""
-        _, queue = _round(client)
-        call_id = queue[0]["calls"][0]["id"]
-        client.post(f"/api/eval/calls/{call_id}/verdict", json=VERDICT)
+    def test_a_second_sheet_for_the_same_case_is_refused(self, client):
+        """The first assessment is the one Stufe 1 is measured against."""
+        run_id, queue = _round(client)
+        _submit(client, run_id, queue[0])
 
-        response = client.post(f"/api/eval/calls/{call_id}/verdict", json=VERDICT)
+        response = _submit(client, run_id, queue[0])
 
         assert response.status_code == 409
         assert "already assessed" in response.json()["detail"]
 
     def test_a_verdict_needs_an_author(self, client):
-        """There is no authentication anywhere, so this is typed — and required,
-        because a finding nobody has to own is a finding nobody follows up."""
-        _, queue = _round(client)
-        call_id = queue[0]["calls"][0]["id"]
+        run_id, queue = _round(client)
 
-        response = client.post(f"/api/eval/calls/{call_id}/verdict", json={**VERDICT, "tester": ""})
-
-        assert response.status_code == 422
+        assert _submit(client, run_id, queue[0], tester="").status_code == 422
 
     @pytest.mark.parametrize("schweregrad", [0, 5, -1])
     def test_the_severity_scale_is_one_to_four(self, client, schweregrad):
-        _, queue = _round(client)
-        call_id = queue[0]["calls"][0]["id"]
+        run_id, queue = _round(client)
+
+        assert _submit(client, run_id, queue[0], schweregrad=schweregrad).status_code == 422
+
+    def test_an_unknown_case_is_a_404(self, client):
+        run_id, _ = _round(client)
 
         response = client.post(
-            f"/api/eval/calls/{call_id}/verdict", json={**VERDICT, "schweregrad": schweregrad}
+            f"/api/eval/runs/{run_id}/cases/00000000-0000-0000-0000-000000000000/verdict",
+            json=VERDICT,
         )
 
-        assert response.status_code == 422
+        assert response.status_code == 404
+
+
+class TestGefundenUeberIsDerived:
+    """How a case reached a reviewer is half of what the trend report measures,
+    so the server decides it rather than the form asserting it."""
+
+    def test_the_client_cannot_set_it(self, client):
+        run_id, queue = _round(client)
+
+        body = _submit(client, run_id, queue[0], gefunden_ueber="Stufe 3 (Stichprobe)").json()
+
+        assert body["gefunden_ueber"] == "Stufe 2 (auffällig markiert)"
+
+    def test_a_grenzfall_is_recorded_as_always_manual(self, client):
+        """4.4: never filtered out of review, whatever triage later decides."""
+        run_id, queue = _round(client, grenzfall=True)
+
+        body = _submit(client, run_id, queue[0]).json()
+
+        assert body["gefunden_ueber"] == "Grenzfall (immer manuell, 4.4)"
 
 
 # ── KISZ escalation ─────────────────────────────────────────────────
@@ -281,11 +320,8 @@ class TestKiszEscalation:
     @pytest.mark.parametrize("schweregrad", [3, 4])
     def test_erheblich_and_kritisch_escalate(self, client, schweregrad):
         run_id, queue = _round(client)
-        call_id = queue[0]["calls"][0]["id"]
 
-        body = client.post(
-            f"/api/eval/calls/{call_id}/verdict", json={**VERDICT, "schweregrad": schweregrad}
-        ).json()
+        body = _submit(client, run_id, queue[0], schweregrad=schweregrad).json()
 
         assert body["kisz_meldung"] is True
         assert len(client.get(f"/api/eval/runs/{run_id}/kisz").json()) == 1
@@ -293,11 +329,8 @@ class TestKiszEscalation:
     @pytest.mark.parametrize("schweregrad", [1, 2])
     def test_geringfuegig_and_moderat_do_not(self, client, schweregrad):
         run_id, queue = _round(client)
-        call_id = queue[0]["calls"][0]["id"]
 
-        body = client.post(
-            f"/api/eval/calls/{call_id}/verdict", json={**VERDICT, "schweregrad": schweregrad}
-        ).json()
+        body = _submit(client, run_id, queue[0], schweregrad=schweregrad).json()
 
         assert body["kisz_meldung"] is False
         assert client.get(f"/api/eval/runs/{run_id}/kisz").json() == []
@@ -305,17 +338,9 @@ class TestKiszEscalation:
     def test_escalation_does_not_depend_on_how_the_case_was_found(self, client):
         """Section 5: Schweregrad 3 and 4 go to KISZ whether the case arrived
         through Stufe 2 or the Stufe 3 sample."""
-        run_id, queue = _round(client)
-        call_id = queue[0]["calls"][0]["id"]
+        run_id, queue = _round(client, grenzfall=True)
 
-        body = client.post(
-            f"/api/eval/calls/{call_id}/verdict",
-            json={
-                **VERDICT,
-                "schweregrad": 4,
-                "gefunden_ueber": "Stufe 3 (Stichprobe)",
-            },
-        ).json()
+        body = _submit(client, run_id, queue[0], schweregrad=4).json()
 
         assert body["kisz_meldung"] is True
 
