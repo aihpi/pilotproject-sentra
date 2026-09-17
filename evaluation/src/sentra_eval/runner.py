@@ -42,6 +42,7 @@ from sentra_eval.models import (
     Call,
     CaseVersion,
     CheckResult,
+    GroupCheckResult,
     Run,
 )
 
@@ -84,7 +85,10 @@ class PlannedCall:
             # top_k mirrors what the explorer UI asks for, so recall is measured
             # against the list a person would actually be shown.
             return {"query": self.frage, "top_k": 20}
-        return {"query": self.frage}
+        # debug asks SENTRA for the retrieved chunks, the finish reason and the
+        # model it served. Without it there is no truncation check and no way
+        # to ask whether a claim was in the context at all.
+        return {"query": self.frage, "debug": True}
 
 
 # ── Planning ────────────────────────────────────────────────────────
@@ -195,6 +199,11 @@ def execute(run_id: UUID, client: httpx.Client | None = None) -> None:
 
         for item in todo:
             _make_one_call(run_id, item, client)
+
+        with session_scope() as session:
+            run = session.get(Run, run_id)
+            if run is not None:
+                _run_group_checks(session, run)
 
         _finish(run_id)
     except Exception as exc:  # noqa: BLE001 — recorded on the run, not swallowed
@@ -345,7 +354,12 @@ def _run_checks(session: Session, call: Call) -> None:
         return
 
     if call.zweck == ZWECK_ANTWORT:
-        outcomes = [checks.quellenauswahl(call.response_body, version)]
+        outcomes = [
+            checks.quellenauswahl(call.response_body, version),
+            checks.marker_ausrichtung(call.response_body),
+            checks.ablehnung(call.response_body, grenzfall=version.grenzfall),
+            checks.abschneidung(call.response_body),
+        ]
     else:
         outcomes = [checks.retrieval_recall(call.response_body, version)]
 
@@ -356,6 +370,46 @@ def _run_checks(session: Session, call: Call) -> None:
             )
         ).scalar_one_or_none()
         result = existing or CheckResult(call_id=call.id, pruefung=outcome.pruefung)
+        result.ergebnis = outcome.ergebnis
+        result.auffaellig = outcome.auffaellig
+        result.belege = outcome.belege
+        session.add(result)
+
+
+def _run_group_checks(session: Session, run: Run) -> None:
+    """Score the checks that are about a group of calls rather than one call.
+
+    Run after the per-call ones, because they need every repeat to exist.
+    """
+    calls = list(
+        session.execute(
+            select(Call).where(Call.run_id == run.id, Call.zweck == ZWECK_ANTWORT)
+        ).scalars()
+    )
+    groups: dict[tuple[UUID, str], list[Call]] = {}
+    for call in calls:
+        if call.status == OK:
+            groups.setdefault((call.case_version_id, call.variant_key), []).append(call)
+
+    for (case_version_id, variant_key), group in groups.items():
+        group.sort(key=lambda c: c.repeat_index)
+        texts = [c.response_body.get("text") or "" for c in group]
+        outcome = checks.wiederholbarkeit(texts)
+
+        existing = session.execute(
+            select(GroupCheckResult).where(
+                GroupCheckResult.run_id == run.id,
+                GroupCheckResult.case_version_id == case_version_id,
+                GroupCheckResult.variant_key == variant_key,
+                GroupCheckResult.pruefung == outcome.pruefung,
+            )
+        ).scalar_one_or_none()
+        result = existing or GroupCheckResult(
+            run_id=run.id,
+            case_version_id=case_version_id,
+            variant_key=variant_key,
+            pruefung=outcome.pruefung,
+        )
         result.ergebnis = outcome.ergebnis
         result.auffaellig = outcome.auffaellig
         result.belege = outcome.belege
@@ -373,4 +427,5 @@ def recheck(session: Session, run: Run) -> int:
     for call in session.execute(select(Call).where(Call.run_id == run.id)).scalars():
         _run_checks(session, call)
         scored += 1
+    _run_group_checks(session, run)
     return scored

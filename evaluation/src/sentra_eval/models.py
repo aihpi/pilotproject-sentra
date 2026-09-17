@@ -308,3 +308,44 @@ class CheckResult(Base):
     )
 
     call: Mapped[Call] = relationship()
+
+
+class GroupCheckResult(Base):
+    """A verdict about a group of calls rather than about one of them.
+
+    4.1 asks whether three answers to the same prompt differ, and 4.2 whether
+    answers to three paraphrases do. Neither is a statement about any single
+    call, and anchoring one to an arbitrary repeat would make it look like one
+    — a reviewer reading "repeat 0: abweichend" would reasonably ask what was
+    wrong with repeat 0, when the answer is nothing.
+
+    The judge's verdicts land here too: it compares across repeats for exactly
+    the same reason.
+    """
+
+    __tablename__ = "group_check_results"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "case_version_id",
+            "variant_key",
+            "pruefung",
+            name="uq_group_check_results_one_per_check",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    run_id: Mapped[UUID] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), index=True)
+    case_version_id: Mapped[UUID] = mapped_column(
+        ForeignKey("case_versions.id", ondelete="RESTRICT"), index=True
+    )
+    variant_key: Mapped[str] = mapped_column(String(32), nullable=False, default=ORIGINAL)
+
+    pruefung: Mapped[str] = mapped_column(String(48), nullable=False)
+    ergebnis: Mapped[str] = mapped_column(String(48), nullable=False)
+    auffaellig: Mapped[bool] = mapped_column(nullable=False, default=False)
+    belege: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

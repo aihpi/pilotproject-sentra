@@ -140,3 +140,174 @@ def retrieval_recall(recall_response: dict, version: CaseVersion) -> CheckOutcom
     if rank is None:
         return CheckOutcome(RETRIEVAL_RECALL, NICHT_GEFUNDEN, auffaellig=True, belege=belege)
     return CheckOutcome(RETRIEVAL_RECALL, GEFUNDEN, auffaellig=False, belege=belege)
+
+
+# ── Marker alignment: 4.3a, as far as the data allows ───────────────
+
+MARKER_AUSRICHTUNG = "marker_ausrichtung"
+AUSGERICHTET = "Marker und Quellen stimmen überein"
+NICHT_AUSGERICHTET = "Marker und Quellen weichen ab"
+
+# "[1]", "[12]". Markdown bold around it ("**[1]**") is what the prompts ask
+# for, and the brackets are what the model actually emits either way.
+MARKER_PATTERN = re.compile(r"\[(\d{1,2})\]")
+
+
+def marker_ausrichtung(response: dict) -> CheckOutcome:
+    """Whether every [n] has an nth source, and every source is cited.
+
+    Both prompts state that a source number refers to the nth source in order
+    of first appearance. Nothing enforces it: the model counts for itself, and
+    _build_source_refs numbers independently. A [4] against three sources is
+    the visible half; a source nobody cited is the quieter half, and it means
+    the answer drew on less than it was given.
+
+    This is 4.3a as far as the data allows and no further. format_context gives
+    the model an Aktenzeichen, a section title and the chunk text — no page, no
+    paragraph, no offset — so whether a quotation appears at the cited place is
+    answerable at section granularity only. That is a data problem, not a
+    prompt problem, and it stays open.
+    """
+    text = response.get("text") or ""
+    sources = response.get("sources") or []
+
+    used = sorted({int(m) for m in MARKER_PATTERN.findall(text)})
+    available = list(range(1, len(sources) + 1))
+
+    dangling = [n for n in used if n not in available]
+    uncited = [n for n in available if n not in used]
+
+    belege = {
+        "verwendete_marker": used,
+        "anzahl_quellen": len(sources),
+        # A marker pointing at a source that is not there. The model invented a
+        # number, and a reviewer following it finds nothing.
+        "marker_ohne_quelle": dangling,
+        # A source the answer never referred to. Not wrong, but it means the
+        # answer used less of its context than it was given.
+        "quellen_ohne_marker": uncited,
+    }
+
+    if dangling or uncited:
+        return CheckOutcome(MARKER_AUSRICHTUNG, NICHT_AUSGERICHTET, auffaellig=True, belege=belege)
+    return CheckOutcome(MARKER_AUSRICHTUNG, AUSGERICHTET, auffaellig=False, belege=belege)
+
+
+# ── 4.4: does it say it does not know? ──────────────────────────────
+
+ABLEHNUNG = "ablehnung"
+KORREKT_ABGELEHNT = "korrekt abgelehnt"
+NICHT_ABGELEHNT = "nicht abgelehnt"
+ABLEHNUNG_UNERWARTET = "unerwartet abgelehnt"
+
+# Exactly what services/explorer.py returns when nothing was retrieved. Copied
+# deliberately rather than imported: the harness is a separate distribution and
+# depends on nothing of SENTRA's. That makes this a contract the harness
+# asserts about SENTRA's behaviour, and a test pins the string so rewording it
+# over there fails here loudly rather than passing every Grenzfall in silence.
+REFUSAL_TEXT = "Es wurden keine relevanten Dokumente gefunden."
+
+
+def ablehnung(response: dict, *, grenzfall: bool) -> CheckOutcome:
+    """Whether an out-of-corpus question was refused, and an ordinary one was not.
+
+    4.4 is where the real risk sits: a system that invents an answer rather than
+    saying it has nothing is worse than one that finds nothing. The Vorlage
+    keeps Grenzfälle out of automated filtering entirely for that reason, so
+    this never suppresses review — it says what happened so a reviewer arrives
+    already knowing.
+
+    The opposite direction is a finding too. An ordinary question that gets
+    refused means retrieval returned nothing for something the corpus should
+    cover.
+    """
+    text = (response.get("text") or "").strip()
+    sources = response.get("sources") or []
+    refused = text == REFUSAL_TEXT and not sources
+
+    belege = {
+        "grenzfall": grenzfall,
+        "abgelehnt": refused,
+        "anzahl_quellen": len(sources),
+        "antwort_beginn": text[:120],
+    }
+
+    if grenzfall and refused:
+        return CheckOutcome(ABLEHNUNG, KORREKT_ABGELEHNT, auffaellig=False, belege=belege)
+    if grenzfall and not refused:
+        return CheckOutcome(ABLEHNUNG, NICHT_ABGELEHNT, auffaellig=True, belege=belege)
+    if refused:
+        return CheckOutcome(ABLEHNUNG, ABLEHNUNG_UNERWARTET, auffaellig=True, belege=belege)
+    return CheckOutcome(ABLEHNUNG, KORREKT_ABGELEHNT, auffaellig=False, belege=belege)
+
+
+# ── Truncation, which is not inconsistency ──────────────────────────
+
+ABSCHNEIDUNG = "abschneidung"
+VOLLSTAENDIG = "vollständig"
+ABGESCHNITTEN = "abgeschnitten"
+
+
+def abschneidung(response: dict) -> CheckOutcome:
+    """Whether the model stopped or ran out of room.
+
+    A Fachfrage generates at 2048 tokens and an Überblick at 3072. An answer
+    cut off at the ceiling reads exactly like an inconsistent one when all you
+    can see is the text, and would be filed against the model. It is a finding
+    against a configured limit, which is a different thing and a different fix.
+
+    Absent finish_reason means the call was made without the debug flag, which
+    is not a failure of the answer.
+    """
+    finish_reason = response.get("finish_reason")
+    if finish_reason is None:
+        return CheckOutcome(
+            ABSCHNEIDUNG,
+            NICHT_PRUEFBAR,
+            auffaellig=False,
+            belege={"grund": "Die Antwort wurde ohne debug-Flag abgerufen."},
+        )
+
+    belege = {"finish_reason": finish_reason, "laenge": len(response.get("text") or "")}
+    if finish_reason == "length":
+        return CheckOutcome(ABSCHNEIDUNG, ABGESCHNITTEN, auffaellig=True, belege=belege)
+    return CheckOutcome(ABSCHNEIDUNG, VOLLSTAENDIG, auffaellig=False, belege=belege)
+
+
+# ── The cheap half of 4.1 ───────────────────────────────────────────
+
+WIEDERHOLBARKEIT = "wiederholbarkeit"
+IDENTISCH = "identisch"
+ABWEICHEND = "abweichend"
+
+
+def wiederholbarkeit(texts: list[str]) -> CheckOutcome:
+    """Whether repeats of the same prompt came back identical.
+
+    At temperature 0.1 they often do, and when they do 4.1 is answered without
+    spending a judge call on it. This never replaces the judge: identical text
+    proves consistency, differing text proves nothing at all, because the
+    Vorlage asks whether Kernaussage, Zahlen or Quellen differ — not whether
+    the wording does. So "abweichend" is not a finding on its own; it is the
+    signal that this case needs the judge.
+    """
+    unique = {text.strip() for text in texts}
+    belege = {
+        "anzahl_laeufe": len(texts),
+        "verschiedene_antworten": len(unique),
+        "laengen": [len(text) for text in texts],
+    }
+
+    if len(texts) < 2:
+        return CheckOutcome(
+            WIEDERHOLBARKEIT,
+            NICHT_PRUEFBAR,
+            auffaellig=False,
+            belege={"grund": "Weniger als zwei Wiederholungen vorhanden."},
+        )
+    if len(unique) == 1:
+        return CheckOutcome(WIEDERHOLBARKEIT, IDENTISCH, auffaellig=False, belege=belege)
+    # Not auffällig: differing wording is exactly what the judge exists to read,
+    # and flagging it here would send every case to a human for being phrased
+    # differently twice.
+    return CheckOutcome(WIEDERHOLBARKEIT, ABWEICHEND, auffaellig=False, belege=belege)
