@@ -222,3 +222,57 @@ class TestAiHubTimeouts:
         """
         settings = make_settings()
         assert settings.generation_timeout_seconds > settings.embedding_timeout_seconds
+
+
+class TestTheEnvFileIsShared:
+    """backend/.env is read by SENTRA, the evaluation harness, compose and the
+    tests. Each has to ignore the keys it does not own.
+
+    This was a real failure rather than a hypothetical: adding the harness's
+    JUDGE_* settings to that file made SENTRA refuse to start when run locally,
+    while the container came up healthy — because unknown *environment
+    variables* are ignored and unknown *dotenv keys* were not. The validation
+    error also quoted each value back, which put an API key in a traceback.
+    """
+
+    def test_settings_ignores_keys_belonging_to_the_harness(self, monkeypatch, tmp_path):
+        # The file has to be the only source. conftest puts placeholder hub
+        # credentials into the environment when there is no .env — which is
+        # CI — and environment variables outrank a dotenv file, so without this
+        # the assertion below read the placeholder instead of the file and the
+        # test passed locally while failing in CI. Which is the same asymmetry
+        # this class exists to pin.
+        for name in ("AI_HUB_BASE_URL", "AI_HUB_API_KEY"):
+            monkeypatch.delenv(name, raising=False)
+
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            "AI_HUB_BASE_URL=http://hub.invalid/v1\n"
+            "AI_HUB_API_KEY=not-a-real-key\n"
+            "JUDGE_BASE_URL=http://judge.invalid/v1\n"
+            "JUDGE_API_KEY=also-not-real\n"
+            "JUDGE_MODEL=gpt-oss-120b\n"
+            "CHAT_MODEL_UNDER_TEST=llama-3-3-70b\n",
+            encoding="utf-8",
+        )
+
+        settings = Settings(_env_file=str(env_file))
+
+        assert settings.ai_hub_base_url == "http://hub.invalid/v1"
+        assert not hasattr(settings, "judge_model")
+
+    def test_a_secret_it_does_not_own_never_reaches_an_error(self, monkeypatch, tmp_path):
+        """The failure mode worth keeping out: pydantic quotes offending values
+        into the exception, so a forbidden JUDGE_API_KEY ended up in the
+        traceback."""
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            "AI_HUB_BASE_URL=http://hub.invalid/v1\n"
+            "AI_HUB_API_KEY=not-a-real-key\n"
+            "JUDGE_API_KEY=sk-should-never-appear-anywhere\n",
+            encoding="utf-8",
+        )
+
+        settings = Settings(_env_file=str(env_file))  # does not raise
+
+        assert "should-never-appear" not in repr(settings)

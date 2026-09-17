@@ -9,6 +9,20 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
+        # backend/.env is the single configuration file, shared with the
+        # evaluation harness, compose and the tests. pydantic-settings forbids
+        # unknown keys by default, and that applies to a dotenv file — so a
+        # JUDGE_MODEL the harness needs made SENTRA refuse to start.
+        #
+        # Asymmetric, which is what made it nasty: under compose those keys
+        # arrive as environment variables, where unknown names are ignored, so
+        # the container came up healthy while a local run crashed. And the
+        # validation error quotes each offending value back, which put a
+        # JUDGE_API_KEY into a traceback.
+        #
+        # EvalSettings has said extra="ignore" from the start for the same
+        # reason. One file, several readers, each taking what it knows.
+        extra="ignore",
     )
 
     # AI Model Hub
