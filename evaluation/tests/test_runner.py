@@ -473,8 +473,24 @@ class TestGroupChecksDuringARun:
         assert group.pruefung == "wiederholbarkeit"
         assert group.ergebnis == "identisch"
 
-    def test_differing_repeats_are_recorded_as_differing(self, session):
+    def test_differing_repeats_are_recorded_as_differing(self, session, monkeypatch):
+        from sentra_eval import judge as judge_module
         from sentra_eval.models import GroupCheckResult
+
+        # Stubbed, so this test says nothing about the judge and makes no
+        # request. Differing answers now also trigger a judge call, and an
+        # offline test must not depend on whether one can be reached.
+        monkeypatch.setattr(
+            judge_module,
+            "compare",
+            lambda *a, **k: {
+                "pruefung": judge_module.KONSISTENZ,
+                "verdict": judge_module.UNAUFFAELLIG,
+                "dimension": None,
+                "begruendung": "",
+                "judge_model": "stub",
+            },
+        )
 
         self._case(session)
         seen = {"n": 0}
@@ -491,7 +507,9 @@ class TestGroupChecksDuringARun:
         runner.execute(run.id, _client(varying))
 
         session.expire_all()
-        group = session.execute(select(GroupCheckResult)).scalar_one()
+        group = session.execute(
+            select(GroupCheckResult).where(GroupCheckResult.pruefung == "wiederholbarkeit")
+        ).scalar_one()
         assert group.ergebnis == "abweichend"
         assert group.belege["verschiedene_antworten"] == 3
         # Not a finding on its own: differing wording is what the judge reads.
@@ -510,7 +528,10 @@ class TestGroupChecksDuringARun:
         runner.execute(run.id, _client(_always()))
 
         session.expire_all()
-        assert len(session.execute(select(GroupCheckResult)).scalars().all()) == 2
+        # One wiederholbarkeit verdict per case; identical repeats mean no
+        # judge call, so no konsistenz rows.
+        results = session.execute(select(GroupCheckResult)).scalars().all()
+        assert [r.pruefung for r in results] == ["wiederholbarkeit", "wiederholbarkeit"]
 
     def test_the_runner_asks_sentra_for_the_debug_payload(self, session):
         """Without it there is no finish_reason, so no truncation check."""
@@ -532,3 +553,105 @@ class TestGroupChecksDuringARun:
 
         answer_bodies = [b for b in bodies if "top_k" not in b]
         assert answer_bodies and all(b["debug"] is True for b in answer_bodies)
+
+
+# ── The judge ───────────────────────────────────────────────────────
+
+
+class TestTheJudgeIsAskedOnlyWhenNeeded:
+    """4.1 is the judge's, but only when the cheap check cannot settle it.
+
+    Identical repeats at temperature 0.1 are common, and each judge call is a
+    real request to a real model. These use a stubbed judge, so what is being
+    tested is when it is called — which is the expensive decision — rather than
+    what it says.
+    """
+
+    def _case(self, session):
+        case, version = case_store.create_case(
+            session,
+            kategorie=Kategorie.GO,
+            ausgangsfrage="Wie lange darf ein Redner sprechen?",
+            erwartete_antwort="15 Minuten.",
+            referenz_korrekt="GOBT § 35",
+        )
+        case_store.approve(session, version)
+        session.commit()
+        return case
+
+    def _varying(self):
+        seen = {"n": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if "documents" in str(request.url):
+                return httpx.Response(200, json={"documents": []})
+            seen["n"] += 1
+            return httpx.Response(200, json={**ANSWER, "text": f"Antwort {seen['n']}."})
+
+        return handler
+
+    def test_identical_repeats_cost_no_judge_call(self, session, monkeypatch):
+        from sentra_eval import judge as judge_module
+
+        calls = []
+        monkeypatch.setattr(judge_module, "compare", lambda *a, **k: calls.append(1))
+
+        self._case(session)
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+        runner.execute(run.id, _client(_always()))
+
+        assert calls == [], "spent a judge call confirming identical strings are identical"
+
+    def test_differing_repeats_are_put_to_the_judge(self, session, monkeypatch):
+        from sentra_eval import judge as judge_module
+        from sentra_eval.models import GroupCheckResult
+
+        monkeypatch.setattr(
+            judge_module,
+            "compare",
+            lambda *a, **k: {
+                "pruefung": judge_module.KONSISTENZ,
+                "verdict": judge_module.AUFFAELLIG,
+                "dimension": "Zahlen",
+                "begruendung": "Antwort 2 nennt eine andere Zahl.",
+                "judge_model": "qwen3-8-27b",
+            },
+        )
+
+        self._case(session)
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+        runner.execute(run.id, _client(self._varying()))
+
+        session.expire_all()
+        verdict = session.execute(
+            select(GroupCheckResult).where(GroupCheckResult.pruefung == "konsistenz")
+        ).scalar_one()
+        assert verdict.auffaellig is True
+        assert verdict.belege["dimension"] == "Zahlen"
+        assert verdict.belege["judge_model"] == "qwen3-8-27b"
+
+    def test_a_judge_that_cannot_answer_flags_the_case(self, session, monkeypatch):
+        """Recorded as a finding, not swallowed. Treating "the judge did not
+        answer" as "unauffällig" would mark a case clean because a request
+        timed out, which is the quietest way this process could lie."""
+        from sentra_eval import judge as judge_module
+        from sentra_eval.models import GroupCheckResult
+
+        def unavailable(*args, **kwargs):
+            raise judge_module.JudgeUnavailable("timeout")
+
+        monkeypatch.setattr(judge_module, "compare", unavailable)
+
+        self._case(session)
+        run = runner.start_run(session, repeats=2)
+        session.commit()
+        runner.execute(run.id, _client(self._varying()))
+
+        session.expire_all()
+        verdict = session.execute(
+            select(GroupCheckResult).where(GroupCheckResult.pruefung == "konsistenz")
+        ).scalar_one()
+        assert verdict.ergebnis == judge_module.JUDGE_FEHLER
+        assert verdict.auffaellig is True

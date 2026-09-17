@@ -27,7 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from sentra_eval import cases as case_store
-from sentra_eval import checks
+from sentra_eval import checks, judge
 from sentra_eval.config import get_eval_settings
 from sentra_eval.db import session_scope
 from sentra_eval.models import (
@@ -414,6 +414,68 @@ def _run_group_checks(session: Session, run: Run) -> None:
         result.auffaellig = outcome.auffaellig
         result.belege = outcome.belege
         session.add(result)
+
+        # 4.1 only needs the judge when the cheap check could not settle it.
+        # Identical repeats at temperature 0.1 are common, and every judge call
+        # is a real request to a real model — spending one to confirm that two
+        # identical strings are identical is waste the Vorlage does not ask
+        # for. Differing wording is precisely what it cannot settle.
+        if outcome.ergebnis == checks.ABWEICHEND:
+            _ask_the_judge(session, run, case_version_id, variant_key, texts)
+
+
+def _ask_the_judge(
+    session: Session,
+    run: Run,
+    case_version_id: UUID,
+    variant_key: str,
+    texts: list[str],
+) -> None:
+    """4.1: do these answers differ in substance, or only in wording?
+
+    A judge failure is recorded rather than swallowed. Treating "the judge did
+    not answer" as "unauffällig" would mark a case clean because a request
+    timed out, which is the quietest way for this process to lie.
+    """
+    version = session.get(CaseVersion, case_version_id)
+    if version is None:
+        return
+
+    try:
+        verdict = judge.compare(texts, frage=version.ausgangsfrage, pruefung=judge.KONSISTENZ)
+        ergebnis = verdict["verdict"]
+        auffaellig = ergebnis == judge.AUFFAELLIG
+        belege = {
+            "dimension": verdict["dimension"],
+            "begruendung": verdict["begruendung"],
+            "judge_model": verdict["judge_model"],
+            "anzahl_antworten": len(texts),
+        }
+    except judge.JudgeUnavailable as exc:
+        logger.warning("Judge unavailable for %s: %s", version.id, exc)
+        ergebnis = judge.JUDGE_FEHLER
+        # Flagged: a case the judge could not read is a case a human has to.
+        auffaellig = True
+        belege = {"fehler": str(exc), "anzahl_antworten": len(texts)}
+
+    existing = session.execute(
+        select(GroupCheckResult).where(
+            GroupCheckResult.run_id == run.id,
+            GroupCheckResult.case_version_id == case_version_id,
+            GroupCheckResult.variant_key == variant_key,
+            GroupCheckResult.pruefung == judge.KONSISTENZ,
+        )
+    ).scalar_one_or_none()
+    result = existing or GroupCheckResult(
+        run_id=run.id,
+        case_version_id=case_version_id,
+        variant_key=variant_key,
+        pruefung=judge.KONSISTENZ,
+    )
+    result.ergebnis = ergebnis
+    result.auffaellig = auffaellig
+    result.belege = belege
+    session.add(result)
 
 
 def recheck(session: Session, run: Run) -> int:

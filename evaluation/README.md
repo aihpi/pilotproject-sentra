@@ -35,6 +35,11 @@ The harness needs:
 | `SENTRA_BASE_URL` | where SENTRA is |
 | `EVAL_DATABASE_URL` | Postgres |
 
+`JUDGE_MODEL=qwen3-8-27b` is the measured choice — see #112 for the comparison
+against the other hub models. Note that a reasoning model such as
+`gpt-oss-120b` spends completion tokens before emitting content, and will
+return an empty message if the token budget is tight.
+
 The judge must not be `CHAT_MODEL`. The Vorlage is explicit that the checking
 model should share neither model nor prompt structure with the system under
 test, because one that does relocates a consistency problem rather than
