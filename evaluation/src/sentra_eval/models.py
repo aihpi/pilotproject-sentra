@@ -205,6 +205,15 @@ class CaseVersion(Base):
     # know before any check has run.
     grenzfall: Mapped[bool] = mapped_column(nullable=False, default=False)
 
+    # The feedback entry this case was drafted from, if any.
+    #
+    # Stored here rather than written back into feedback.jsonl: that file is an
+    # append-only log written by SENTRA, and making it updatable in place is
+    # the more expensive of the two changes. The id is derived from the
+    # entry's timestamp and question, so it is stable for lines already
+    # written and this is what stops the same complaint being imported twice.
+    feedback_id: Mapped[str] = mapped_column(String(64), nullable=False, default="", index=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

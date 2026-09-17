@@ -334,3 +334,25 @@ class ApproveVariantRequest(BaseModel):
     # same reason a verdict needs a tester: an approval nobody owns is one
     # nobody can be asked about.
     freigegeben_durch: str = Field(min_length=1)
+
+
+class FeedbackEntryResponse(BaseModel):
+    id: str
+    timestamp: str
+    question: str
+    answer: str
+    rating: str
+    comment: str
+
+
+class DraftFromFeedbackRequest(BaseModel):
+    feedback_id: str = Field(min_length=1)
+    kategorie: Kategorie
+
+
+class DraftFromFeedbackResponse(BaseModel):
+    case: CaseResponse
+    # Shown to the reviewer while they write the expected answer, and
+    # deliberately not stored on the case: a yardstick taken from the system
+    # under test is not a yardstick.
+    beanstandete_antwort: str

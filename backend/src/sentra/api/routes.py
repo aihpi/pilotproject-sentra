@@ -2,6 +2,7 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from uuid import NAMESPACE_URL, uuid5
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -17,6 +18,7 @@ from sentra.api.models import (
     ExternalSourceResult,
     ExternalSourcesRequest,
     ExternalSourcesResponse,
+    FeedbackEntry,
     FeedbackRequest,
     FeedbackResponse,
     GeneratedAnswerResponse,
@@ -205,6 +207,58 @@ def submit_feedback(
 
     logger.info("Feedback recorded: %s", body.rating)
     return FeedbackResponse(status="ok")
+
+
+@router.get("/feedback", response_model=list[FeedbackEntry])
+def list_feedback(
+    rating: str | None = None,
+    limit: int = 100,
+    settings: Settings = Depends(get_settings),
+) -> list[FeedbackEntry]:
+    """Recorded feedback, newest first.
+
+    Read back for the evaluation harness: the Vorlage asks for known problem
+    cases from earlier feedback to be taken into a round on purpose, and the
+    harness runs as a separate process with no access to this file.
+
+    A malformed line is skipped rather than failing the request. The file is
+    append-only and written by a different code path; one bad line should not
+    make every earlier rating unreadable.
+    """
+    path = Path(settings.feedback_file)
+    if not path.is_file():
+        return []
+
+    entries: list[FeedbackEntry] = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                raw = json.loads(line)
+            except json.JSONDecodeError:
+                logger.warning("Skipping malformed feedback line")
+                continue
+            if rating and raw.get("rating") != rating:
+                continue
+            entries.append(
+                FeedbackEntry(
+                    # Derived, not stored: see FeedbackEntry.
+                    id=str(uuid5(NAMESPACE_URL, f"{raw.get('timestamp')}::{raw.get('question')}")),
+                    timestamp=raw.get("timestamp", ""),
+                    question=raw.get("question", ""),
+                    answer=raw.get("answer", ""),
+                    rating=raw.get("rating", ""),
+                    comment=raw.get("comment"),
+                )
+            )
+    except OSError as exc:
+        logger.error("Could not read feedback from %s: %s", path, exc)
+        raise HTTPException(
+            status_code=503, detail="Rückmeldungen konnten nicht gelesen werden."
+        ) from exc
+
+    return list(reversed(entries))[:limit]
 
 
 # ── Health endpoint ──────────────────────────────────────────────────
