@@ -9,6 +9,10 @@ interface HeaderProps {
 const NAV_ITEMS: { key: ViewType; label: string }[] = [
   { key: "explorer", label: "Suche" },
   { key: "documents", label: "Dokumente" },
+  // The evaluation harness is a separate service behind /api/eval. This tab
+  // shows an error rather than nothing when it is not running, which is its
+  // normal state outside a test round.
+  { key: "evaluation", label: "Auswertung" },
 ];
 
 export function Header({ activeView, onViewChange }: HeaderProps) {

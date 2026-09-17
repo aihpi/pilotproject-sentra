@@ -40,8 +40,13 @@ interface RequestOptions {
 
 /** Every endpoint answers with a JSON body, including the ones whose body
  *  the caller ignores, so this always parses one. A future 204 would need
- *  handling here rather than at the call site. */
-async function request<T>(path: string, options: RequestOptions): Promise<T> {
+ *  handling here rather than at the call site.
+ *
+ *  Exported so `evalApi.ts` uses it too. The evaluation harness is a separate
+ *  process, but nginx routes /api/eval to it, so from the browser it is the
+ *  same origin and the same error handling — including the 503 wording, which
+ *  both services produce in the same shape. */
+export async function request<T>(path: string, options: RequestOptions): Promise<T> {
   const { label, method = "GET", body, statusMessages } = options;
 
   let response: Response;
