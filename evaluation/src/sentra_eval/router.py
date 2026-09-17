@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from sentra_eval import cases as case_store
 from sentra_eval import models, triage
+from sentra_eval import report as report_store
 from sentra_eval import review as review_store
 from sentra_eval import runner as run_store
 from sentra_eval.categories import KATEGORIE_NAMEN
@@ -34,6 +35,7 @@ from sentra_eval.models import (
     Verdict,
 )
 from sentra_eval.schemas import (
+    AgreementResponse,
     CallResponse,
     CaseResponse,
     CaseVersionResponse,
@@ -44,8 +46,10 @@ from sentra_eval.schemas import (
     QueueCall,
     QueueEntryResponse,
     RunResponse,
+    SheetResponse,
     StartRunRequest,
     SubmitVerdictRequest,
+    TrendResponse,
     TriageSummary,
     UpdateCaseRequest,
     VerdictResponse,
@@ -550,4 +554,61 @@ def triage_summary(run_id: UUID) -> TriageSummary:
             stufe_3=sum(1 for d in decisions if d.gefunden_ueber == models.STUFE_3),
             grenzfaelle=sum(1 for d in decisions if d.gefunden_ueber == models.GRENZFALL_IMMER),
             unauffaellig=sum(1 for d in decisions if not d.needs_review),
+        )
+
+
+# ── Phase 4: documentation and the trend report ─────────────────────
+
+
+@router.get("/runs/{run_id}/boegen", response_model=list[SheetResponse])
+def documentation_sheets(run_id: UUID) -> list[SheetResponse]:
+    """The round's Phase-4 sheets, one per case, ready to hand to KISZ.
+
+    Machine verdicts appear here even though the review queue withholds them.
+    Withhold while somebody is forming an assessment; include in the record
+    afterwards — a sheet that hid what the automation concluded would make the
+    disagreement rate uncheckable by whoever receives it.
+    """
+    with session_scope() as session:
+        run = _lookup_run(session, run_id)
+        return [SheetResponse(**vars(sheet)) for sheet in report_store.sheets(session, run)]
+
+
+@router.get("/runs/{run_id}/abweichung", response_model=AgreementResponse)
+def agreement(run_id: UUID) -> AgreementResponse:
+    """How often Stufe 1 and the human reached the same conclusion.
+
+    Section 6 calls this the most important number in the process: it is what
+    says whether the Prüfschwelle is set too generously or too strictly.
+    """
+    with session_scope() as session:
+        run = _lookup_run(session, run_id)
+        found = report_store.agreement(session, run)
+        return AgreementResponse(
+            einig=found.einig,
+            zu_streng=found.zu_streng,
+            zu_grosszuegig=found.zu_grosszuegig,
+            nicht_bewertet=found.nicht_bewertet,
+            abweichungsquote=found.abweichungsquote,
+        )
+
+
+@router.get("/trend", response_model=TrendResponse)
+def trend_report() -> TrendResponse:
+    """The Trendauswertung across every round, section 6.
+
+    Where findings cluster, which categories are unstable, and the
+    disagreement rate combined over all rounds. Derived from stored rows, so
+    running it again over old rounds gives the same answer.
+    """
+    with session_scope() as session:
+        found = report_store.trend(session)
+        return TrendResponse(
+            runden=found.runden,
+            faelle=found.faelle,
+            nach_kategorie=found.nach_kategorie,
+            schweregrade=found.schweregrade,
+            kisz_meldungen=found.kisz_meldungen,
+            haeufigste_befunde=found.haeufigste_befunde,
+            abweichung=AgreementResponse(**found.abweichung),
         )

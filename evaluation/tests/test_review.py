@@ -372,3 +372,65 @@ class TestVorlageOptions:
         ]
         assert body["quelle_4_3c"] == ["Quelle stützt Aussage", "stützt Aussage nicht"]
         assert body["schweregrad"]["4"] == "kritisch"
+
+
+# ── Phase 4, over HTTP ──────────────────────────────────────────────
+
+
+class TestTheReportEndpoints:
+    """Exercised through the API, not only as functions.
+
+    Two report endpoints shipped in an earlier task referencing a module the
+    router had not imported. The tests passed because nothing called them, and
+    ruff caught it — these make the tests catch it too.
+    """
+
+    def test_the_sheets_come_back(self, client):
+        run_id, queue = _round(client)
+
+        response = client.get(f"/api/eval/runs/{run_id}/boegen")
+
+        assert response.status_code == 200
+        assert response.json()[0]["test_id"] == "TF-GO-001"
+
+    def test_a_sheet_carries_the_machine_verdict(self, client):
+        """Withheld from the queue, present in the record."""
+        run_id, _ = _round(client)
+
+        sheet = client.get(f"/api/eval/runs/{run_id}/boegen").json()[0]
+
+        assert sheet["ergebnis_automatikpruefung"].startswith("auffällig")
+
+    def test_the_disagreement_rate_comes_back(self, client):
+        run_id, _ = _round(client)
+
+        response = client.get(f"/api/eval/runs/{run_id}/abweichung")
+
+        assert response.status_code == 200
+        # Nothing assessed yet, so there is no rate rather than a flattering zero.
+        assert response.json()["abweichungsquote"] is None
+
+    def test_the_rate_appears_once_somebody_assesses(self, client):
+        run_id, queue = _round(client)
+
+        _submit(client, run_id, queue[0], quelle_4_3b="falsche bzw. veraltete Quelle")
+
+        body = client.get(f"/api/eval/runs/{run_id}/abweichung").json()
+        assert body["einig"] == 1
+        assert body["abweichungsquote"] == 0.0
+
+    def test_the_trend_report_comes_back(self, client):
+        _round(client)
+
+        response = client.get("/api/eval/trend")
+
+        assert response.status_code == 200
+        assert response.json()["runden"] >= 1
+
+    def test_the_triage_summary_comes_back(self, client):
+        run_id, _ = _round(client)
+
+        body = client.get(f"/api/eval/runs/{run_id}/triage").json()
+
+        assert body["gesamt"] == 1
+        assert body["stufe_2"] == 1
