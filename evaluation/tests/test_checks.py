@@ -16,8 +16,8 @@ when it ran.
 
 import pytest
 
-from sentra.evaluation import checks
-from sentra.evaluation.models import CaseVersion
+from sentra_eval import checks
+from sentra_eval.models import CaseVersion
 
 KORREKT = "WD 3 - 3000 - 029/23"
 VERALTET = "WD 3 - 3000 - 011/19"

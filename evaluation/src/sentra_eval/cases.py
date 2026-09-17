@@ -11,8 +11,8 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from sentra.evaluation.categories import Kategorie
-from sentra.evaluation.models import ENTWURF, FREIGEGEBEN, Case, CaseVersion, TestIdSequence
+from sentra_eval.categories import Kategorie
+from sentra_eval.models import ENTWURF, FREIGEGEBEN, Case, CaseVersion, TestIdSequence
 
 # "TF-GO-014": the prefix, the category abbreviation, a three digit number.
 TEST_ID_PATTERN = re.compile(r"TF-(?P<kategorie>[A-Z]{2})-(?P<number>\d{3,})")

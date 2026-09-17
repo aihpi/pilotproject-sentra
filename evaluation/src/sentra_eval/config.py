@@ -9,8 +9,10 @@ for, which is after main has already decided to mount it.
 """
 
 from functools import lru_cache
+from typing import Annotated
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class EvalSettings(BaseSettings):
@@ -66,11 +68,35 @@ class EvalSettings(BaseSettings):
     # runner timing out first, which is noise about the harness.
     runner_timeout_seconds: float = 180.0
 
+    # The model SENTRA is configured to answer with, so the harness can refuse
+    # to start when the judge resolves to the same one. Read from the same
+    # CHAT_MODEL the backend reads: the harness is not importing SENTRA's
+    # settings, it is reading the same deployment's configuration.
+    chat_model_under_test: str = ""
+
+    # Origins allowed to call the harness from a browser. Only the vite dev
+    # server needs it; under compose nginx routes /api/eval here and the
+    # browser sees one origin.
+    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
+
     # Where the runner finds SENTRA. Over HTTP and never in process, because
     # the API layer is part of what is under test — in-process calls would skip
     # the request models, the routing and the error policy, which is where a
     # regression is most likely to hide. Defaults to talking to ourselves.
     sentra_base_url: str = "http://localhost:8000"
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _split_origins(cls, value: object) -> object:
+        """Accept CORS_ORIGINS as a comma-separated string or a JSON array."""
+        if isinstance(value, str):
+            raw = value.strip()
+            if raw.startswith("["):
+                import json
+
+                return json.loads(raw)
+            return [part.strip() for part in raw.split(",") if part.strip()]
+        return value
 
 
 @lru_cache

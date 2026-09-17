@@ -9,22 +9,18 @@ length from the system it measures:
   - it judges with a different model from CHAT_MODEL, asserted at boot
   - it imports neither rag.generator nor api.models, enforced by import-linter
 
-Nothing here is imported unless EVAL_ENABLED is set. main does the check and
-the import together, so an image built without the `eval` extra never loads
-this package. See mount_evaluation in sentra.main.
+This runs as its own process, beside SENTRA rather than inside it. The
+entrypoint is sentra_eval.app; sentra.main does not import this package
+and does not know it exists. A harness that could not be restarted without
+restarting the thing it measures would not be independent whatever its import
+graph said.
 """
 
-from sentra.evaluation.categories import Kategorie
-from sentra.evaluation.config import EvalSettings, get_eval_settings
-from sentra.evaluation.db import Base, EvalDatabaseUnavailable, session_scope
-from sentra.evaluation.judge import (
-    JudgeConfig,
-    JudgeNotIndependent,
-    MissingJudgeConfiguration,
-    assert_judge_is_independent,
-    judge_config,
-)
-from sentra.evaluation.router import router
+from sentra_eval.categories import Kategorie
+from sentra_eval.config import EvalSettings, get_eval_settings
+from sentra_eval.db import Base, EvalDatabaseUnavailable, session_scope
+from sentra_eval.judge import JudgeConfig, MissingJudgeConfiguration, judge_config
+from sentra_eval.router import router
 
 __all__ = [
     "Base",
@@ -32,9 +28,7 @@ __all__ = [
     "EvalSettings",
     "JudgeConfig",
     "Kategorie",
-    "JudgeNotIndependent",
     "MissingJudgeConfiguration",
-    "assert_judge_is_independent",
     "get_eval_settings",
     "judge_config",
     "router",

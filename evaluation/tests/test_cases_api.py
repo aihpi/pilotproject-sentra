@@ -11,12 +11,11 @@ has to handle — it is a request for a new draft, and that is what comes back.
 """
 
 import pytest
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from sentra.evaluation.config import get_eval_settings
-from sentra.evaluation.db import Base, get_engine
-from sentra.main import mount_evaluation
+from sentra_eval.app import create_app
+from sentra_eval.config import get_eval_settings
+from sentra_eval.db import Base, get_engine
 
 CASE = {
     "kategorie": "GO",
@@ -29,19 +28,19 @@ CASE = {
 
 
 @pytest.fixture
-def client(monkeypatch, tmp_path, settings):
+def client(monkeypatch, tmp_path):
     monkeypatch.setenv("JUDGE_BASE_URL", "http://judge.invalid/v1")
     monkeypatch.setenv("JUDGE_API_KEY", "not-a-real-key")
     monkeypatch.setenv("JUDGE_MODEL", "a-judge-that-is-not-the-chat-model")
+    monkeypatch.setenv("CHAT_MODEL_UNDER_TEST", "llama-3-3-70b")
     monkeypatch.setenv("EVAL_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'eval.db'}")
     get_eval_settings.cache_clear()
     get_engine.cache_clear()
 
     Base.metadata.create_all(get_engine())
 
-    app = FastAPI()
-    mount_evaluation(app, settings.model_copy(update={"eval_enabled": True}))
-    yield TestClient(app)
+    with TestClient(create_app()) as client:
+        yield client
 
     get_eval_settings.cache_clear()
     get_engine.cache_clear()

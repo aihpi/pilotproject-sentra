@@ -6,8 +6,8 @@ hold in CI, and this covers it being reachable.
 
 Run it with the compose stack up:
 
-    docker compose up -d eval-db
-    uv run pytest tests/test_evaluation_migrations.py -m integration
+    docker compose --profile eval up -d eval-db
+    cd evaluation && uv run pytest tests/test_migrations.py -m integration
 
 It applies migrations to whatever EVAL_DATABASE_URL points at and leaves them
 applied, the same way prepare_index leaves the test collections in place.
@@ -21,20 +21,20 @@ from alembic.migration import MigrationContext
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 
-from sentra.evaluation.config import get_eval_settings
-from sentra.evaluation.db import Base, EvalDatabaseUnavailable, get_engine, schema_revision
-from tests.conftest import BACKEND_DIR
+from sentra_eval.config import get_eval_settings
+from sentra_eval.db import Base, EvalDatabaseUnavailable, get_engine, schema_revision
+from tests.conftest import EVALUATION_DIR
 
 pytestmark = pytest.mark.integration
 
 
 @pytest.fixture(scope="module")
 def alembic_config() -> Config:
-    config = Config(str(BACKEND_DIR / "alembic.ini"))
+    config = Config(str(EVALUATION_DIR / "alembic.ini"))
     # alembic.ini holds a path relative to backend/, and pytest runs from
     # wherever it was invoked.
     config.set_main_option(
-        "script_location", str(BACKEND_DIR / "src" / "sentra" / "evaluation" / "migrations")
+        "script_location", str(EVALUATION_DIR / "src" / "sentra_eval" / "migrations")
     )
     return config
 

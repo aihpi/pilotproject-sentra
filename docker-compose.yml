@@ -14,20 +14,11 @@ services:
       QDRANT_URL: http://qdrant:6333
       DOCUMENTS_DIR: /data/Ausarbeitungen
       FEEDBACK_FILE: /data/feedback.jsonl
-      # Points at the service below. Read only when EVAL_ENABLED is set, which
-      # it is not by default, so the stack behaves as it always did until
-      # somebody turns the harness on — and then needs no further wiring.
-      EVAL_DATABASE_URL: postgresql+psycopg://sentra:sentra@eval-db:5432/sentra_eval
+
     volumes:
       - ./data:/data
     depends_on:
       qdrant:
-        condition: service_started
-      # Started, not healthy. The backend must come up whether or not the eval
-      # database is there: it opens no connection until an eval route is
-      # called, and waiting on a dependency the harness may not even be using
-      # would make SENTRA's availability depend on the harness's.
-      eval-db:
         condition: service_started
 
   frontend:
@@ -40,14 +31,43 @@ services:
     depends_on:
       - backend
 
+  # ── The evaluation harness. Its own process, started on request. ──
+  #
+  #   docker compose --profile eval up
+  #
+  # A profile rather than a plain service: the harness measures SENTRA and most
+  # people bringing the stack up are working on SENTRA. It also means `docker
+  # compose up` does not start a Postgres nobody is using, and does not fail on
+  # a harness that has no judge configured.
+  eval-harness:
+    profiles: ["eval"]
+    build:
+      context: ./evaluation
+    ports:
+      - "8100:8100"
+    env_file:
+      - backend/.env
+    environment:
+      # Over HTTP, at the other container. Never in process: SENTRA's API layer
+      # is part of what is being tested.
+      SENTRA_BASE_URL: http://backend:8000
+      EVAL_DATABASE_URL: postgresql+psycopg://sentra:sentra@eval-db:5432/sentra_eval
+      # So the harness can refuse to start when the judge resolves to the model
+      # it is meant to be checking.
+      CHAT_MODEL_UNDER_TEST: ${CHAT_MODEL:-llama-3-3-70b}
+    depends_on:
+      eval-db:
+        condition: service_started
+      backend:
+        condition: service_started
+
   eval-db:
-    # The evaluation harness's database. Postgres rather than SQLite because a
-    # round is worked through by Hotline and WD at the same time, on the review
-    # screen, and SQLite's single writer is exactly the wrong shape for that.
+    profiles: ["eval"]
+    # The harness's database. Postgres rather than SQLite because a round is
+    # worked through by Hotline and WD at the same time on the review screen,
+    # and a single writer is exactly the wrong shape for that.
     #
-    # Pinned for the same reason as Qdrant below. Nothing in SENTRA proper
-    # touches this: with EVAL_ENABLED unset the backend never connects, and the
-    # container simply idles.
+    # Pinned for the same reason as Qdrant below. SENTRA never touches it.
     image: postgres:17.6-alpine
     environment:
       POSTGRES_USER: sentra

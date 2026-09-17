@@ -1,0 +1,73 @@
+[project]
+name = "sentra-eval"
+version = "0.1.0"
+description = "Structured test rounds for SENTRA, per the KISZ Testverfahren"
+requires-python = ">=3.12"
+# Depends on nothing of SENTRA's, on purpose. The harness reaches SENTRA over
+# HTTP at SENTRA_BASE_URL like any other client, because the API layer is part
+# of what is under test. Importing the package it measures would also drag
+# docling and qdrant-client into an image that parses no PDFs.
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.0.0",
+    "httpx>=0.27.0",          # the runner calls SENTRA
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.2",   # psycopg 3, which postgresql+psycopg wants
+    "pyyaml>=6.0",            # the case file format
+    "openai>=1.50.0",         # the judge, on a different hub from SENTRA's
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13",
+    "types-PyYAML>=6.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency injection is a function call in a default argument by
+# design, so B008 is a false positive on every route handler.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Header",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Long assertion messages read better unwrapped.
+"tests/**" = ["E501"]
+# Alembic writes these, one sa.Column per line, and a column with a
+# server_default clears 100 characters on its own. A migration tidied by hand
+# is one nobody can regenerate to compare against.
+"src/sentra_eval/migrations/versions/**" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src/sentra_eval"]
+plugins = ["pydantic.mypy"]
+warn_redundant_casts = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: requires Postgres, and for some a running SENTRA",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.17,<0.9.0"]
+build-backend = "uv_build"

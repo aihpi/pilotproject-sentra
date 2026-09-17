@@ -26,11 +26,11 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from sentra.evaluation import cases as case_store
-from sentra.evaluation import checks
-from sentra.evaluation.config import get_eval_settings
-from sentra.evaluation.db import session_scope
-from sentra.evaluation.models import (
+from sentra_eval import cases as case_store
+from sentra_eval import checks
+from sentra_eval.config import get_eval_settings
+from sentra_eval.db import session_scope
+from sentra_eval.models import (
     ABGESCHLOSSEN,
     FEHLER,
     FEHLGESCHLAGEN,

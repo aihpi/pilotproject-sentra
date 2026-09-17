@@ -17,12 +17,12 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from sentra.evaluation import cases as case_store
-from sentra.evaluation import runner
-from sentra.evaluation.categories import Kategorie
-from sentra.evaluation.config import get_eval_settings
-from sentra.evaluation.db import Base, get_engine
-from sentra.evaluation.models import FEHLER, OK, ZWECK_ANTWORT, Call, Run
+from sentra_eval import cases as case_store
+from sentra_eval import runner
+from sentra_eval.categories import Kategorie
+from sentra_eval.config import get_eval_settings
+from sentra_eval.db import Base, get_engine
+from sentra_eval.models import FEHLER, OK, ZWECK_ANTWORT, Call, Run
 
 
 def _answers(session):
@@ -364,7 +364,7 @@ class TestChecksDuringARun:
         assert sum(1 for c in calls if c.zweck == "recall") == 1
 
     def test_a_correct_citation_is_scored_unauffaellig(self, session):
-        from sentra.evaluation.models import CheckResult
+        from sentra_eval.models import CheckResult
 
         self._case_with_reference(session)
         run = runner.start_run(session, repeats=1)
@@ -378,7 +378,7 @@ class TestChecksDuringARun:
         assert all(r.auffaellig is False for r in results)
 
     def test_a_wrong_citation_is_flagged(self, session):
-        from sentra.evaluation.models import CheckResult
+        from sentra_eval.models import CheckResult
 
         self._case_with_reference(session)
         run = runner.start_run(session, repeats=1)
@@ -397,7 +397,7 @@ class TestChecksDuringARun:
     def test_a_failed_call_is_not_scored(self, session):
         """There is nothing to check in a 503, and a verdict on one would be a
         finding about SENTRA being down rather than about its answer."""
-        from sentra.evaluation.models import CheckResult
+        from sentra_eval.models import CheckResult
 
         self._case_with_reference(session)
         run = runner.start_run(session, repeats=1)
@@ -412,7 +412,7 @@ class TestChecksDuringARun:
         """The property the checks were shaped around: pure functions over
         stored rows, so a check that did not exist when a round ran can still
         score it."""
-        from sentra.evaluation.models import CheckResult
+        from sentra_eval.models import CheckResult
 
         self._case_with_reference(session)
         run = runner.start_run(session, repeats=2)

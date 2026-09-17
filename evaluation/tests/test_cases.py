@@ -25,10 +25,10 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from sentra.evaluation import cases as case_store
-from sentra.evaluation.categories import Kategorie
-from sentra.evaluation.db import Base
-from sentra.evaluation.models import ENTWURF, FREIGEGEBEN
+from sentra_eval import cases as case_store
+from sentra_eval.categories import Kategorie
+from sentra_eval.db import Base
+from sentra_eval.models import ENTWURF, FREIGEGEBEN
 
 
 @pytest.fixture

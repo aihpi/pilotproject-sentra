@@ -14,9 +14,9 @@ from alembic import context
 # produces an empty migration and the schema silently stops being tracked.
 # It worked by accident before this line — through router importing models —
 # which is not something to leave a schema resting on.
-from sentra.evaluation import models  # noqa: F401
-from sentra.evaluation.config import get_eval_settings
-from sentra.evaluation.db import Base, get_engine
+from sentra_eval import models  # noqa: F401
+from sentra_eval.config import get_eval_settings
+from sentra_eval.db import Base, get_engine
 
 config = context.config
 

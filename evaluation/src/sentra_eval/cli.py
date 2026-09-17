@@ -1,7 +1,7 @@
 """Command line for the eval case file.
 
-    uv run python -m sentra.evaluation.cli export cases.yaml
-    uv run python -m sentra.evaluation.cli import cases.yaml
+    uv run python -m sentra_eval.cli export cases.yaml
+    uv run python -m sentra_eval.cli import cases.yaml
 
 A CLI rather than an endpoint, and in the same category as `alembic upgrade
 head`: something an operator runs against a deployment, not something a browser
@@ -13,8 +13,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from sentra.evaluation import yaml_io
-from sentra.evaluation.db import EvalDatabaseUnavailable, session_scope
+from sentra_eval import yaml_io
+from sentra_eval.db import EvalDatabaseUnavailable, session_scope
 
 
 def main(argv: list[str] | None = None) -> int:

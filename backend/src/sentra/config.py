@@ -66,12 +66,6 @@ class Settings(BaseSettings):
     # string raises instead of being split.
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
 
-    # Evaluation harness. Off by default, and the only thing the core settings
-    # know about it. main imports sentra.evaluation only when this is set, so
-    # an image built without the `eval` extra boots exactly as it did before.
-    # Everything else the harness needs is in sentra.evaluation.config.
-    eval_enabled: bool = False
-
     # Feedback
     feedback_file: str = "../data/feedback.jsonl"
 
