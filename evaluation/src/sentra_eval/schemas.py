@@ -128,3 +128,91 @@ class CheckResultResponse(BaseModel):
     ergebnis: str
     auffaellig: bool
     belege: dict
+
+
+class QueueCall(BaseModel):
+    """One answer awaiting assessment.
+
+    No check results here, and that omission is the design. See review.py.
+    """
+
+    id: UUID
+    variant_key: str
+    repeat_index: int
+    text: str
+    sources: list[dict]
+    http_status: int | None
+    dauer_ms: float | None
+    assessed: bool
+
+
+class QueueEntryResponse(BaseModel):
+    test_id: str
+    kategorie: str
+    case_version_id: UUID
+    version: int
+    # The yardstick, read only. It is what the answer is measured against, so a
+    # review screen shows it beside the answer and never lets it be edited
+    # while somebody is looking at a disappointing result.
+    ausgangsfrage: str
+    erwartete_antwort: str
+    referenz_korrekt: str
+    referenz_falsch: str
+    grenzfall: bool
+    gefunden_ueber: str
+    calls: list[QueueCall]
+    assessed: int
+
+
+class MachineVerdictsResponse(BaseModel):
+    """Served by its own endpoint, after the human has submitted."""
+
+    per_call: list[CheckResultResponse]
+    per_group: list[CheckResultResponse]
+
+
+class SubmitVerdictRequest(BaseModel):
+    # No authentication exists anywhere in this project, so this is typed. It
+    # is required because a finding nobody has to own is a finding nobody
+    # follows up.
+    tester: str = Field(min_length=1)
+    gefunden_ueber: str
+    quelle_4_3a: str
+    quelle_4_3b: str
+    # Never prefilled from a check. Whether a source actually supports a claim
+    # is the fachliche Einschätzung the Vorlage keeps in human hands.
+    quelle_4_3c: str
+    schweregrad: int = Field(ge=1, le=4)
+    reproduzierbar: str
+    anmerkung: str = ""
+
+
+class VerdictResponse(BaseModel):
+    id: UUID
+    call_id: UUID
+    tester: str
+    gefunden_ueber: str
+    quelle_4_3a: str
+    quelle_4_3b: str
+    quelle_4_3c: str
+    schweregrad: int
+    reproduzierbar: str
+    anmerkung: str
+    kisz_meldung: bool
+    created_at: datetime
+
+
+class VorlageOptions(BaseModel):
+    """The Phase-4 sheet's closed lists, for the review form's dropdowns.
+
+    Served rather than duplicated in the frontend, for the reason #37 gave
+    about prompts and filters: two copies of a vocabulary drift, and this one
+    has to match a paper form.
+    """
+
+    quelle_4_3a: list[str]
+    quelle_4_3b: list[str]
+    quelle_4_3c: list[str]
+    reproduzierbar: list[str]
+    gefunden_ueber: list[str]
+    schweregrad: dict[int, str]

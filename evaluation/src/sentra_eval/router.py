@@ -15,13 +15,24 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from sentra_eval import cases as case_store
+from sentra_eval import models
+from sentra_eval import review as review_store
 from sentra_eval import runner as run_store
 from sentra_eval.categories import KATEGORIE_NAMEN
 from sentra_eval.config import EvalSettings, get_eval_settings
 from sentra_eval.db import EvalDatabaseUnavailable, schema_revision, session_scope
 from sentra_eval.jobs import BackgroundJob
 from sentra_eval.judge import judge_config
-from sentra_eval.models import LAUFEND, Call, Case, CaseVersion, CheckResult, Run
+from sentra_eval.models import (
+    LAUFEND,
+    Call,
+    Case,
+    CaseVersion,
+    CheckResult,
+    GroupCheckResult,
+    Run,
+    Verdict,
+)
 from sentra_eval.schemas import (
     CallResponse,
     CaseResponse,
@@ -29,9 +40,15 @@ from sentra_eval.schemas import (
     CheckResultResponse,
     CreateCaseRequest,
     EvalHealthResponse,
+    MachineVerdictsResponse,
+    QueueCall,
+    QueueEntryResponse,
     RunResponse,
     StartRunRequest,
+    SubmitVerdictRequest,
     UpdateCaseRequest,
+    VerdictResponse,
+    VorlageOptions,
 )
 
 logger = logging.getLogger(__name__)
@@ -331,3 +348,166 @@ def _lookup_run(session: Session, run_id: UUID) -> Run:
         return run_store.get_run(session, run_id)
     except run_store.RunnerError as exc:
         raise HTTPException(status_code=404, detail=f"Testrunde {run_id} nicht gefunden.") from exc
+
+
+# ── Stufe 2: the review queue ───────────────────────────────────────
+
+
+@router.get("/runs/{run_id}/queue", response_model=list[QueueEntryResponse])
+def review_queue(run_id: UUID) -> list[QueueEntryResponse]:
+    """The cases a human still has to work through, with the yardstick attached.
+
+    Carries no machine verdicts, deliberately. Section 6 of the Vorlage makes
+    the disagreement rate between the automatic verdict and the human one the
+    headline measurement, and a queue that handed the machine verdict over
+    with the answer would leave the review screen hiding it only by choosing
+    to. One careless render and that metric measures anchoring instead. See
+    GET /calls/{id}/machine-verdicts, which the screen asks for after submit.
+    """
+    with session_scope() as session:
+        _lookup_run(session, run_id)
+        assessed = {
+            v.call_id
+            for v in session.execute(
+                select(Verdict).join(Call, Verdict.call_id == Call.id).where(Call.run_id == run_id)
+            ).scalars()
+        }
+        return [
+            QueueEntryResponse(
+                test_id=entry.test_id,
+                kategorie=entry.kategorie,
+                case_version_id=entry.case_version_id,
+                version=entry.version,
+                ausgangsfrage=entry.ausgangsfrage,
+                erwartete_antwort=entry.erwartete_antwort,
+                referenz_korrekt=entry.referenz_korrekt,
+                referenz_falsch=entry.referenz_falsch,
+                grenzfall=entry.grenzfall,
+                gefunden_ueber=entry.gefunden_ueber,
+                assessed=entry.assessed,
+                calls=[
+                    QueueCall(
+                        id=call.id,
+                        variant_key=call.variant_key,
+                        repeat_index=call.repeat_index,
+                        text=call.response_body.get("text") or "",
+                        sources=call.response_body.get("sources") or [],
+                        http_status=call.http_status,
+                        dauer_ms=call.dauer_ms,
+                        assessed=call.id in assessed,
+                    )
+                    for call in entry.calls
+                ],
+            )
+            for entry in review_store.queue(session, run_id)
+        ]
+
+
+@router.get("/calls/{call_id}/machine-verdicts", response_model=MachineVerdictsResponse)
+def machine_verdicts(call_id: UUID) -> MachineVerdictsResponse:
+    """What the checks concluded. Fetched after a human has submitted.
+
+    Its own endpoint so that withholding it is the default rather than a
+    decision the UI has to remember to make.
+    """
+    with session_scope() as session:
+        try:
+            per_call, per_group = review_store.machine_verdicts(session, call_id)
+        except review_store.ReviewError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return MachineVerdictsResponse(
+            per_call=[_check_response(c) for c in per_call],
+            per_group=[_check_response(c) for c in per_group],
+        )
+
+
+@router.post("/calls/{call_id}/verdict", response_model=VerdictResponse, status_code=201)
+def submit_verdict(call_id: UUID, body: SubmitVerdictRequest) -> VerdictResponse:
+    """Record a human assessment. Every machine verdict stays where it is."""
+    with session_scope() as session:
+        try:
+            verdict = review_store.record_verdict(
+                session,
+                call_id,
+                tester=body.tester,
+                gefunden_ueber=body.gefunden_ueber,
+                quelle_4_3a=body.quelle_4_3a,
+                quelle_4_3b=body.quelle_4_3b,
+                quelle_4_3c=body.quelle_4_3c,
+                schweregrad=body.schweregrad,
+                reproduzierbar=body.reproduzierbar,
+                anmerkung=body.anmerkung,
+            )
+        except review_store.AlreadyAssessed as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except review_store.ReviewError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return _verdict_response(verdict)
+
+
+@router.get("/runs/{run_id}/kisz", response_model=list[VerdictResponse])
+def kisz_escalations(run_id: UUID) -> list[VerdictResponse]:
+    """Schweregrad 3 and 4, which go to KISZ separately.
+
+    Regardless of whether the case reached a human through Stufe 2 or the
+    Stufe 3 sample, per section 5 of the Vorlage.
+    """
+    with session_scope() as session:
+        _lookup_run(session, run_id)
+        return [_verdict_response(v) for v in review_store.kisz_escalations(session, run_id)]
+
+
+@router.get("/vorlage-optionen", response_model=VorlageOptions)
+def vorlage_optionen() -> VorlageOptions:
+    """The Phase-4 sheet's closed lists, for the review form.
+
+    Served rather than copied into the frontend, for the reason #37 gave about
+    prompts and filter options: two copies of a vocabulary drift, and this one
+    has to keep matching a paper form.
+    """
+    return VorlageOptions(
+        quelle_4_3a=[
+            models.ZITAT_STIMMT,
+            models.ZITAT_WEICHT_AB,
+            models.ZITAT_EXISTIERT_NICHT,
+            models.ZITAT_ENTFAELLT,
+        ],
+        quelle_4_3b=[models.QUELLE_KORREKT, models.QUELLE_FALSCH],
+        quelle_4_3c=[models.KONTEXT_STUETZT, models.KONTEXT_STUETZT_NICHT],
+        reproduzierbar=[
+            models.REPRO_EINMALIG,
+            models.REPRO_WIEDERHOLT,
+            models.REPRO_ENTFAELLT,
+        ],
+        gefunden_ueber=[models.STUFE_2, models.STUFE_3, models.GRENZFALL_IMMER],
+        schweregrad={1: "geringfügig", 2: "moderat", 3: "erheblich", 4: "kritisch"},
+    )
+
+
+def _check_response(result: CheckResult | GroupCheckResult) -> CheckResultResponse:
+    """Both check tables carry the same four reporting fields, on purpose: a
+    verdict about one call and a verdict about a group of repeats read the same
+    way to a reviewer, and the trend report aggregates them the same way."""
+    return CheckResultResponse(
+        pruefung=result.pruefung,
+        ergebnis=result.ergebnis,
+        auffaellig=result.auffaellig,
+        belege=result.belege,
+    )
+
+
+def _verdict_response(verdict: Verdict) -> VerdictResponse:
+    return VerdictResponse(
+        id=verdict.id,
+        call_id=verdict.call_id,
+        tester=verdict.tester,
+        gefunden_ueber=verdict.gefunden_ueber,
+        quelle_4_3a=verdict.quelle_4_3a,
+        quelle_4_3b=verdict.quelle_4_3b,
+        quelle_4_3c=verdict.quelle_4_3c,
+        schweregrad=verdict.schweregrad,
+        reproduzierbar=verdict.reproduzierbar,
+        anmerkung=verdict.anmerkung,
+        kisz_meldung=verdict.kisz_meldung,
+        created_at=verdict.created_at,
+    )

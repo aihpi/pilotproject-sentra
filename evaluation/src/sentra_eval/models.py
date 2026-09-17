@@ -61,6 +61,37 @@ ORIGINAL = "original"
 ZWECK_ANTWORT = "antwort"
 ZWECK_RECALL = "recall"
 
+# ── Phase 4 of the Vorlage: the documentation sheet's vocabulary ────
+#
+# German, and exactly the Vorlage's wording. A Phase-4 sheet is generated from
+# these, so storing anything else means translating twice — and a reviewer
+# picking from a list that does not match the paper form has to translate in
+# their head every time.
+
+# 4.3a, Existenz- und Zitatprüfung
+ZITAT_STIMMT = "existiert & stimmt überein"
+ZITAT_WEICHT_AB = "weicht ab"
+ZITAT_EXISTIERT_NICHT = "existiert nicht"
+ZITAT_ENTFAELLT = "entfällt"
+
+# 4.3b, Quellenauswahl
+QUELLE_KORREKT = "korrekte Quelle"
+QUELLE_FALSCH = "falsche bzw. veraltete Quelle"
+
+# 4.3c, Kontextprüfung — human only, always
+KONTEXT_STUETZT = "Quelle stützt Aussage"
+KONTEXT_STUETZT_NICHT = "stützt Aussage nicht"
+
+# Reproduzierbar?
+REPRO_EINMALIG = "einmalig"
+REPRO_WIEDERHOLT = "wiederholt"
+REPRO_ENTFAELLT = "entfällt"
+
+# Gefunden über
+STUFE_2 = "Stufe 2 (auffällig markiert)"
+STUFE_3 = "Stufe 3 (Stichprobe)"
+GRENZFALL_IMMER = "Grenzfall (immer manuell, 4.4)"
+
 
 class TestIdSequence(Base):
     """The next free number per category.
@@ -349,3 +380,57 @@ class GroupCheckResult(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class Verdict(Base):
+    """A human's assessment of one call. The Phase-4 sheet, as a row.
+
+    Kept separately from CheckResult rather than updating it, and that is the
+    point rather than tidiness. Section 6 of the Vorlage names the disagreement
+    rate between the automatic and the human verdict as the most important
+    number in the whole process: it is what says whether the Stufe-1 threshold
+    is set too loosely or too strictly. A human verdict that overwrote the
+    machine one would destroy the only input to that metric.
+
+    So both rows are kept forever, and neither is authoritative over the other.
+    """
+
+    __tablename__ = "verdicts"
+    __table_args__ = (
+        UniqueConstraint("call_id", name="uq_verdicts_one_per_call"),
+        CheckConstraint("schweregrad BETWEEN 1 AND 4", name="ck_verdicts_schweregrad"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    call_id: Mapped[UUID] = mapped_column(
+        ForeignKey("calls.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    # There is no authentication anywhere in this project, so this is a name
+    # somebody types. It is required because a verdict with no author cannot be
+    # followed up, and an unattributable finding is one nobody has to own.
+    tester: Mapped[str] = mapped_column(String(120), nullable=False)
+    gefunden_ueber: Mapped[str] = mapped_column(String(48), nullable=False)
+
+    # 4.3a and 4.3b arrive prefilled from the machine checks and stay editable;
+    # 4.3c is never prefilled, because whether a source actually supports a
+    # claim is the fachliche Einschätzung the Vorlage keeps in human hands.
+    quelle_4_3a: Mapped[str] = mapped_column(String(48), nullable=False)
+    quelle_4_3b: Mapped[str] = mapped_column(String(48), nullable=False)
+    quelle_4_3c: Mapped[str] = mapped_column(String(48), nullable=False)
+
+    schweregrad: Mapped[int] = mapped_column(Integer, nullable=False)
+    reproduzierbar: Mapped[str] = mapped_column(String(24), nullable=False)
+    anmerkung: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    # Schweregrad 3 and 4 go to KISZ regardless of whether the case reached a
+    # human through Stufe 2 or Stufe 3. Stored rather than derived on read so
+    # that a round already reported cannot change its escalations if the rule
+    # is ever adjusted.
+    kisz_meldung: Mapped[bool] = mapped_column(nullable=False, default=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    call: Mapped[Call] = relationship()
