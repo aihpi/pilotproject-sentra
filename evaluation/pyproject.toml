@@ -20,6 +20,24 @@ dependencies = [
     "openai>=1.50.0",         # the judge, on a different hub from SENTRA's
 ]
 
+[project.optional-dependencies]
+# ragas, kept out of the base install on purpose.
+#
+# It pulls 97 packages — the whole langchain stack, datasets, pandas — against
+# the twelve this harness otherwise needs, and it covers roughly one of six
+# checks. A deployment that wants the deterministic checks and the judge should
+# not carry that. `uv sync --extra ragas` for one that does.
+#
+# langchain-community is pinned below 0.4: ragas 0.3 imports
+# langchain_community.chat_models.vertexai at module level, and 0.4 removed it.
+ragas = [
+    "ragas>=0.2",
+    "langchain-openai>=0.2",
+    "langchain-community<0.4",
+    # langchain-community 0.3 imports PIL without declaring it.
+    "pillow>=10",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
@@ -61,6 +79,13 @@ plugins = ["pydantic.mypy"]
 warn_redundant_casts = true
 warn_unused_ignores = true
 disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+# ragas ships no py.typed marker. It is an optional extra that most
+# deployments will not install, so the alternative to this is a file full of
+# ignores for a dependency that is usually absent.
+module = ["ragas.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

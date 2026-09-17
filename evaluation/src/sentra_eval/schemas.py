@@ -92,6 +92,10 @@ class StartRunRequest(BaseModel):
     stichprobe_anteil: float = Field(default=0.1, ge=0.0, le=1.0)
     # Fixed explicitly only to reproduce a round. Otherwise drawn once and kept.
     stichprobe_seed: int | None = None
+    # ragas roughly doubles a round's model calls, so it is asked for rather
+    # than assumed, and recorded on the run because a round scored with it and
+    # one scored without are not the same evidence.
+    ragas_aktiv: bool = False
 
 
 class RunResponse(BaseModel):
@@ -105,6 +109,7 @@ class RunResponse(BaseModel):
     fehler: str
     stichprobe_seed: int
     stichprobe_anteil: float
+    ragas_aktiv: bool
     # Progress, so a caller polling this can see a round move.
     total: int
     done: int

@@ -28,7 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from sentra_eval import cases as case_store
-from sentra_eval import checks, judge, variants
+from sentra_eval import checks, judge, ragas_checks, variants
 from sentra_eval.config import get_eval_settings
 from sentra_eval.db import session_scope
 from sentra_eval.models import (
@@ -177,6 +177,7 @@ def start_run(
     repeats: int = 3,
     stichprobe_anteil: float = 0.1,
     stichprobe_seed: int | None = None,
+    ragas_aktiv: bool = False,
 ) -> Run:
     """Create a round. Refuses one with nothing to do.
 
@@ -190,6 +191,7 @@ def start_run(
         sentra_base_url=settings.sentra_base_url,
         repeats=repeats,
         stichprobe_anteil=stichprobe_anteil,
+        ragas_aktiv=ragas_aktiv,
         # Drawn once, at the start, and kept. Stufe 3's job is to detect Stufe 1
         # systematically missing things, which a sample nobody can reconstruct
         # cannot support — so the seed is part of the round's record rather
@@ -393,6 +395,19 @@ def _run_checks(session: Session, call: Call) -> None:
             checks.ablehnung(call.response_body, grenzfall=version.grenzfall),
             checks.abschneidung(call.response_body),
         ]
+        # ragas only if the round asked for it, and only on the first repeat.
+        # Three LLM-scored metrics per answer roughly doubles a round's model
+        # calls; scoring every repeat would triple that again for a measure
+        # that is about the answer's grounding rather than its consistency.
+        run = session.get(Run, call.run_id)
+        if run is not None and run.ragas_aktiv and call.repeat_index == 0:
+            outcomes.extend(
+                ragas_checks.score(
+                    call.response_body,
+                    frage=version.ausgangsfrage,
+                    erwartete_antwort=version.erwartete_antwort,
+                )
+            )
     else:
         outcomes = [checks.retrieval_recall(call.response_body, version)]
 
