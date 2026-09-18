@@ -158,11 +158,18 @@ class CaseVersion(Base):
     __table_args__ = (
         UniqueConstraint("case_id", "version", name="uq_case_versions_case_version"),
         # An approved version is a yardstick, and a yardstick with no expected
-        # answer or no correct reference measures nothing. Drafts may be
-        # incomplete — that is what a draft is for.
+        # answer measures nothing. Drafts may be incomplete — that is what a
+        # draft is for.
+        #
+        # A Grenzfall is exempt from the reference, and has to be: it asks
+        # something the corpus holds no document for, so there is no correct
+        # source to name. Requiring one made 4.4 unreachable, since the runner
+        # only plans approved versions (#130).
         CheckConstraint(
             "status = 'entwurf' OR ("
-            "  erwartete_antwort <> '' AND referenz_korrekt <> '' AND freigegeben_at IS NOT NULL"
+            "  erwartete_antwort <> ''"
+            "  AND (grenzfall OR referenz_korrekt <> '')"
+            "  AND freigegeben_at IS NOT NULL"
             ")",
             name="ck_case_versions_approved_is_complete",
         ),

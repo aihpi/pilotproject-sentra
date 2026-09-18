@@ -161,20 +161,24 @@ def approve(session: Session, version: CaseVersion) -> CaseVersion:
     """Turn a draft into a yardstick.
 
     Refuses anything that could not actually be measured against. An approved
-    version with no expected answer or no correct reference would pass every
-    check by having nothing to check, which is worse than no case at all.
+    version with no expected answer would pass every check by having nothing to
+    check, which is worse than no case at all.
+
+    A Grenzfall is the exception to the reference requirement, and has to be:
+    it is a question the corpus holds no document for, so there is no correct
+    source to name. Demanding one would mean inventing a source for a question
+    that has none — which 4.3b would then compare against — and would make 4.4
+    unreachable, since the runner only plans approved versions. Its yardstick is
+    the expected answer plus the flag itself.
     """
     if version.is_approved:
         return version
 
-    missing = [
-        name
-        for name, value in (
-            ("erwartete Antwort", version.erwartete_antwort),
-            ("Referenzquelle (korrekt)", version.referenz_korrekt),
-        )
-        if not value.strip()
-    ]
+    required = [("erwartete Antwort", version.erwartete_antwort)]
+    if not version.grenzfall:
+        required.append(("Referenzquelle (korrekt)", version.referenz_korrekt))
+
+    missing = [name for name, value in required if not value.strip()]
     if missing:
         raise IncompleteCase(
             f"{version.case.test_id} version {version.version} cannot be approved: "
