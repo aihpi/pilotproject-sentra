@@ -32,9 +32,11 @@ protection is worse than no control.
 
 import logging
 import secrets
+from collections.abc import Callable
 
 from fastapi import Depends, Header, HTTPException
 
+from sentra.api.identity import Subject, current_subject, login_configured
 from sentra.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
@@ -59,6 +61,30 @@ def warn_if_open(settings: Settings) -> None:
         )
 
 
+def has_token(
+    authorization: str | None,
+    x_admin_token: str | None,
+    settings: Settings,
+) -> bool:
+    """Whether this request carried the machine token.
+
+    Split out of the guard so a role check can ask the same question. A machine
+    caller has no session to offer — the evaluation harness reads feedback over
+    HTTP like any other client — so the token is how it gets through, and it
+    grants the guarded endpoints outright rather than carrying a role. A shared
+    secret cannot identify anybody, which is the whole reason the login exists.
+    """
+    expected = settings.admin_token
+    if not expected:
+        return False
+
+    offered = x_admin_token
+    if offered is None and authorization and authorization.lower().startswith("bearer "):
+        offered = authorization[len("bearer ") :].strip()
+
+    return offered is not None and secrets.compare_digest(offered, expected)
+
+
 def require_token(
     authorization: str | None = Header(default=None),
     x_admin_token: str | None = Header(default=None),
@@ -74,15 +100,10 @@ def require_token(
     `compare_digest` rather than `==`: it is one line, and the alternative is a
     timing oracle on the only secret in the system.
     """
-    expected = settings.admin_token
-    if not expected:
+    if not settings.admin_token:
         return
 
-    offered = x_admin_token
-    if offered is None and authorization and authorization.lower().startswith("bearer "):
-        offered = authorization[len("bearer ") :].strip()
-
-    if offered is None or not secrets.compare_digest(offered, expected):
+    if not has_token(authorization, x_admin_token, settings):
         # 401 rather than 403: the caller may well be allowed, they have simply
         # not said who they are. And no detail about which header was wrong —
         # that is only useful to somebody guessing.
@@ -91,3 +112,61 @@ def require_token(
             detail="Für diesen Zugriff ist ein Token erforderlich.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+
+# ── Roles ───────────────────────────────────────────────────────────
+
+
+def require_role(minimum: str) -> Callable[..., Subject | None]:
+    """A caller of at least `minimum`, or the machine token, or nothing.
+
+    Three ways past this, and they are not the same thing:
+
+      a session of sufficient rank   a person, and we know which
+      the machine token             a caller that was handed the secret. No
+                                    identity, and deliberately blunt — see
+                                    has_token
+      neither configured            open, as it was before any of this, and
+                                    reported by /api/health
+
+    **401 and 403 are different answers.** 401 means "say who you are", which a
+    browser can act on by offering a login. 403 means "I know who you are and
+    the answer is still no", which it must not answer by asking them to log in
+    again — that is a loop, and an infuriating one.
+
+    Returns the Subject when there was one, so an endpoint that wants to record
+    who acted can take it. `None` means the caller came through as a machine or
+    through an unguarded deployment, and an endpoint that needs a name has to
+    say so itself rather than assume.
+    """
+
+    def guard(
+        subject: Subject | None = Depends(current_subject),
+        authorization: str | None = Header(default=None),
+        x_admin_token: str | None = Header(default=None),
+        settings: Settings = Depends(get_settings),
+    ) -> Subject | None:
+        if has_token(authorization, x_admin_token, settings):
+            return subject
+
+        if subject is not None:
+            if subject.at_least(minimum):
+                return subject
+            raise HTTPException(
+                status_code=403,
+                detail=f"Diese Aktion erfordert mindestens die Rolle „{minimum}“.",
+            )
+
+        # No session and no token. Open only if nothing is configured to check
+        # against — the same trade as #162, for the same reason, and reported
+        # in the same place.
+        if not settings.admin_token and not login_configured(settings):
+            return None
+
+        raise HTTPException(
+            status_code=401,
+            detail="Für diesen Zugriff ist eine Anmeldung erforderlich.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return guard

@@ -7,8 +7,10 @@ from uuid import NAMESPACE_URL, uuid5
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
-from sentra.api.auth import require_token, write_paths_state
+from sentra.api.auth import require_role, write_paths_state
 from sentra.api.identity import (
+    ADMIN,
+    PRUEFER,
     Subject,
     authenticate,
     login_configured,
@@ -79,7 +81,9 @@ def get_generator(request: Request) -> AnswerGenerator:
 @router.post(
     "/ingest",
     response_model=IngestStartResponse,
-    dependencies=[Depends(require_token)],
+    # Admin: re-indexing writes to the corpus WD staff read as authoritative,
+    # which is the highest-consequence thing this API does.
+    dependencies=[Depends(require_role(ADMIN))],
 )
 def ingest(
     force: bool = False,
@@ -225,7 +229,10 @@ def submit_feedback(
 @router.get(
     "/feedback",
     response_model=list[FeedbackEntry],
-    dependencies=[Depends(require_token)],
+    # Reviewer: this is personal data under DSGVO, and reading it to draft test
+    # cases from is a reviewer's job. The evaluation harness comes through on
+    # the machine token instead, having no session to offer.
+    dependencies=[Depends(require_role(PRUEFER))],
 )
 def list_feedback(
     rating: str | None = None,
