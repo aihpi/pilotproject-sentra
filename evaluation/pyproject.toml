@@ -93,6 +93,18 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The integration tier is opt-in, which is what every integration docstring in
+# this package already tells people to do — and, until #144, the one thing
+# nothing enforced. `test_migrations` downgrades to base against whatever
+# EVAL_DATABASE_URL points at, which by default is the compose database, so a
+# plain `uv run pytest` with the stack up dropped every case, round and human
+# verdict. Silently, and only noticed the next time somebody opened the review
+# screen.
+#
+#   uv run pytest                    the offline tier, what CI runs
+#   uv run pytest -m integration     needs Postgres, a judge, or a live SENTRA
+#   uv run pytest -m ""              everything
+addopts = ["-m", "not integration"]
 markers = [
     "integration: requires Postgres, and for some a judge model or a running SENTRA",
 ]
