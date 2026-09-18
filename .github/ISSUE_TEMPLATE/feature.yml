@@ -1,6 +1,7 @@
 name: Feature
 description: A piece of work that is made up of several tasks
 labels: ["enhancement"]
+type: Feature
 body:
   - type: markdown
     attributes:
