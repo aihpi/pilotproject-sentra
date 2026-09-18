@@ -78,6 +78,11 @@ class HealthResponse(BaseModel):
     status: str
     qdrant: str
     collection: dict | None = None
+    # Whether POST /api/ingest and GET /api/feedback are guarded: "token" or
+    # "offen". Reported rather than left to a log line, because a service that
+    # answers "healthy" while its write path is open is answering the wrong
+    # question. See api/auth.py.
+    auth: str = "offen"
 
 
 # ── Explorer API models (v2) ────────────────────────────────────────

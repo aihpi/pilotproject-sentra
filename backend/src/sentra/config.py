@@ -83,6 +83,15 @@ class Settings(BaseSettings):
     # Feedback
     feedback_file: str = "../data/feedback.jsonl"
 
+    # The token guarding the write path and the personal-data read path
+    # (#162). Not identity — it says a caller was given the secret, nothing
+    # about who they are. See api/auth.py and references/SECURITY_NOTES.md.
+    #
+    # Empty means those endpoints stay open, which /api/health reports, because
+    # a pilot that 401s everything on update is a pilot that gets rolled back
+    # and a developer running compose should not need a secret to start.
+    admin_token: str = ""
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:

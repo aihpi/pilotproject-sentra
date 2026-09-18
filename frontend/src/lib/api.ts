@@ -10,6 +10,19 @@ import type {
 
 export const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
+/** The token for SENTRA's guarded paths — re-indexing, and reading feedback.
+ *
+ *  Build-time, which is worth being clear about: anything the browser sends,
+ *  the person using the browser can read. This keeps the corpus from being
+ *  re-indexed by the open internet; it does not keep it from being re-indexed
+ *  by someone who opened the network tab. It is a placeholder for a real login
+ *  and `references/SECURITY_NOTES.md` says so at more length.
+ *
+ *  Empty where the deployment sets no token, which is also when SENTRA leaves
+ *  those paths open — so sending nothing is the matching behaviour rather than
+ *  a missing feature. */
+const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN || "";
+
 export function pdfUrl(sourceFile: string): string {
   return `${API_BASE}/documents/${encodeURIComponent(sourceFile)}`;
 }
@@ -55,23 +68,33 @@ interface RequestOptions {
  *  process, but nginx routes /api/eval to it, so from the browser it is the
  *  same origin and the same error handling — including the 503 wording, which
  *  both services produce in the same shape. */
-export async function request<T>(path: string, options: RequestOptions): Promise<T> {
+export async function request<T>(
+  path: string,
+  options: RequestOptions,
+): Promise<T> {
   const { label, method = "GET", body, raw, statusMessages } = options;
 
   let response: Response;
   try {
+    // Headers built once rather than spread twice. Two `headers:` keys in one
+    // object literal is not a merge — the later one replaces the earlier — so
+    // the JSON branch would have silently dropped the token on exactly the
+    // request that needs it.
+    const headers: Record<string, string> = {};
+    if (ADMIN_TOKEN) headers["X-Admin-Token"] = ADMIN_TOKEN;
+    // No Content-Type for the raw case: the browser sets it from the Blob, and
+    // the endpoint reads the body as bytes either way.
+    if (raw === undefined && body !== undefined)
+      headers["Content-Type"] = "application/json";
+
     response = await fetch(`${API_BASE}${path}`, {
       method,
-      // No Content-Type for the raw case: the browser sets it from the Blob,
-      // and the endpoint reads the body as bytes either way.
+      ...(Object.keys(headers).length > 0 ? { headers } : {}),
       ...(raw !== undefined
         ? { body: raw }
         : body === undefined
           ? {}
-          : {
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(body),
-            }),
+          : { body: JSON.stringify(body) }),
     });
   } catch {
     // fetch only rejects when the request never completed at all: offline,
@@ -131,11 +154,15 @@ async function serverDetail(response: Response): Promise<string | null> {
 // ── Document management ─────────────────────────────────────────────
 
 export function fetchConfig(): Promise<AppConfig> {
-  return request("/config", { label: "Konfiguration konnte nicht geladen werden" });
+  return request("/config", {
+    label: "Konfiguration konnte nicht geladen werden",
+  });
 }
 
 export function fetchDocuments(): Promise<DocumentInfo[]> {
-  return request("/documents", { label: "Dokumente konnten nicht geladen werden" });
+  return request("/documents", {
+    label: "Dokumente konnten nicht geladen werden",
+  });
 }
 
 export function startIngestion(force = false): Promise<{ status: string }> {
@@ -149,7 +176,9 @@ export function startIngestion(force = false): Promise<{ status: string }> {
 }
 
 export function getIngestionStatus(): Promise<IngestionStatus> {
-  return request("/ingest/status", { label: "Status konnte nicht abgerufen werden" });
+  return request("/ingest/status", {
+    label: "Status konnte nicht abgerufen werden",
+  });
 }
 
 // ── Feedback ────────────────────────────────────────────────────────
@@ -198,11 +227,14 @@ export async function searchDocumentsByTopic(
   topK: number = 20,
   filters?: ExplorerFilters,
 ): Promise<DocumentResult[]> {
-  const data = await request<{ documents: DocumentResult[] }>("/explorer/documents", {
-    method: "POST",
-    body: explorerBody(query, dateRange, filters, { top_k: topK }),
-    label: "Dokumentsuche fehlgeschlagen",
-  });
+  const data = await request<{ documents: DocumentResult[] }>(
+    "/explorer/documents",
+    {
+      method: "POST",
+      body: explorerBody(query, dateRange, filters, { top_k: topK }),
+      label: "Dokumentsuche fehlgeschlagen",
+    },
+  );
   return data.documents;
 }
 
@@ -211,11 +243,14 @@ export async function findSimilarDocuments(
   aktenzeichen: string,
   topK: number = 10,
 ): Promise<DocumentResult[]> {
-  const data = await request<{ documents: DocumentResult[] }>("/explorer/similar", {
-    method: "POST",
-    body: { aktenzeichen, top_k: topK },
-    label: "Ähnliche Dokumente fehlgeschlagen",
-  });
+  const data = await request<{ documents: DocumentResult[] }>(
+    "/explorer/similar",
+    {
+      method: "POST",
+      body: { aktenzeichen, top_k: topK },
+      label: "Ähnliche Dokumente fehlgeschlagen",
+    },
+  );
   return data.documents;
 }
 
@@ -225,11 +260,14 @@ export async function findExternalSources(
   dateRange?: DateRange,
   filters?: ExplorerFilters,
 ): Promise<ExternalSourceResult[]> {
-  const data = await request<{ sources: ExternalSourceResult[] }>("/explorer/sources", {
-    method: "POST",
-    body: explorerBody(query, dateRange, filters),
-    label: "Quellensuche fehlgeschlagen",
-  });
+  const data = await request<{ sources: ExternalSourceResult[] }>(
+    "/explorer/sources",
+    {
+      method: "POST",
+      body: explorerBody(query, dateRange, filters),
+      label: "Quellensuche fehlgeschlagen",
+    },
+  );
   return data.sources;
 }
 

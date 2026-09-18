@@ -88,6 +88,15 @@ class EvalSettings(BaseSettings):
     # the API layer is part of what is under test — in-process calls would skip
     # the request models, the routing and the error policy, which is where a
     # regression is most likely to hide. Defaults to talking to ourselves.
+    # SENTRA's write path and its feedback endpoint are guarded by a token
+    # (#162), and reading feedback to draft cases from it is exactly the kind
+    # of caller that needs one. Empty where SENTRA has none configured, which
+    # is the compose default.
+    #
+    # It is not the judge's key and not the hub's: this one says "a caller that
+    # was given SENTRA's secret", which is all SENTRA checks.
+    sentra_admin_token: str | None = None
+
     sentra_base_url: str = "http://localhost:8000"
 
     @field_validator("cors_origins", mode="before")
