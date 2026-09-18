@@ -152,6 +152,33 @@ class TestApproval:
         with pytest.raises(case_store.IncompleteCase, match="Referenzquelle"):
             case_store.approve(session, version)
 
+    def test_a_grenzfall_is_approved_without_one(self, session):
+        """A question the corpus holds no document for has no correct source to
+        name. Requiring one made 4.4 unreachable: the runner only plans approved
+        versions, so no Grenzfall written the documented way could ever run."""
+        _, version = _complete_case(
+            session,
+            ausgangsfrage="Wie hoch ist die Mondtagegeldpauschale für Dienstreisen zum Mars?",
+            erwartete_antwort="Keine Antwort. Der Bestand enthält nichts dazu.",
+            referenz_korrekt="",
+            referenz_falsch="",
+            grenzfall=True,
+        )
+
+        case_store.approve(session, version)
+
+        assert version.status == FREIGEGEBEN
+
+    def test_a_grenzfall_still_needs_an_expected_answer(self, session):
+        """The exception is the reference, not the yardstick. What counts as a
+        correct refusal is still something a reviewer has to have written down."""
+        _, version = _complete_case(
+            session, erwartete_antwort="", referenz_korrekt="", grenzfall=True
+        )
+
+        with pytest.raises(case_store.IncompleteCase, match="erwartete Antwort"):
+            case_store.approve(session, version)
+
     def test_the_message_names_everything_missing_at_once(self, session):
         _, version = _complete_case(session, erwartete_antwort="", referenz_korrekt="")
 
