@@ -77,7 +77,9 @@ export default function App() {
           <>
             {activeView === "explorer" && <ExplorerView />}
             {activeView === "documents" && <DocumentsView />}
-            {activeView === "evaluation" && <EvaluationView />}
+            {activeView === "evaluation" && (
+              <EvaluationView session={session} />
+            )}
             {activeView === "administration" && (
               <AdministrationView session={session} />
             )}

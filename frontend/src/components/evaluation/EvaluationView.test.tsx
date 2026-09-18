@@ -1,7 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { EvalRun, MachineVerdicts, QueueEntry, VorlageOptions } from "@/types";
+import type {
+  EvalRun,
+  MachineVerdicts,
+  QueueEntry,
+  VorlageOptions,
+} from "@/types";
 
 /** The review screen, and mostly one property of it.
  *
@@ -76,12 +81,22 @@ const ENTRY: QueueEntry = {
 };
 
 const OPTIONS: VorlageOptions = {
-  quelle_4_3a: ["existiert & stimmt überein", "weicht ab", "existiert nicht", "entfällt"],
+  quelle_4_3a: [
+    "existiert & stimmt überein",
+    "weicht ab",
+    "existiert nicht",
+    "entfällt",
+  ],
   quelle_4_3b: ["korrekte Quelle", "falsche bzw. veraltete Quelle"],
   quelle_4_3c: ["Quelle stützt Aussage", "stützt Aussage nicht"],
   reproduzierbar: ["einmalig", "wiederholt", "entfällt"],
   gefunden_ueber: ["Stufe 2 (auffällig markiert)"],
-  schweregrad: { "1": "geringfügig", "2": "moderat", "3": "erheblich", "4": "kritisch" },
+  schweregrad: {
+    "1": "geringfügig",
+    "2": "moderat",
+    "3": "erheblich",
+    "4": "kritisch",
+  },
 };
 
 const VERDICTS: MachineVerdicts = {
@@ -94,7 +109,12 @@ const VERDICTS: MachineVerdicts = {
     },
   ],
   per_group: [
-    { pruefung: "wiederholbarkeit", ergebnis: "abweichend", auffaellig: false, belege: {} },
+    {
+      pruefung: "wiederholbarkeit",
+      ergebnis: "abweichend",
+      auffaellig: false,
+      belege: {},
+    },
   ],
 };
 
@@ -109,10 +129,13 @@ vi.mock("@/lib/evalApi", () => ({
   fetchMachineVerdicts: (...args: unknown[]) => fetchMachineVerdicts(...args),
 }));
 
-const { EvaluationView } = await import("@/components/evaluation/EvaluationView");
+const { EvaluationView } =
+  await import("@/components/evaluation/EvaluationView");
 
 async function renderAndWait() {
-  render(<EvaluationView />);
+  // No session: these tests are about the review screen, and the installation
+  // without a login is the case where the typed Tester/in field still exists.
+  render(<EvaluationView session={null} />);
   // The Test-ID appears twice on purpose: once in the queue, once on the case
   // pane beside the answer.
   await screen.findAllByText("TF-GO-001");
@@ -127,8 +150,12 @@ describe("the review screen", () => {
   it("shows the case beside the answer", async () => {
     await renderAndWait();
 
-    expect(screen.getByText(/Grundsatz 15 Minuten je Fraktion/)).toBeInTheDocument();
-    expect(screen.getByText(/Nach § 35 GOBT gilt eine Redezeit/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Grundsatz 15 Minuten je Fraktion/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Nach § 35 GOBT gilt eine Redezeit/),
+    ).toBeInTheDocument();
   });
 
   it("offers a tab per repeat", async () => {
@@ -143,14 +170,18 @@ describe("the review screen", () => {
 
     await userEvent.click(screen.getByRole("tab", { name: "W2" }));
 
-    expect(screen.getByText(/Die Redezeit beträgt 15 Minuten/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Die Redezeit beträgt 15 Minuten/),
+    ).toBeInTheDocument();
   });
 
   it("has one assessment form for the case, not one per repeat", async () => {
     await renderAndWait();
 
     // One Kernbefund box per answer, inside a single sheet.
-    expect(screen.getAllByRole("button", { name: /Bewertung abschicken/ })).toHaveLength(1);
+    expect(
+      screen.getAllByRole("button", { name: /Bewertung abschicken/ }),
+    ).toHaveLength(1);
     expect(screen.getByText("Reproduzierbar?")).toBeInTheDocument();
   });
 });
@@ -179,14 +210,18 @@ describe("the machine verdict is withheld until submit", () => {
   it("explains why the pane is empty", async () => {
     await renderAndWait();
 
-    expect(screen.getByText(/zentrale Kennzahl des Verfahrens/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/zentrale Kennzahl des Verfahrens/),
+    ).toBeInTheDocument();
   });
 
   it("appears once a sheet is submitted", async () => {
     await renderAndWait();
     await submitSheet();
 
-    await waitFor(() => expect(screen.getByText("quellenauswahl")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("quellenauswahl")).toBeInTheDocument(),
+    );
     expect(fetchMachineVerdicts).toHaveBeenCalledWith("call-1");
   });
 });
@@ -199,14 +234,18 @@ describe("the assessment form", () => {
       "Quelle stützt Aussage",
     );
 
-    expect(screen.getByRole("button", { name: /Bewertung abschicken/ })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /Bewertung abschicken/ }),
+    ).toBeDisabled();
   });
 
   it("cannot be submitted without 4.3c, which is never prefilled", async () => {
     await renderAndWait();
     await userEvent.type(screen.getByLabelText("Tester/in"), "WD");
 
-    expect(screen.getByRole("button", { name: /Bewertung abschicken/ })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /Bewertung abschicken/ }),
+    ).toBeDisabled();
   });
 
   it("warns that severity 3 escalates to KISZ", async () => {
@@ -248,7 +287,9 @@ async function submitSheet() {
   // form, and then it silently became the round's name field — the assertion
   // still ran, against the wrong input.
   await userEvent.type(screen.getByLabelText("W1"), "Stimmt.");
-  await userEvent.click(screen.getByRole("button", { name: /Bewertung abschicken/ }));
+  await userEvent.click(
+    screen.getByRole("button", { name: /Bewertung abschicken/ }),
+  );
 }
 
 describe("the cited document", () => {
@@ -261,20 +302,80 @@ describe("the cited document", () => {
   it("opens in the same column as the answer, which stays visible", async () => {
     await renderAndWait();
 
-    await userEvent.click(screen.getByRole("button", { name: /Redezeit im Plenum/ }));
+    await userEvent.click(
+      screen.getByRole("button", { name: /Redezeit im Plenum/ }),
+    );
 
     expect(screen.getByTitle("PDF: Redezeit im Plenum")).toBeInTheDocument();
     // 4.3c is a judgement about the claim and the passage together, so losing
     // the answer to open the source would defeat the point.
-    expect(screen.getByText(/Nach § 35 GOBT gilt eine Redezeit/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Nach § 35 GOBT gilt eine Redezeit/),
+    ).toBeInTheDocument();
   });
 
   it("closes again", async () => {
     await renderAndWait();
-    await userEvent.click(screen.getByRole("button", { name: /Redezeit im Plenum/ }));
+    await userEvent.click(
+      screen.getByRole("button", { name: /Redezeit im Plenum/ }),
+    );
 
     await userEvent.click(screen.getByLabelText("Dokument schließen"));
 
     expect(screen.queryByTitle(/^PDF:/)).not.toBeInTheDocument();
+  });
+});
+
+describe("who the verdict is attributed to", () => {
+  /** references/SECURITY_NOTES.md calls this the point of the whole exercise:
+   *  a Phase-4 sheet is what a round gets signed off on, and a verdict is a
+   *  claim somebody owns. While the name was a free text box anybody could own
+   *  it on anybody's behalf, including by typo. */
+
+  it("comes from the session, with nothing to fill in", async () => {
+    render(
+      <EvaluationView session={{ benutzername: "wd3", rolle: "pruefer" }} />,
+    );
+    await screen.findAllByText("TF-GO-001");
+
+    expect(screen.getByText("wd3")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Tester/in")).not.toBeInTheDocument();
+  });
+
+  it("is what gets submitted, not whatever was typed before signing in", async () => {
+    render(
+      <EvaluationView session={{ benutzername: "wd3", rolle: "pruefer" }} />,
+    );
+    await screen.findAllByText("TF-GO-001");
+
+    await userEvent.selectOptions(
+      screen.getByLabelText("4.3c Kontextprüfung"),
+      "Quelle stützt Aussage",
+    );
+    await userEvent.type(screen.getByLabelText("W1"), "Stimmt.");
+    await userEvent.click(
+      screen.getByRole("button", { name: /Bewertung abschicken/ }),
+    );
+
+    await waitFor(() => expect(submitVerdict).toHaveBeenCalledTimes(1));
+    expect(submitVerdict.mock.calls[0][2].tester).toBe("wd3");
+  });
+
+  it("is still typed where no login is configured", async () => {
+    /** The harness runs against installations without one, and refusing to
+     *  record a verdict there would make the tool unusable rather than more
+     *  trustworthy. */
+    await renderAndWait();
+
+    expect(screen.getByLabelText("Tester/in")).toBeInTheDocument();
+  });
+
+  it("and the form then says only 4.3c is missing", async () => {
+    render(
+      <EvaluationView session={{ benutzername: "wd3", rolle: "pruefer" }} />,
+    );
+    await screen.findAllByText("TF-GO-001");
+
+    expect(screen.getByText("4.3c ist erforderlich.")).toBeInTheDocument();
   });
 });
