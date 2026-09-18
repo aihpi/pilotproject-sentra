@@ -163,13 +163,14 @@ class TestWhatIsNotGuarded:
         later is a deliberate act rather than a copied decorator."""
         from sentra.api.routes import router
 
+        # Any guard, not `require_token` specifically. #168 replaced the flat
+        # token check with role-aware closures, and a test that names the
+        # mechanism breaks when the mechanism improves while saying nothing
+        # about the property it was defending.
         guarded = {
             getattr(route, "path", "")
             for route in router.routes
-            if any(
-                getattr(d, "dependency", None) is require_token
-                for d in getattr(route, "dependencies", [])
-            )
+            if getattr(route, "dependencies", [])
         }
 
         assert guarded == {"/api/ingest", "/api/feedback"}
