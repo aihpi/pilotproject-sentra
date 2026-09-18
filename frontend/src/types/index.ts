@@ -181,6 +181,17 @@ export interface Verdict extends SubmitVerdict {
   created_at: string;
 }
 
+/** Who is signed in.
+ *
+ *  Two fields, matching the API, and that is the point: when the prototype
+ *  login is replaced by an IdP, this shape and the endpoint behind it are what
+ *  change, and nothing that reads them has to. */
+export interface Session {
+  benutzername: string;
+  /** leser | pruefer | admin, least to most. */
+  rolle: string;
+}
+
 /** One version of a test case's content. Immutable once approved.
  *
  *  German field names, matching the harness's tables and the Vorlage's

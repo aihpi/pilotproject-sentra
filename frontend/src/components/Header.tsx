@@ -1,9 +1,18 @@
 import { cn } from "@/lib/utils";
 import type { ViewType } from "@/App";
+import type { Session } from "@/types";
 
 interface HeaderProps {
   activeView: ViewType;
   onViewChange: (view: ViewType) => void;
+  /** The views this caller may use. Filtered by App, which owns the session —
+   *  the header renders what it is given rather than deciding. */
+  views: ViewType[];
+  /** Null when no login is configured, which is a deployment that is open by
+   *  design rather than a signed-out one. Nothing about signing in or out is
+   *  shown in that case, because neither is possible. */
+  session: Session | null;
+  onSignOut: () => void;
 }
 
 const NAV_ITEMS: { key: ViewType; label: string }[] = [
@@ -20,7 +29,15 @@ const NAV_ITEMS: { key: ViewType; label: string }[] = [
   { key: "administration", label: "Administration" },
 ];
 
-export function Header({ activeView, onViewChange }: HeaderProps) {
+export function Header({
+  activeView,
+  onViewChange,
+  views,
+  session,
+  onSignOut,
+}: HeaderProps) {
+  const visible = NAV_ITEMS.filter((item) => views.includes(item.key));
+
   return (
     <header className="border-b bg-white">
       <div className="relative mx-auto flex h-16 max-w-7xl items-center px-6">
@@ -36,8 +53,8 @@ export function Header({ activeView, onViewChange }: HeaderProps) {
           SENTRA
         </h1>
 
-        <nav className="ml-auto flex gap-1">
-          {NAV_ITEMS.map((item) => (
+        <nav className="ml-auto flex items-center gap-1">
+          {visible.map((item) => (
             <button
               key={item.key}
               onClick={() => onViewChange(item.key)}
@@ -51,6 +68,24 @@ export function Header({ activeView, onViewChange }: HeaderProps) {
               {item.label}
             </button>
           ))}
+
+          {session && (
+            <span className="ml-3 flex items-center gap-2 border-l pl-3 text-xs">
+              <span className="text-muted-foreground">
+                {session.benutzername}
+                <span className="ml-1 rounded bg-secondary px-1.5 py-0.5">
+                  {session.rolle}
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={onSignOut}
+                className="rounded-md px-2 py-1 text-muted-foreground hover:bg-secondary"
+              >
+                Abmelden
+              </button>
+            </span>
+          )}
         </nav>
       </div>
     </header>
