@@ -62,11 +62,22 @@ class TestNoSettings:
 
         assert [name for name in Settings.model_fields if name.startswith("eval")] == []
 
-    def test_sentra_declares_no_eval_dependencies(self):
-        pyproject = (BACKEND / "pyproject.toml").read_text(encoding="utf-8")
+    def test_sentra_does_not_point_at_the_harness_database(self):
+        """This replaced a check that SENTRA declared no sqlalchemy, alembic or
+        psycopg at all, which was true until #141 and is not any more: the
+        document registry is SENTRA's own database.
 
-        for package in ("sqlalchemy", "alembic", "psycopg"):
-            assert package not in pyproject, f"{package} is the harness's dependency, not ours"
+        Sharing the packages is fine. Sharing the *database* is not, and that
+        is what the old assertion was standing in for — the harness is a
+        separate distribution precisely so that SENTRA starting does not depend
+        on it, and a shared server would hand that back.
+        """
+        from sentra.config import Settings
+
+        url = Settings.model_fields["registry_database_url"].default
+
+        assert "sentra_eval" not in url, "the registry must not be the harness's database"
+        assert ":5433" not in url, "5433 is the harness's Postgres"
 
 
 class TestTheHarnessIsItsOwnDistribution:

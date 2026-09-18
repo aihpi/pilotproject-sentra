@@ -323,6 +323,47 @@ original was wrong. `references/SOURCE_MANAGEMENT_NOTES.md` is the design for
 adding, editing and removing sources, which is being built now.
 `references/SECURITY_NOTES.md` records what the prototype login does not cover
 and what has to change before SENTRA is used outside a pilot.
+`docs/REFACTOR_NOTES.md` records what was refactored and why, including what
+is deliberately still open. `docs/EVAL_NOTES.md` describes the evaluation
+harness as built, with the design's reversals marked.
+`docs/SOURCE_MANAGEMENT_NOTES.md` is the design for adding, editing and
+removing sources, which is being built now (#141); its first piece, the
+document registry, is below.
+
+## The document registry
+
+What the corpus consists of. Qdrant holds what has been *indexed*, which is not
+the same question — and until the registry existed nothing could compare the
+two, which is how 17 documents came to be searchable and citable with no file
+behind them (#140).
+
+Read-only so far: it observes the corpus and touches neither Qdrant nor the
+files. Retrieval does not read it, so a registry database that is down does not
+stop SENTRA answering.
+
+```bash
+docker compose up -d sentra-db
+cd backend
+uv run alembic upgrade head                        # its own schema, applied deliberately
+uv run python -m sentra.documents.cli scan         # walk the corpus into the registry
+uv run python -m sentra.documents.cli drift        # compare it against the index
+```
+
+The scan is idempotent by content hash, so running it twice writes nothing. It
+does not parse: Docling is 5 to 20 seconds a document against 1919 of them, and
+the value here is being runnable now and repeatedly. What it extracts is what
+the filename carries, plus what the index already knows.
+
+What the first scan of this corpus found:
+
+| | |
+|---|---|
+| 1942 files | 1919 PDFs and 23 `.docx`, which every glob in the codebase skips |
+| 1938 documents | 4 are filed twice, the same paper under two names |
+| 59 with several Aktenzeichen | **64** that the ingestion path drops, because it keeps the first match |
+| 92 with none | `AB 01-23.pdf` and its kind, a different naming genre |
+| 17 indexed, no file | citable, and the source card 404s |
+| 23 rows, no chunks | the `.docx` abstracts, never ingested |
 
 ## Acknowledgements
 
