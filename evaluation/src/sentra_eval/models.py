@@ -469,9 +469,18 @@ class Verdict(Base):
         ForeignKey("case_versions.id", ondelete="RESTRICT"), nullable=False, index=True
     )
 
-    # There is no authentication anywhere in this project, so this is a name
-    # somebody types. Required, because a finding nobody has to own is a
-    # finding nobody follows up.
+    # Since #176 this is normally the signed-in reviewer rather than a name
+    # somebody types: the browser fills it from SENTRA's session, and the field
+    # only appears on installations that have no login configured. Required
+    # either way, because a finding nobody has to own is a finding nobody
+    # follows up.
+    #
+    # **It is still asserted by the client and is not proof.** The harness is a
+    # separate process with no session of its own — the reviewer's cookie is
+    # SENTRA's — so it receives a name rather than verifying one. What changed
+    # is that the ordinary path records the truth without anybody typing it.
+    # The verifiable version needs signature verification against the IdP:
+    # references/SECURITY_NOTES.md item 2, and #161.
     tester: Mapped[str] = mapped_column(String(120), nullable=False)
     # Derived by the server, not submitted. Stufe 2 / Stufe 3 / Grenzfall is a
     # fact about how the case reached the reviewer; triage knows it and a

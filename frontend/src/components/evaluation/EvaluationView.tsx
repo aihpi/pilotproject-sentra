@@ -6,6 +6,7 @@ import type {
   SourceRef,
   SubmitVerdict,
   VorlageOptions,
+  Session,
 } from "@/types";
 import {
   fetchMachineVerdicts,
@@ -35,7 +36,7 @@ import { VerdictForm } from "@/components/evaluation/VerdictForm";
  *  The harness enforces it on its side — the queue carries no machine verdicts
  *  at all — so the only way this screen could break it is by fetching them
  *  early. That fetch lives in the submit handler and nowhere else. */
-export function EvaluationView() {
+export function EvaluationView({ session }: { session: Session | null }) {
   const [runs, setRuns] = useState<EvalRun[]>([]);
   const [runId, setRunId] = useState<string | null>(null);
   const [queue, setQueue] = useState<QueueEntry[]>([]);
@@ -228,6 +229,7 @@ export function EvaluationView() {
                 calls={entry.calls}
                 options={options}
                 tester={tester}
+                angemeldetAls={session?.benutzername ?? null}
                 onTesterChange={setTester}
                 onSubmit={submit}
                 submitting={submitting}

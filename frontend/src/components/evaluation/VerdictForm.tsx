@@ -5,8 +5,13 @@ import { kernbefundKey, labelFor } from "@/components/evaluation/callLabels";
 interface VerdictFormProps {
   calls: QueueCall[];
   options: VorlageOptions;
-  /** Remembered across cases so a reviewer types their name once per round. */
+  /** Remembered across cases so a reviewer types their name once per round.
+   *  Ignored when `angemeldetAls` is set — see below. */
   tester: string;
+  /** The signed-in reviewer, when there is one. Takes precedence over anything
+   *  typed, because the point of #176 is that the name is not chosen by
+   *  whoever is filling in the sheet. */
+  angemeldetAls?: string | null;
   onTesterChange: (value: string) => void;
   onSubmit: (verdict: SubmitVerdict) => void;
   submitting: boolean;
@@ -27,6 +32,7 @@ export function VerdictForm({
   calls,
   options,
   tester,
+  angemeldetAls,
   onTesterChange,
   onSubmit,
   submitting,
@@ -40,10 +46,16 @@ export function VerdictForm({
   // hands, and a default is an answer nobody gave.
   const [quelle43c, setQuelle43c] = useState("");
   const [schweregrad, setSchweregrad] = useState(1);
-  const [reproduzierbar, setReproduzierbar] = useState(options.reproduzierbar[0] ?? "");
+  const [reproduzierbar, setReproduzierbar] = useState(
+    options.reproduzierbar[0] ?? "",
+  );
   const [anmerkung, setAnmerkung] = useState("");
 
-  const ready = tester.trim() !== "" && quelle43c !== "";
+  // The session wins. A signed-in reviewer cannot submit a sheet under another
+  // name, which is the whole point — the typed field only exists for
+  // installations that have no login at all.
+  const reviewer = (angemeldetAls ?? tester).trim();
+  const ready = reviewer !== "" && quelle43c !== "";
 
   return (
     <form
@@ -51,7 +63,7 @@ export function VerdictForm({
       onSubmit={(e) => {
         e.preventDefault();
         onSubmit({
-          tester,
+          tester: reviewer,
           kernbefunde,
           quelle_4_3a: quelle43a,
           quelle_4_3b: quelle43b,
@@ -67,7 +79,9 @@ export function VerdictForm({
       </h3>
 
       <fieldset className="space-y-2">
-        <legend className="text-xs font-medium">Kernbefund je Wiederholung</legend>
+        <legend className="text-xs font-medium">
+          Kernbefund je Wiederholung
+        </legend>
         {calls.map((call) => (
           <label key={call.id} className="flex items-center gap-2">
             <span className="w-10 shrink-0 text-xs text-muted-foreground">
@@ -76,7 +90,10 @@ export function VerdictForm({
             <input
               value={kernbefunde[kernbefundKey(call)] ?? ""}
               onChange={(e) =>
-                setKernbefunde({ ...kernbefunde, [kernbefundKey(call)]: e.target.value })
+                setKernbefunde({
+                  ...kernbefunde,
+                  [kernbefundKey(call)]: e.target.value,
+                })
               }
               className="flex-1 rounded-md border bg-background px-2 py-1 text-xs"
             />
@@ -127,15 +144,37 @@ export function VerdictForm({
           options={options.reproduzierbar}
           onChange={setReproduzierbar}
         />
-        <label className="space-y-1">
-          <span className="text-xs font-medium">Tester/in</span>
-          <input
-            value={tester}
-            onChange={(e) => onTesterChange(e.target.value)}
-            placeholder="Name"
-            className="w-full rounded-md border bg-background px-2 py-1 text-xs"
-          />
-        </label>
+        {/* Typed only where nobody is signed in.
+         *
+         *  A Phase-4 sheet is what a round gets signed off on, and a verdict
+         *  is a claim somebody owns — which anybody could own on anybody's
+         *  behalf, including by typo, while this was a free text box. Where
+         *  there is a session the name comes from it and there is nothing to
+         *  fill in.
+         *
+         *  Still shown where there is not: the harness runs against
+         *  installations with no login configured, and refusing to record a
+         *  verdict there would make the tool unusable rather than more
+         *  trustworthy. */}
+        <div className="space-y-1">
+          <span className="block text-xs font-medium">Tester/in</span>
+          {angemeldetAls ? (
+            <p
+              className="rounded-md border bg-muted/40 px-2 py-1 text-xs"
+              title="Aus der Anmeldung übernommen."
+            >
+              {angemeldetAls}
+            </p>
+          ) : (
+            <input
+              value={tester}
+              onChange={(e) => onTesterChange(e.target.value)}
+              placeholder="Name"
+              aria-label="Tester/in"
+              className="w-full rounded-md border bg-background px-2 py-1 text-xs"
+            />
+          )}
+        </div>
       </div>
 
       <label className="block space-y-1">
@@ -165,7 +204,9 @@ export function VerdictForm({
       </button>
       {!ready && (
         <p className="text-[11px] text-muted-foreground">
-          Tester/in und 4.3c sind erforderlich.
+          {angemeldetAls
+            ? "4.3c ist erforderlich."
+            : "Tester/in und 4.3c sind erforderlich."}
         </p>
       )}
     </form>
