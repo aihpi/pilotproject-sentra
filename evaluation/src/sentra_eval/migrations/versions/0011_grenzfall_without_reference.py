@@ -46,9 +46,25 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Fails where an approved Grenzfall with no reference exists, which is the
-    honest outcome: the old rule cannot describe those rows. Withdraw them
-    first, or give them a reference, if the constraint really has to come back.
+    """An approved Grenzfall with no reference goes back to being a draft.
+
+    The same shape as 0004, and for the same reason. The old constraint cannot
+    describe those rows, so restoring it over them fails — which is a migration
+    that cannot be undone once a single round has run, and that is what 0004
+    was written to stop happening a second time.
+
+    Returning them to entwurf is the least the older schema can hold: the old
+    rule allows a draft to be incomplete, which is what a draft is for. It is
+    still data loss — the approval and its timestamp go — and it is exactly the
+    data the older schema had no way to represent.
+
+    Reference-less Grenzfälle only exist above this revision, so on a database
+    that never had one this is a no-op.
     """
+    op.execute(
+        "UPDATE case_versions SET status = 'entwurf', freigegeben_at = NULL "
+        "WHERE status = 'freigegeben' AND grenzfall AND referenz_korrekt = ''"
+    )
+
     op.drop_constraint(NAME, "case_versions", type_="check")
     op.create_check_constraint(NAME, "case_versions", OLD)

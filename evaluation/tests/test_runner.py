@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from sentra_eval import cases as case_store
-from sentra_eval import runner
+from sentra_eval import checks, runner
 from sentra_eval.categories import Kategorie
 from sentra_eval.config import get_eval_settings
 from sentra_eval.db import Base, get_engine
@@ -36,6 +36,13 @@ ANSWER = {
     "sources": [{"aktenzeichen": "WD 3 - 3000 - 029/23", "title": "Redezeit"}],
     "system_prompt": "Du bist ein Assistent ...",
 }
+
+# How SENTRA actually declines: prose, not the literal refusal, which only
+# appears when retrieval returns nothing. Shortened from run 791750c2.
+HEDGE = (
+    "Die bereitgestellten Kontextauszüge enthalten keine Informationen dazu. "
+    "Daher kann ich auf Basis der bereitgestellten Informationen keine Antwort geben."
+)
 
 
 @pytest.fixture
@@ -673,3 +680,158 @@ class TestTheJudgeIsAskedOnlyWhenNeeded:
         ).scalar_one()
         assert verdict.ergebnis == judge_module.JUDGE_FEHLER
         assert verdict.auffaellig is True
+
+
+# ── 4.4 across the repeats of one case ──────────────────────────────
+
+
+class TestTheRefusalVerdictCoversEveryRepeat:
+    """#132. The judge is asked once per distinct answer, and every call that
+    produced that answer records what it said.
+
+    Judging only the first repeat did not leave the others unassessed. `None`
+    means "compare the literal string" to `checks.ablehnung`, so the other
+    repeats recorded a verdict reached by the rule #109 decided against:
+    identical text came out `korrekt abgelehnt` on one row and `nicht
+    abgelehnt` on the next, and an ordinary question SENTRA had hedged read as
+    clean on two rows out of three.
+    """
+
+    def _grenzfall(self, session):
+        case, version = case_store.create_case(
+            session,
+            kategorie=Kategorie.GO,
+            ausgangsfrage="Wie hoch ist die Mondtagegeldpauschale zum Mars?",
+            erwartete_antwort="Keine Antwort. Der Bestand enthält nichts dazu.",
+            grenzfall=True,
+        )
+        case_store.approve(session, version)
+        session.commit()
+        return case
+
+    def _hedging(self, text=HEDGE):
+        def handler(request: httpx.Request) -> httpx.Response:
+            if "documents" in str(request.url):
+                return httpx.Response(200, json={"documents": []})
+            return httpx.Response(200, json={**ANSWER, "text": text})
+
+        return handler
+
+    def _judge_says(self, monkeypatch, abgelehnt, *, counter=None):
+        from sentra_eval import judge as judge_module
+
+        def beurteile(text, *, frage):
+            if counter is not None:
+                counter.append(text)
+            return abgelehnt, "gestubbt"
+
+        monkeypatch.setattr(judge_module, "beurteile_ablehnung", beurteile)
+
+    def _ablehnung(self, session):
+        from sentra_eval.models import CheckResult
+
+        rows = session.execute(
+            select(CheckResult, Call)
+            .join(Call, CheckResult.call_id == Call.id)
+            .where(CheckResult.pruefung == "ablehnung")
+        ).all()
+        return sorted(
+            ((call.repeat_index, result) for result, call in rows), key=lambda pair: pair[0]
+        )
+
+    def test_identical_repeats_all_carry_the_judged_verdict(self, session, monkeypatch):
+        self._judge_says(monkeypatch, True)
+        self._grenzfall(session)
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+
+        runner.execute(run.id, _client(self._hedging()))
+
+        session.expire_all()
+        results = self._ablehnung(session)
+        assert len(results) == 3
+        for _repeat, result in results:
+            assert result.ergebnis == checks.KORREKT_ABGELEHNT
+            assert result.auffaellig is False
+            assert result.belege["beurteilt_durch"] == checks.DURCH_PRUEFMODELL
+
+    def test_and_cost_one_judge_call_between_them(self, session, monkeypatch):
+        """The saving the first-repeat-only gate was after, kept."""
+        asked: list[str] = []
+        self._judge_says(monkeypatch, True, counter=asked)
+        self._grenzfall(session)
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+
+        runner.execute(run.id, _client(self._hedging()))
+
+        assert len(asked) == 1, "judged the same answer text more than once"
+
+    def test_a_repeat_that_came_back_different_is_judged_on_its_own(self, session, monkeypatch):
+        """Where the texts differ the premise fails, and the differing repeat is
+        exactly the one worth putting to the judge rather than guessing at."""
+        asked: list[str] = []
+        self._judge_says(monkeypatch, True, counter=asked)
+        self._grenzfall(session)
+        run = runner.start_run(session, repeats=2)
+        session.commit()
+
+        seen = {"n": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if "documents" in str(request.url):
+                return httpx.Response(200, json={"documents": []})
+            seen["n"] += 1
+            return httpx.Response(200, json={**ANSWER, "text": f"{HEDGE} ({seen['n']})"})
+
+        runner.execute(run.id, _client(handler))
+
+        assert len(asked) == 2
+        session.expire_all()
+        for _repeat, result in self._ablehnung(session):
+            assert result.belege["beurteilt_durch"] == checks.DURCH_PRUEFMODELL
+
+    def test_a_hedged_ordinary_question_is_flagged_on_every_repeat(self, session, monkeypatch):
+        """The dangerous direction, and the reason #132 was not merely noise.
+
+        An ordinary question the corpus should cover, hedged rather than
+        answered, is a real finding. Recording it as clean on two rows out of
+        three is the quietest way this round could mislead.
+        """
+        self._judge_says(monkeypatch, True)
+        case, version = case_store.create_case(
+            session,
+            kategorie=Kategorie.GO,
+            ausgangsfrage="Wie lange darf ein Redner sprechen?",
+            erwartete_antwort="15 Minuten nach § 35 GOBT.",
+            referenz_korrekt="GOBT § 35",
+        )
+        case_store.approve(session, version)
+        session.commit()
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+
+        runner.execute(run.id, _client(self._hedging()))
+
+        session.expire_all()
+        results = self._ablehnung(session)
+        assert len(results) == 3
+        for _repeat, result in results:
+            assert result.ergebnis == checks.ABLEHNUNG_UNERWARTET
+            assert result.auffaellig is True
+
+    def test_without_a_judge_every_repeat_falls_back_the_same_way(self, session):
+        """The autouse fixture makes the judge unavailable. The fallback is the
+        literal comparison — conservative, and it has to be the same on every
+        row rather than judged on one and guessed on the rest."""
+        self._grenzfall(session)
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+
+        runner.execute(run.id, _client(self._hedging()))
+
+        session.expire_all()
+        results = self._ablehnung(session)
+        assert len(results) == 3
+        assert {r.belege["beurteilt_durch"] for _n, r in results} == {checks.DURCH_WORTLAUT}
+        assert {r.ergebnis for _n, r in results} == {checks.NICHT_ABGELEHNT}
