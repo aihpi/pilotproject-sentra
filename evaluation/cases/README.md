@@ -24,7 +24,7 @@ approved version can never be edited again; changing its content in the file
 adds a new draft version and leaves the approved one exactly as the round that
 used it measured against.
 
-Per `docs/Vorlage_Strukturierte_Testverfahren_KISZ.md`, a round is 15 to 25
+Per `references/Vorlage_Strukturierte_Testverfahren_KISZ.md`, a round is 15 to 25
 cases, at least five of them with a clear footnote or source reference, and the
 `referenz_falsch` field is what makes 4.3b a real check — without a plausible
 wrong source on the same topic there is nothing for the model to reach for.

@@ -273,7 +273,8 @@ Does not ship:
 
 ├── data/                 # Document corpus, not tracked. See data/README.md
 │   └── Ausarbeitungen/
-├── docs/                 # Design notes, and documents we received
+├── references/           # Design notes, and documents we received
+├── docs/                 # Generated documentation (Sphinx/MkDocs)
 ├── notebooks/            # Exploratory analysis, its own dependencies
 └── brand/                # HPI/AISC logos
 ```
@@ -312,10 +313,16 @@ broken dependency are distinguishable, which they were not in earlier versions.
 
 ## Design notes
 
-`docs/REFACTOR_NOTES.md` records what was refactored and why, including what
-is deliberately still open. `docs/EVAL_NOTES.md` and
-`docs/SOURCE_MANAGEMENT_NOTES.md` are designs for work not yet built: an
-evaluation harness and a mechanism for adding, editing and removing sources.
+These live in `references/`, alongside the documents we received. `docs/` is
+reserved for generated documentation and holds no hand-written notes.
+
+`references/REFACTOR_NOTES.md` records what was refactored and why, including
+what is deliberately still open. `references/EVAL_NOTES.md` describes the
+evaluation harness as built, with the design's reversals marked where the
+original was wrong. `references/SOURCE_MANAGEMENT_NOTES.md` is the design for
+adding, editing and removing sources, which is being built now.
+`references/SECURITY_NOTES.md` records what the prototype login does not cover
+and what has to change before SENTRA is used outside a pilot.
 
 ## Acknowledgements
 

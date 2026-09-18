@@ -207,4 +207,9 @@ data/*
 # Personal notes kept beside the design docs, deliberately not shared. Ignored
 # rather than merely untracked, because `git add -A` sweeps up untracked files
 # and has already committed this one once by accident.
-docs/To do.md
+references/To do.md
+
+# LibreOffice's lock file, written beside a document while it is open. One of
+# these was committed once, which is a slightly embarrassing way to announce
+# that you had the spreadsheet open.
+.~lock.*#

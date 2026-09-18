@@ -1,6 +1,6 @@
 """The evaluation harness.
 
-Implements the KISZ Testverfahren (docs/Vorlage_Strukturierte_Testverfahren_KISZ.md)
+Implements the KISZ Testverfahren (references/Vorlage_Strukturierte_Testverfahren_KISZ.md)
 as a module of SENTRA rather than a second service, while keeping it at arm's
 length from the system it measures:
 
