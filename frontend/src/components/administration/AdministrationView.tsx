@@ -9,6 +9,8 @@ import {
   updateCase,
   withdrawCase,
 } from "@/lib/evalApi";
+import { ResultsView } from "@/components/evaluation/ResultsView";
+import { RunPicker } from "@/components/evaluation/RunPicker";
 import { CaseForm } from "@/components/administration/CaseForm";
 import { CaseTable } from "@/components/administration/CaseTable";
 import { RoundControls } from "@/components/administration/RoundControls";
@@ -42,6 +44,13 @@ const EMPTY: CaseDraft = {
 export function AdministrationView() {
   const [cases, setCases] = useState<EvalCase[]>([]);
   const [runs, setRuns] = useState<EvalRun[]>([]);
+  // Whoever starts a round is usually the one who wants to see what it said,
+  // and making them change tabs to find out is the kind of small friction that
+  // ends with nobody looking. The same view as in Auswertung, deliberately —
+  // two renderings of one round is how two people come to quote different
+  // numbers from it.
+  const [tab, setTab] = useState<"testfaelle" | "ergebnisse">("testfaelle");
+  const [runId, setRunId] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -57,7 +66,10 @@ export function AdministrationView() {
   useEffect(() => {
     load();
     fetchRuns()
-      .then(setRuns)
+      .then((loaded) => {
+        setRuns(loaded);
+        setRunId((current) => current ?? loaded[0]?.id ?? null);
+      })
       .catch(() => {
         /* The case list is the point of this screen; a missing run list is not
            worth blanking it. */
@@ -110,8 +122,35 @@ export function AdministrationView() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-4 p-6">
-      <header>
-        <h2 className="text-lg font-semibold">Administration</h2>
+      <header className="space-y-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-lg font-semibold">Administration</h2>
+          {tab === "ergebnisse" && (
+            <RunPicker runs={runs} runId={runId} onSelect={setRunId} />
+          )}
+          <nav className="ml-auto flex gap-1" aria-label="Ansicht">
+            {(
+              [
+                ["testfaelle", "Testfälle"],
+                ["ergebnisse", "Ergebnisse"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setTab(key)}
+                aria-current={tab === key ? "page" : undefined}
+                className={
+                  tab === key
+                    ? "rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground"
+                    : "rounded-md px-3 py-1 text-xs text-muted-foreground hover:bg-muted"
+                }
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+        </div>
         <p className="text-xs text-muted-foreground">
           Testfälle anlegen, ändern, freigeben und zurückziehen — und Testrunden
           starten. Die Auswertung selbst ändert nichts daran.
@@ -130,62 +169,75 @@ export function AdministrationView() {
         </p>
       )}
 
-      {creating && (
-        <CaseForm
-          initial={EMPTY}
-          categories={["GO", "GV", "AR"]}
-          editingApproved={false}
-          submitting={busy}
-          onCancel={() => setCreating(false)}
-          onSubmit={(draft) => void act(() => createCase(draft))}
-        />
-      )}
+      {tab === "ergebnisse" &&
+        (runId ? (
+          <ResultsView key={runId} runId={runId} />
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Noch keine Testrunde gelaufen. Oben eine starten.
+          </p>
+        ))}
 
-      {open && latest && (
-        <CaseForm
-          key={open.test_id}
-          initial={{
-            kategorie: open.kategorie,
-            ausgangsfrage: latest.ausgangsfrage,
-            abteilung: latest.abteilung,
-            erwartete_antwort: latest.erwartete_antwort,
-            referenz_korrekt: latest.referenz_korrekt,
-            referenz_falsch: latest.referenz_falsch,
-            referenz_korrekt_az: latest.referenz_korrekt_az,
-            referenz_falsch_az: latest.referenz_falsch_az,
-            grund_fuer_aufnahme: latest.grund_fuer_aufnahme,
-            grenzfall: latest.grenzfall,
-          }}
-          categories={["GO", "GV", "AR"]}
-          editingApproved={latest.status === "freigegeben"}
-          submitting={busy}
-          onCancel={() => setEditing(null)}
-          onSubmit={(draft) => {
-            // Never the category: it is baked into the Test-ID, which is
-            // allocated once and never reused, so changing it would leave the
-            // number saying one thing and the case another. PATCH has no
-            // kategorie field for exactly that reason.
-            const { kategorie, ...fields } = draft;
-            void kategorie;
-            void act(() => updateCase(open.test_id, fields));
-          }}
-        />
-      )}
+      {tab === "testfaelle" && (
+        <>
+          {creating && (
+            <CaseForm
+              initial={EMPTY}
+              categories={["GO", "GV", "AR"]}
+              editingApproved={false}
+              submitting={busy}
+              onCancel={() => setCreating(false)}
+              onSubmit={(draft) => void act(() => createCase(draft))}
+            />
+          )}
 
-      <CaseTable
-        cases={cases}
-        busy={busy}
-        onCreate={() => {
-          setCreating(true);
-          setEditing(null);
-        }}
-        onEdit={(testId) => {
-          setEditing(testId);
-          setCreating(false);
-        }}
-        onApprove={(testId) => void act(() => approveCase(testId))}
-        onWithdraw={(testId) => void act(() => withdrawCase(testId))}
-      />
+          {open && latest && (
+            <CaseForm
+              key={open.test_id}
+              initial={{
+                kategorie: open.kategorie,
+                ausgangsfrage: latest.ausgangsfrage,
+                abteilung: latest.abteilung,
+                erwartete_antwort: latest.erwartete_antwort,
+                referenz_korrekt: latest.referenz_korrekt,
+                referenz_falsch: latest.referenz_falsch,
+                referenz_korrekt_az: latest.referenz_korrekt_az,
+                referenz_falsch_az: latest.referenz_falsch_az,
+                grund_fuer_aufnahme: latest.grund_fuer_aufnahme,
+                grenzfall: latest.grenzfall,
+              }}
+              categories={["GO", "GV", "AR"]}
+              editingApproved={latest.status === "freigegeben"}
+              submitting={busy}
+              onCancel={() => setEditing(null)}
+              onSubmit={(draft) => {
+                // Never the category: it is baked into the Test-ID, which is
+                // allocated once and never reused, so changing it would leave the
+                // number saying one thing and the case another. PATCH has no
+                // kategorie field for exactly that reason.
+                const { kategorie, ...fields } = draft;
+                void kategorie;
+                void act(() => updateCase(open.test_id, fields));
+              }}
+            />
+          )}
+
+          <CaseTable
+            cases={cases}
+            busy={busy}
+            onCreate={() => {
+              setCreating(true);
+              setEditing(null);
+            }}
+            onEdit={(testId) => {
+              setEditing(testId);
+              setCreating(false);
+            }}
+            onApprove={(testId) => void act(() => approveCase(testId))}
+            onWithdraw={(testId) => void act(() => withdrawCase(testId))}
+          />
+        </>
+      )}
     </div>
   );
 }

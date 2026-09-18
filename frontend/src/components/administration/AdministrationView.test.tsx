@@ -79,15 +79,63 @@ vi.mock("@/lib/evalApi", () => ({
   updateCase: (...a: unknown[]) => updateCase(...a),
   approveCase: (...a: unknown[]) => approveCase(...a),
   withdrawCase: (...a: unknown[]) => withdrawCase(...a),
-  fetchRuns: () => Promise.resolve([]),
-  fetchRun: () => Promise.resolve({}),
+  fetchRuns: () => Promise.resolve([RUN]),
+  fetchRun: () => Promise.resolve(RUN),
   importSheet: () => Promise.resolve({}),
   startRun: () => Promise.resolve({}),
+  fetchTriage: () =>
+    Promise.resolve({
+      gesamt: 2,
+      stufe_2: 1,
+      stufe_3: 0,
+      grenzfaelle: 1,
+      unauffaellig: 0,
+    }),
+  fetchAgreement: () =>
+    Promise.resolve({
+      einig: 1,
+      zu_streng: 0,
+      zu_grosszuegig: 0,
+      nicht_bewertet: 1,
+      abweichungsquote: 0,
+    }),
+  fetchSheets: () => Promise.resolve([]),
+  fetchKisz: () => Promise.resolve([]),
+  fetchTrend: () =>
+    Promise.resolve({
+      runden: 1,
+      faelle: 2,
+      nach_kategorie: {},
+      schweregrade: {},
+      kisz_meldungen: 0,
+      haeufigste_befunde: {},
+      abweichung: {
+        einig: 1,
+        zu_streng: 0,
+        zu_grosszuegig: 0,
+        nicht_bewertet: 1,
+        abweichungsquote: 0,
+      },
+    }),
 }));
 
-const { AdministrationView } = await import(
-  "@/components/administration/AdministrationView"
-);
+const RUN = {
+  id: "run-1",
+  label: "Runde September",
+  status: "abgeschlossen",
+  sentra_base_url: "http://sentra",
+  repeats: 3,
+  started_at: "2026-09-18T10:00:00Z",
+  completed_at: "2026-09-18T11:00:00Z",
+  fehler: "",
+  total: 8,
+  done: 8,
+  failed: 0,
+  audit_ok: true,
+};
+
+const { AdministrationView } =
+  await import("@/components/administration/AdministrationView");
 
 async function renderWith(cases: EvalCase[]) {
   fetchCases.mockResolvedValue(cases);
@@ -96,7 +144,9 @@ async function renderWith(cases: EvalCase[]) {
 }
 
 beforeEach(() => {
-  [fetchCases, createCase, updateCase, approveCase, withdrawCase].forEach((m) => m.mockReset());
+  [fetchCases, createCase, updateCase, approveCase, withdrawCase].forEach((m) =>
+    m.mockReset(),
+  );
   createCase.mockResolvedValue(APPROVED);
   updateCase.mockResolvedValue(APPROVED);
   approveCase.mockResolvedValue(APPROVED);
@@ -115,14 +165,18 @@ describe("the case list", () => {
   it("offers approval only where there is a draft to approve", async () => {
     await renderWith([APPROVED, DRAFT]);
 
-    expect(screen.getAllByRole("button", { name: "Freigeben" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Freigeben" })).toHaveLength(
+      1,
+    );
   });
 
   it("offers nothing on a withdrawn case", async () => {
     await renderWith([WITHDRAWN]);
 
     expect(screen.getByText("zurückgezogen")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Zurückziehen/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Zurückziehen/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("says that withdrawing is not deleting", async () => {
@@ -142,7 +196,9 @@ describe("editing an approved case", () => {
   it("is offered as a new version, not as an edit", async () => {
     await renderWith([APPROVED]);
 
-    expect(screen.getByRole("button", { name: "Neue Version" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Neue Version" }),
+    ).toBeInTheDocument();
   });
 
   it("says why, before anything is typed", async () => {
@@ -150,14 +206,18 @@ describe("editing an approved case", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Neue Version" }));
 
-    expect(screen.getByText(/abgeschlossene Runden gegen sie gemessen/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/abgeschlossene Runden gegen sie gemessen/),
+    ).toBeInTheDocument();
   });
 
   it("does not send the category, which the Test-ID is built from", async () => {
     await renderWith([APPROVED]);
     await userEvent.click(screen.getByRole("button", { name: "Neue Version" }));
 
-    await userEvent.click(screen.getByRole("button", { name: "Neue Version anlegen" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Neue Version anlegen" }),
+    );
 
     await waitFor(() => expect(updateCase).toHaveBeenCalled());
     expect(updateCase.mock.calls[0][1]).not.toHaveProperty("kategorie");
@@ -167,10 +227,15 @@ describe("editing an approved case", () => {
 describe("what a case cannot be saved without", () => {
   it("refuses an ordinary case with no correct source", async () => {
     await renderWith([]);
-    await userEvent.click(screen.getByRole("button", { name: "Neuer Testfall" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Neuer Testfall" }),
+    );
 
     await userEvent.type(screen.getByLabelText("Ausgangsfrage"), "Eine Frage?");
-    await userEvent.type(screen.getByLabelText("Erwartete Antwort"), "Eine Antwort.");
+    await userEvent.type(
+      screen.getByLabelText("Erwartete Antwort"),
+      "Eine Antwort.",
+    );
 
     expect(screen.getByText(/außer bei einem Grenzfall/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
@@ -180,19 +245,28 @@ describe("what a case cannot be saved without", () => {
     /** #130 from the other end: demanding one made technique 4.4 unreachable,
      *  because a question the corpus does not cover has no correct source. */
     await renderWith([]);
-    await userEvent.click(screen.getByRole("button", { name: "Neuer Testfall" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Neuer Testfall" }),
+    );
 
     await userEvent.type(screen.getByLabelText("Ausgangsfrage"), "Mars?");
-    await userEvent.type(screen.getByLabelText("Erwartete Antwort"), "Keine Antwort.");
+    await userEvent.type(
+      screen.getByLabelText("Erwartete Antwort"),
+      "Keine Antwort.",
+    );
     await userEvent.click(screen.getByLabelText(/Grenzfall/));
 
-    expect(screen.queryByText(/außer bei einem Grenzfall/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/außer bei einem Grenzfall/),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Speichern" })).toBeEnabled();
   });
 
   it("always requires an expected answer", async () => {
     await renderWith([]);
-    await userEvent.click(screen.getByRole("button", { name: "Neuer Testfall" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Neuer Testfall" }),
+    );
 
     await userEvent.type(screen.getByLabelText("Ausgangsfrage"), "Eine Frage?");
     await userEvent.click(screen.getByLabelText(/Grenzfall/));
@@ -205,12 +279,51 @@ describe("what a case cannot be saved without", () => {
 describe("failures", () => {
   it("shows the server's reason for refusing approval", async () => {
     approveCase.mockRejectedValue(
-      new Error("TF-AR-001 version 1 cannot be approved: erwartete Antwort is missing."),
+      new Error(
+        "TF-AR-001 version 1 cannot be approved: erwartete Antwort is missing.",
+      ),
     );
     await renderWith([DRAFT]);
 
     await userEvent.click(screen.getByRole("button", { name: "Freigeben" }));
 
     expect(await screen.findByText(/cannot be approved/)).toBeInTheDocument();
+  });
+});
+
+describe("the results are reachable from here too", () => {
+  it("shows them without changing tabs", async () => {
+    /** Whoever starts a round is usually the one who wants to see what it
+     *  said. Making them go elsewhere to find out is the kind of small
+     *  friction that ends with nobody looking. */
+    await renderWith([APPROVED]);
+
+    await userEvent.click(screen.getByRole("button", { name: "Ergebnisse" }));
+
+    expect(await screen.findByText(/Abweichung Stufe 1/)).toBeInTheDocument();
+  });
+
+  it("is the same rendering as Auswertung, not a second one", async () => {
+    /** Two renderings of one round is how two people come to quote different
+     *  numbers from it. Asserted on the disagreement rate, which is the number
+     *  that would matter if they diverged. */
+    await renderWith([APPROVED]);
+
+    await userEvent.click(screen.getByRole("button", { name: "Ergebnisse" }));
+
+    expect(
+      await screen.findByLabelText("Abweichungsquote 0 Prozent"),
+    ).toBeInTheDocument();
+  });
+
+  it("offers the case list again when switched back", async () => {
+    await renderWith([APPROVED]);
+    await userEvent.click(screen.getByRole("button", { name: "Ergebnisse" }));
+
+    await userEvent.click(screen.getByRole("button", { name: "Testfälle" }));
+
+    expect(
+      screen.getByRole("button", { name: "Neuer Testfall" }),
+    ).toBeInTheDocument();
   });
 });
