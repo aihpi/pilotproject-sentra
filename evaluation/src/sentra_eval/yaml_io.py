@@ -116,6 +116,17 @@ def parse(text: str) -> list[CaseEntry]:
             f"Found {type(raw).__name__}."
         )
 
+    return validate(raw)
+
+
+def validate(raw: list[Any]) -> list[CaseEntry]:
+    """The same validation, from records rather than from YAML text.
+
+    Separate so the Excel collection sheet reaches the identical checks and the
+    identical error shape — a case that would be rejected from a file has to be
+    rejected from a spreadsheet, for the same stated reason, or the two
+    on-ramps disagree about what a valid case is.
+    """
     entries: list[CaseEntry] = []
     problems: list[str] = []
     for index, item in enumerate(raw):

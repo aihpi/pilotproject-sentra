@@ -86,8 +86,14 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "evaluation/uv.lock"
 
+      # --extra vorlagen, but not --all-extras. openpyxl and python-docx are two
+      # small pure-Python packages and they carry the collection templates, so
+      # the test that holds the spreadsheet's columns against the importer's
+      # fields has to run here — a sheet that has drifted is discovered by
+      # somebody who already filled in two hundred rows. ragas stays out: 97
+      # packages for roughly one of six checks.
       - name: Install the project and its dev dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --extra vorlagen
 
       # Its own job rather than a step in the backend one, because it is its
       # own distribution with its own lockfile and depends on nothing of
