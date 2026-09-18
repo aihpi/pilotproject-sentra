@@ -56,15 +56,28 @@ All three held.
 | `_complete` discards `finish_reason` | **fixed** (#91). Truncation is its own check |
 | point ids, no delete before upsert | **fixed** (#83). Existing indexes still hold their orphans; a repair pass is a separate decision |
 
-## 4.3a is still blocked
+## 4.3a is blocked, and the way out is now decided
 
 `format_context()` gives the model exactly `[Quelle: <AZ>, Abschnitt: <section_title>]`
 plus chunk text. No page, no paragraph, no offset. Docling knows the page, the
-chunker discards it. The model **cannot** cite finer than a section.
+chunker discards it — `parse_pdfs` exports to Markdown and the export does not
+carry provenance. The model **cannot** cite finer than a section.
 
-Marker alignment is as far as automation reaches. Whether WD accepts
-section-level verification, or wants provenance through the chunker and a full
-re-ingest, is still undecided.
+**WD expects finer than section level** (2026-09-18). So the question the draft
+left open — section-level verification, or provenance through the chunker and a
+full re-ingest — is answered with the expensive option. That is #134.
+
+Marker alignment remains as far as automation reaches *until* that lands. It is
+not a substitute: it checks that the markers in the answer line up with the
+sources returned, not that the cited passage says what the answer claims, which
+is what 4.3a asks. A section can run for four pages, and a reviewer given "look
+in section 2.1" cannot do 4.3a by hand either.
+
+What that means for the harness is small — a check comparing a cited page
+against the page a claim was drawn from — and what it means for ingestion is
+not: chunking has to move from splitting a Markdown string to walking the
+document's items, and every existing point has to be re-ingested, because a
+page number cannot be added to a payload that was never given one.
 
 ## Cases
 
@@ -182,13 +195,18 @@ read-only right, one assessment sheet below.
    processes still have to agree on a name
 4. ~~`GET /api/prompts`~~ **done as `GET /api/config` (#37)**
 5. delete-by-document before upsert — **landed** (#83)
-6. page provenance through the chunker — **not done**, and blocks 4.3a
+6. page provenance through the chunker — **not done**, and blocks 4.3a. Now
+   scoped as #134, since WD expects finer than section level
 7. wire up `/api/feedback` → "Testfall aus Feedback erstellen" — **landed**
    (#121)
 
 ## Open
 
-- **section vs page citations** → blocks 4.3a. Needs WD.
+- ~~**section vs page citations**~~ **decided** (2026-09-18): WD expects finer
+  than section level, so page provenance has to be carried through ingestion
+  and the corpus re-ingested. #134. 4.3a stays unimplemented until it lands;
+  whether WD means page or paragraph is worth confirming before the re-ingest
+  rather than after, since paragraph is not something Docling gives for free.
 - **auth**: still none. `Tester/in` and `Varianten freigegeben durch` are typed
   names, required so a finding has an owner, but unverified.
 - **the Aktenzeichen on every case** has to be looked up by hand. Deliberately
