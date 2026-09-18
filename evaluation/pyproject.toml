@@ -94,7 +94,7 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "integration: requires Postgres, and for some a running SENTRA",
+    "integration: requires Postgres, and for some a judge model or a running SENTRA",
 ]
 
 [build-system]

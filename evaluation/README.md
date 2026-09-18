@@ -71,5 +71,7 @@ is reported under its own name and never as 4.3c.
 
 ```bash
 uv run pytest -m "not integration"   # no services needed
-uv run pytest -m integration         # needs Postgres
+uv run pytest -m integration         # needs Postgres; four tests also need a
+                                     # judge, and skip with instructions
+                                     # when JUDGE_* is not configured
 ```
