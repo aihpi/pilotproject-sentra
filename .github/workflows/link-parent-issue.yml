@@ -1,0 +1,92 @@
+# Turn the "Parent feature" field of a Task into a real sub-issue link.
+#
+# The task template asks for the parent and the answer lands in the body as
+# text. That is all an issue form can do — there is no template key for the
+# sub-issue relationship, so the hierarchy on the board stayed empty while the
+# issue itself said who its parent was. Somebody then had to drag it into place,
+# and mostly nobody did.
+#
+# This closes that gap, and only that gap. Type, labels and assignee are set by
+# the template, where they are visible next to the fields they describe.
+
+name: Link a task to its parent feature
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  # addSubIssue writes to both issues.
+  issues: write
+  contents: read
+
+jobs:
+  link:
+    name: Link to parent
+    runs-on: ubuntu-latest
+    # Only tasks have a parent. Guarding here rather than inside keeps a bug or
+    # a feature from spending a runner on nothing.
+    if: contains(github.event.issue.labels.*.name, 'task')
+
+    steps:
+      - name: Find the parent in the body
+        id: parent
+        env:
+          BODY: ${{ github.event.issue.body }}
+        run: |
+          # The first #123 under the "Parent feature" heading. Reading the whole
+          # body would find issue references in prose — "the same shape as #130"
+          # is a sentence, not a parent.
+          number="$(printf '%s' "$BODY" \
+            | sed -n '/^###* *Parent feature/,/^###/p' \
+            | grep -oE '#[0-9]+' | head -1 | tr -d '#')"
+
+          if [ -z "$number" ]; then
+            echo "No parent feature given; nothing to link."
+            echo "found=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Parent is #$number"
+            echo "found=$number" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Link it
+        if: steps.parent.outputs.found != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHILD: ${{ github.event.issue.number }}
+          PARENT: ${{ steps.parent.outputs.found }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          owner="${REPO%%/*}"
+          name="${REPO##*/}"
+
+          ids() {
+            gh api graphql \
+              -f owner="$owner" -f name="$name" -F number="$1" \
+              -f query='query($owner:String!,$name:String!,$number:Int!){
+                repository(owner:$owner,name:$name){ issue(number:$number){ id } }
+              }' --jq '.data.repository.issue.id'
+          }
+
+          parent_id="$(ids "$PARENT")"
+          child_id="$(ids "$CHILD")"
+
+          # Idempotent on purpose: this also runs on `edited`, so correcting a
+          # typo in the parent number re-runs it, and an unchanged parent must
+          # not then fail the workflow. GitHub rejects a duplicate link, which
+          # is the expected outcome rather than an error.
+          if gh api graphql \
+            -f parent="$parent_id" -f child="$child_id" \
+            -f query='mutation($parent:ID!,$child:ID!){
+              addSubIssue(input:{issueId:$parent, subIssueId:$child}){
+                subIssue { number }
+              }
+            }' >/tmp/result 2>/tmp/error; then
+            echo "Linked #$CHILD under #$PARENT"
+          elif grep -qiE 'already|duplicate' /tmp/error; then
+            echo "#$CHILD is already a sub-issue of #$PARENT"
+          else
+            cat /tmp/error >&2
+            exit 1
+          fi

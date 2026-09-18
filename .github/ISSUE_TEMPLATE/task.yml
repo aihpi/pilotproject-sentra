@@ -1,6 +1,11 @@
 name: Task
 description: One unit of work belonging to a feature
+# `task` had to be created before this line did anything. GitHub ignores a
+# label that does not exist rather than reporting it, so every Task issue
+# came out unlabelled and this template looked like it was working.
 labels: ["task"]
+type: Task
+assignees: ["mt0rm0"]
 body:
   - type: markdown
     attributes:
