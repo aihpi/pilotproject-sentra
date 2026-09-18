@@ -1,5 +1,7 @@
 import type {
   Agreement,
+  CaseDraft,
+  EvalCase,
   EvalRun,
   ImportReport,
   MachineVerdicts,
@@ -175,5 +177,60 @@ export function fetchRun(runId: string): Promise<EvalRun> {
   return request(`/eval/runs/${runId}`, {
     label: "Der Stand der Testrunde konnte nicht geladen werden",
     statusMessages: { 502: NOT_RUNNING, 503: NOT_RUNNING },
+  });
+}
+
+// ── Administration of the test set ──────────────────────────────────
+//
+// Separate from everything above, and on a separate screen, because they are
+// different jobs. Nothing a reviewer can reach while working a queue may
+// change the case they are judging — the audit argument rests on the expected
+// answer having been fixed before the answer was produced.
+
+export function fetchCases(includeWithdrawn = false): Promise<EvalCase[]> {
+  return request(`/eval/cases?include_withdrawn=${includeWithdrawn}`, {
+    label: "Testfälle konnten nicht geladen werden",
+    statusMessages: { 502: NOT_RUNNING, 503: NOT_RUNNING },
+  });
+}
+
+export function createCase(body: CaseDraft): Promise<EvalCase> {
+  return request("/eval/cases", {
+    method: "POST",
+    body,
+    label: "Der Testfall konnte nicht angelegt werden",
+    statusMessages: { 502: NOT_RUNNING },
+  });
+}
+
+/** Change the latest version — or add one, if it is already approved.
+ *
+ *  Which of the two happens is the harness's decision, not the caller's: an
+ *  approved version is what a round was measured against, so it is never
+ *  edited. Asking to change one is asking for a new draft. */
+export function updateCase(testId: string, body: Partial<CaseDraft>): Promise<EvalCase> {
+  return request(`/eval/cases/${testId}`, {
+    method: "PATCH",
+    body,
+    label: "Der Testfall konnte nicht geändert werden",
+    statusMessages: { 502: NOT_RUNNING },
+  });
+}
+
+export function approveCase(testId: string): Promise<EvalCase> {
+  return request(`/eval/cases/${testId}/freigeben`, {
+    method: "POST",
+    label: "Der Testfall konnte nicht freigegeben werden",
+    statusMessages: { 502: NOT_RUNNING },
+  });
+}
+
+/** Take a case out of future rounds. Not a deletion: the Test-ID stays spent
+ *  and is never reused, "auch bei zurückgezogenen Testfällen nicht". */
+export function withdrawCase(testId: string): Promise<EvalCase> {
+  return request(`/eval/cases/${testId}/zurueckziehen`, {
+    method: "POST",
+    label: "Der Testfall konnte nicht zurückgezogen werden",
+    statusMessages: { 502: NOT_RUNNING },
   });
 }

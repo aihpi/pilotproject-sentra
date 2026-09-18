@@ -181,6 +181,57 @@ export interface Verdict extends SubmitVerdict {
   created_at: string;
 }
 
+/** One version of a test case's content. Immutable once approved.
+ *
+ *  German field names, matching the harness's tables and the Vorlage's
+ *  documentation sheet — a sheet is what gets filed, and translating the
+ *  vocabulary twice is how the two drift apart. */
+export interface CaseVersion {
+  version: number;
+  /** entwurf | freigegeben */
+  status: string;
+  ausgangsfrage: string;
+  abteilung: string;
+  erwartete_antwort: string;
+  referenz_korrekt: string;
+  referenz_falsch: string;
+  referenz_korrekt_az: string;
+  referenz_falsch_az: string;
+  grund_fuer_aufnahme: string;
+  grenzfall: boolean;
+  created_at: string;
+  freigegeben_at: string | null;
+}
+
+/** A test case and every version of it.
+ *
+ *  `versions` is ordered, oldest first. The last one is what a new round would
+ *  use if it is approved — `latest_approved`, not `latest`. */
+export interface EvalCase {
+  test_id: string;
+  kategorie: string;
+  created_at: string;
+  zurueckgezogen_at: string | null;
+  versions: CaseVersion[];
+}
+
+/** The content of a case, as it is written or changed.
+ *
+ *  No `test_id`: the backend allocates it and never reuses it. No `status`
+ *  either — approval is its own act with its own timestamp. */
+export interface CaseDraft {
+  kategorie: string;
+  ausgangsfrage: string;
+  abteilung: string;
+  erwartete_antwort: string;
+  referenz_korrekt: string;
+  referenz_falsch: string;
+  referenz_korrekt_az: string;
+  referenz_falsch_az: string;
+  grund_fuer_aufnahme: string;
+  grenzfall: boolean;
+}
+
 /** What an uploaded collection sheet did, by Test-ID.
  *
  *  Test-IDs rather than counts: "3 angelegt" leaves the author wondering which

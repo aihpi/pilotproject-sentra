@@ -21,7 +21,6 @@ import { MachineVerdictPane } from "@/components/evaluation/MachineVerdictPane";
 import { PdfPane } from "@/components/evaluation/PdfPane";
 import { QueueList } from "@/components/evaluation/QueueList";
 import { ResultsView } from "@/components/evaluation/ResultsView";
-import { RoundControls } from "@/components/evaluation/RoundControls";
 import { VerdictForm } from "@/components/evaluation/VerdictForm";
 
 /** Stufe 2: working a round's queue.
@@ -203,16 +202,6 @@ export function EvaluationView() {
           ))}
         </nav>
       </header>
-
-      <RoundControls
-        running={active}
-        onStarted={(run) => {
-          setRuns((current) => [run, ...current]);
-          setRunId(run.id);
-          setTab("pruefen");
-        }}
-        onImported={() => runId && loadQueue(runId)}
-      />
 
       {tab === "ergebnisse" &&
         (runId ? (
