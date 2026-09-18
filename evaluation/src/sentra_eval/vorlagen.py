@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 from sentra_eval.categories import KATEGORIE_NAMEN, Kategorie
 
@@ -466,8 +466,13 @@ def _add_control(document: Any, feld: Feld) -> None:
 # ── Reading a filled sheet back ─────────────────────────────────────
 
 
-def read_workbook(path: Path) -> list[dict[str, Any]]:
-    """A filled sheet as case entries, ready for `yaml_io.parse`.
+def read_workbook(source: Path | IO[bytes], *, name: str = "") -> list[dict[str, Any]]:
+    """A filled sheet as case entries, ready for `yaml_io.validate`.
+
+    Takes a path or an open stream. The stream is what the upload endpoint
+    hands it — the bytes arrive in a request body and never become a file — and
+    `name` is then what the error messages call it, since there is no path to
+    quote back.
 
     Matches columns by their header rather than by position, so a sheet that
     somebody reordered or added a working column to still reads. A header we do
@@ -482,7 +487,8 @@ def read_workbook(path: Path) -> list[dict[str, Any]]:
     _require_openpyxl()
     from openpyxl import load_workbook
 
-    workbook = load_workbook(path, data_only=True)
+    label = name or (source.name if isinstance(source, Path) else "Die Datei")
+    workbook = load_workbook(source, data_only=True)
     sheet = workbook["Testfälle"] if "Testfälle" in workbook.sheetnames else workbook.worksheets[0]
 
     header = [_norm(cell.value) for cell in sheet[1]]
@@ -496,7 +502,7 @@ def read_workbook(path: Path) -> list[dict[str, Any]]:
     fehlend = [f.label for f in FIELDS if f.pflicht and f not in columns.values()]
     if fehlend:
         raise VorlageError(
-            f"{path}: die Pflichtspalte(n) {', '.join(fehlend)} fehlen. "
+            f"{label}: die Pflichtspalte(n) {', '.join(fehlend)} fehlen. "
             "Wurde die Kopfzeile verändert?"
         )
 
@@ -519,22 +525,22 @@ def read_workbook(path: Path) -> list[dict[str, Any]]:
         # decides the other.
         entry["status"] = "entwurf"
 
-        _check_required(entry, row_number, path)
+        _check_required(entry, row_number, label)
         entries.append(entry)
 
     return entries
 
 
-def _check_required(entry: dict[str, Any], row_number: int, path: Path) -> None:
+def _check_required(entry: dict[str, Any], row_number: int, label: str) -> None:
     for feld in FIELDS:
         if feld.pflicht and not str(entry.get(feld.name, "")).strip():
-            raise VorlageError(f"{path} Zeile {row_number}: {feld.label} fehlt.")
+            raise VorlageError(f"{label}, Zeile {row_number}: {feld.label} fehlt.")
 
     kategorie = entry["kategorie"]
     erlaubt = {k.value for k in Kategorie}
     if kategorie not in erlaubt:
         raise VorlageError(
-            f"{path} Zeile {row_number}: Kategorie „{kategorie}“ ist unbekannt. "
+            f"{label}, Zeile {row_number}: Kategorie „{kategorie}“ ist unbekannt. "
             f"Erlaubt: {', '.join(sorted(erlaubt))}."
         )
 
@@ -542,7 +548,7 @@ def _check_required(entry: dict[str, Any], row_number: int, path: Path) -> None:
     # found while the sheet is open rather than at import time.
     if not entry["grenzfall"] and not str(entry["referenz_korrekt"]).strip():
         raise VorlageError(
-            f"{path} Zeile {row_number}: Ohne „{_label('referenz_korrekt')}“ kann der "
+            f"{label}, Zeile {row_number}: Ohne „{_label('referenz_korrekt')}“ kann der "
             "Testfall später nicht freigegeben werden. Bei einer Frage, die der Bestand "
             "bewusst nicht abdeckt, bitte Grenzfall auf „ja“ setzen."
         )

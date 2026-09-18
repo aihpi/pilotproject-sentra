@@ -8,15 +8,16 @@ ended up importing from the API layer.
 """
 
 import logging
+from io import BytesIO
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from sentra_eval import cases as case_store
 from sentra_eval import feedback as feedback_store
-from sentra_eval import models, triage
+from sentra_eval import models, triage, vorlagen, yaml_io
 from sentra_eval import report as report_store
 from sentra_eval import review as review_store
 from sentra_eval import runner as run_store
@@ -49,6 +50,7 @@ from sentra_eval.schemas import (
     EditVariantRequest,
     EvalHealthResponse,
     FeedbackEntryResponse,
+    ImportResponse,
     MachineVerdictsResponse,
     QueueCall,
     QueueEntryResponse,
@@ -178,6 +180,73 @@ def create_case(body: CreateCaseRequest) -> CaseResponse:
             grenzfall=body.grenzfall,
         )
         return _as_response(case)
+
+
+# An upload is capped rather than trusted. The sheet handed out has room for
+# 300 rows and weighs about 19 KB; anything approaching this is not that file,
+# and reading it into memory to find out is how a single request takes the
+# harness down.
+MAX_SHEET_BYTES = 5 * 1024 * 1024
+
+
+@router.post("/faelle/import", response_model=ImportResponse)
+async def import_sheet(request: Request) -> ImportResponse:
+    """A filled collection sheet, as drafts.
+
+    cli.py calls the case import "something an operator runs against a
+    deployment, not something a browser posts", and then says "before there is
+    a UI to write them in". This is that UI, and the boundary that makes it
+    safe is narrower than the CLI's:
+
+    **only the spreadsheet format, and it can only ever create drafts.** The
+    reader forces `status: entwurf` regardless of what the sheet says, so an
+    upload cannot approve anything and therefore cannot change what any round
+    measures against. A YAML file *can* approve its own cases, which is why
+    YAML import stays with the CLI — there the pull request is the review.
+
+    Raw bytes rather than multipart: FastAPI needs python-multipart for file
+    uploads, a `File` is already a `Blob`, and the browser will send it as-is.
+    One dependency fewer in the image for one endpoint.
+    """
+    raw = await request.body()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Es wurde keine Datei übertragen.")
+    if len(raw) > MAX_SHEET_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Die Datei ist größer als {MAX_SHEET_BYTES // (1024 * 1024)} MB. "
+                "Das ist vermutlich nicht die Erfassungsvorlage."
+            ),
+        )
+
+    try:
+        records = vorlagen.read_workbook(BytesIO(raw), name="Die hochgeladene Datei")
+        entries = yaml_io.validate(records)
+    except vorlagen.VorlageError as exc:
+        # The reader's message already names the row the way Excel numbers it,
+        # which is the only version of this error worth showing anybody.
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except yaml_io.CaseFileError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - openpyxl raises broadly on junk
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Die Datei konnte nicht als Excel-Arbeitsmappe gelesen werden. "
+                "Bitte die Vorlage SENTRA-Testfaelle-Erfassung.xlsx verwenden."
+            ),
+        ) from exc
+
+    with session_scope() as session:
+        report = yaml_io.apply(session, entries)
+
+    return ImportResponse(
+        angelegt=report.created,
+        aktualisiert=report.updated,
+        unveraendert=report.unchanged,
+        freigegeben=report.approved,
+    )
 
 
 @router.get("/cases/{test_id}", response_model=CaseResponse)

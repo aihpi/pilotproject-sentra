@@ -33,6 +33,12 @@ interface RequestOptions {
   method?: "GET" | "POST";
   /** Sent as JSON. Its presence is what adds the Content-Type header. */
   body?: unknown;
+  /** Sent as-is, for an endpoint that takes bytes rather than JSON — the
+   *  collection-sheet upload, which posts the File straight through. Here
+   *  rather than as its own fetch so that everything below, especially the
+   *  server's own reason for refusing, is shared: an upload refused because
+   *  row 4 has no expected answer must say that, not "(HTTP 422)". */
+  raw?: Blob;
   /** Statuses this client understands better than the server does, so its
    *  wording wins. Only the ingest 409 so far. */
   statusMessages?: Record<number, string>;
@@ -47,18 +53,22 @@ interface RequestOptions {
  *  same origin and the same error handling — including the 503 wording, which
  *  both services produce in the same shape. */
 export async function request<T>(path: string, options: RequestOptions): Promise<T> {
-  const { label, method = "GET", body, statusMessages } = options;
+  const { label, method = "GET", body, raw, statusMessages } = options;
 
   let response: Response;
   try {
     response = await fetch(`${API_BASE}${path}`, {
       method,
-      ...(body === undefined
-        ? {}
-        : {
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          }),
+      // No Content-Type for the raw case: the browser sets it from the Blob,
+      // and the endpoint reads the body as bytes either way.
+      ...(raw !== undefined
+        ? { body: raw }
+        : body === undefined
+          ? {}
+          : {
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            }),
     });
   } catch {
     // fetch only rejects when the request never completed at all: offline,

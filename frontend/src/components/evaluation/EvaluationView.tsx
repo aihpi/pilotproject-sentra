@@ -10,6 +10,7 @@ import type {
 import {
   fetchMachineVerdicts,
   fetchQueue,
+  fetchRun,
   fetchRuns,
   fetchVorlageOptions,
   submitVerdict,
@@ -20,6 +21,7 @@ import { MachineVerdictPane } from "@/components/evaluation/MachineVerdictPane";
 import { PdfPane } from "@/components/evaluation/PdfPane";
 import { QueueList } from "@/components/evaluation/QueueList";
 import { ResultsView } from "@/components/evaluation/ResultsView";
+import { RoundControls } from "@/components/evaluation/RoundControls";
 import { VerdictForm } from "@/components/evaluation/VerdictForm";
 
 /** Stufe 2: working a round's queue.
@@ -80,6 +82,31 @@ export function EvaluationView() {
   useEffect(() => {
     if (runId) loadQueue(runId);
   }, [runId, loadQueue]);
+
+  // A round is roughly 180 calls at 20 to 29 seconds each, so the screen has
+  // to move on its own or it is indistinguishable from one that has hung —
+  // and somebody will restart the stack mid-round. Polling stops the moment
+  // the round is no longer running, and the queue is reloaded once, because
+  // that is when there is finally something to review.
+  const active =
+    runs.find((r) => r.id === runId && r.status === "laufend") ?? null;
+
+  useEffect(() => {
+    if (!active) return;
+    const id = window.setInterval(() => {
+      fetchRun(active.id)
+        .then((fresh) => {
+          setRuns((current) =>
+            current.map((r) => (r.id === fresh.id ? fresh : r)),
+          );
+          if (fresh.status !== "laufend") loadQueue(fresh.id);
+        })
+        .catch(() => {
+          /* A poll that fails is not worth a message; the next one may not. */
+        });
+    }, 5000);
+    return () => window.clearInterval(id);
+  }, [active, loadQueue]);
 
   const entry = queue.find((e) => e.case_version_id === selected) ?? null;
 
@@ -176,6 +203,16 @@ export function EvaluationView() {
           ))}
         </nav>
       </header>
+
+      <RoundControls
+        running={active}
+        onStarted={(run) => {
+          setRuns((current) => [run, ...current]);
+          setRunId(run.id);
+          setTab("pruefen");
+        }}
+        onImported={() => runId && loadQueue(runId)}
+      />
 
       {tab === "ergebnisse" &&
         (runId ? (

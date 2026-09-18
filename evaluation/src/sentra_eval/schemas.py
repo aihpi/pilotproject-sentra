@@ -38,6 +38,25 @@ class CaseVersionResponse(BaseModel):
     freigegeben_at: datetime | None
 
 
+class ImportResponse(BaseModel):
+    """What an uploaded collection sheet did, by Test-ID.
+
+    Four lists rather than four counts: "3 angelegt" leaves the author
+    wondering which three, and the Test-IDs are what they will look for next.
+
+    `freigegeben` is always empty for a sheet — the reader forces every row to
+    entwurf, so an upload cannot approve anything. It is here because the same
+    shape reports a YAML import through the CLI, where approval is possible,
+    and a field that silently means something different between the two would
+    be worse than one that is always empty in one of them.
+    """
+
+    angelegt: list[str] = []
+    aktualisiert: list[str] = []
+    unveraendert: list[str] = []
+    freigegeben: list[str] = []
+
+
 class CaseResponse(BaseModel):
     test_id: str
     kategorie: str
