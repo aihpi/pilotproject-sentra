@@ -204,7 +204,7 @@ uv run pytest -m "not integration"   # 390 tests, no services needed. This is wh
 uv run pytest -m integration         # 84 tests, needs Qdrant and the AI Hub
 
 cd ../evaluation                     # the harness is its own distribution
-uv run pytest -m "not integration"   # 274 tests, no services needed
+uv run pytest -m "not integration"   # 279 tests, no services needed
 uv run pytest -m integration         # 5 tests, needs the eval database
 
 cd frontend

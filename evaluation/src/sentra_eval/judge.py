@@ -177,3 +177,69 @@ def parse_verdict(content: str, *, pruefung: str, model: str | None = None) -> d
         "begruendung": str(parsed.get("begruendung") or "")[:1000],
         "judge_model": model,
     }
+
+
+# ── 4.4: did it say it could not answer? ────────────────────────────
+
+ABLEHNUNG_SYSTEM_PROMPT = """\
+Du beurteilst, ob ein Auskunftssystem eine Frage beantwortet oder abgelehnt hat.
+
+Eine Ablehnung liegt vor, wenn die Antwort erkennbar sagt, dass sie die Frage auf Basis der \
+vorliegenden Unterlagen nicht beantworten kann — unabhängig davon, wie sie das formuliert.
+
+Keine Ablehnung liegt vor, wenn die Antwort die Frage inhaltlich beantwortet, auch wenn sie \
+dabei Einschränkungen nennt.
+
+Antworte ausschließlich mit JSON:
+{"abgelehnt": true | false, "begruendung": "ein Satz"}\
+"""
+
+
+def beurteile_ablehnung(text: str, *, frage: str) -> tuple[bool, str]:
+    """Whether an answer declined to answer. Returns the verdict and its reason.
+
+    4.4 accepts prose (#109): SENTRA signals that it cannot answer by saying so
+    in its own words rather than by taking the no-results path, because that
+    path needs retrieval to return nothing and vector search always returns
+    something. Recognising that is not a string comparison.
+
+    Raises rather than guessing. A judge that cannot be read must not be
+    recorded as "it answered normally" — for a Grenzfall that is the verdict
+    that says nothing was wrong, which is the one place this check must not be
+    wrong quietly.
+    """
+    config = judge_config()
+    client = OpenAI(base_url=config.base_url, api_key=config.api_key, timeout=180)
+
+    try:
+        response = client.chat.completions.create(
+            model=config.model,
+            messages=[
+                {"role": "system", "content": ABLEHNUNG_SYSTEM_PROMPT},
+                {"role": "user", "content": f"Frage: {frage}\n\nAntwort: {text}"},
+            ],
+            temperature=0,
+            max_tokens=JUDGE_MAX_TOKENS,
+        )
+    except OpenAIError as exc:
+        raise JudgeUnavailable(f"{type(exc).__name__}: {exc}") from exc
+
+    content = (response.choices[0].message.content or "").strip()
+    if not content:
+        raise JudgeUnavailable(
+            f"The judge returned no content (finish_reason={response.choices[0].finish_reason!r})."
+        )
+
+    match = re.search(r"\{.*\}", content, re.S)
+    if match is None:
+        raise JudgeUnavailable(f"No JSON object in the judge's reply: {content[:200]!r}")
+    try:
+        parsed = json.loads(match.group(0))
+    except json.JSONDecodeError as exc:
+        raise JudgeUnavailable(f"The judge's JSON did not parse: {exc}") from exc
+
+    abgelehnt = parsed.get("abgelehnt")
+    if not isinstance(abgelehnt, bool):
+        raise JudgeUnavailable(f"Unrecognised value for abgelehnt: {abgelehnt!r}")
+
+    return abgelehnt, str(parsed.get("begruendung") or "")[:1000]

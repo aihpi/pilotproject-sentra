@@ -392,7 +392,11 @@ def _run_checks(session: Session, call: Call) -> None:
         outcomes = [
             checks.quellenauswahl(call.response_body, version),
             checks.marker_ausrichtung(call.response_body),
-            checks.ablehnung(call.response_body, grenzfall=version.grenzfall),
+            checks.ablehnung(
+                call.response_body,
+                grenzfall=version.grenzfall,
+                abgelehnt=_abgelehnt(call, version),
+            ),
             checks.abschneidung(call.response_body),
         ]
         # ragas only if the round asked for it, and only on the first repeat.
@@ -422,6 +426,39 @@ def _run_checks(session: Session, call: Call) -> None:
         result.auffaellig = outcome.auffaellig
         result.belege = outcome.belege
         session.add(result)
+
+
+def _abgelehnt(call: Call, version: CaseVersion) -> bool | None:
+    """Did this answer decline to answer? None means "fall back to the string".
+
+    Two paths, cheap one first. The exact refusal with no sources is
+    unambiguous and free, the same shortcut identical repeats give 4.1. It is
+    almost never the case, because that string only appears when retrieval
+    returns nothing.
+
+    Otherwise the judge decides, because 4.4 accepts prose (#109) and
+    recognising "I cannot answer this from the context" is not a string
+    comparison. Asked once per case, on the first repeat of the original
+    question: whether the system hedged is a fact about the case, and 4.1
+    already covers whether the repeats differ.
+
+    A judge that cannot be reached falls back to the literal comparison rather
+    than guessing. That reports a hedging Grenzfall as "nicht abgelehnt" —
+    which is the old behaviour, conservative, and sends a human to look.
+    """
+    if checks.ist_wortliche_ablehnung(call.response_body):
+        return True
+    if call.repeat_index != 0 or call.variant_key != ORIGINAL:
+        return None
+
+    try:
+        abgelehnt, _grund = judge.beurteile_ablehnung(
+            call.response_body.get("text") or "", frage=version.ausgangsfrage
+        )
+    except judge.JudgeUnavailable as exc:
+        logger.warning("Judge could not assess refusal for %s: %s", version.id, exc)
+        return None
+    return abgelehnt
 
 
 def _run_group_checks(session: Session, run: Run) -> None:

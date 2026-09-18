@@ -333,6 +333,59 @@ class TestAblehnung:
 
         assert outcome.ergebnis == checks.NICHT_ABGELEHNT
 
+    def test_prose_hedging_counts_when_the_judge_says_so(self):
+        """#109: 4.4 accepts prose. The exact string only appears when
+        retrieval returns nothing, and vector search always returns the top-k
+        however irrelevant — so holding out for it meant flagging every
+        Grenzfall in every round."""
+        hedge = _answer_text(
+            "Die Frage kann auf Basis der Auszüge nicht beantwortet werden.", "A", "B"
+        )
+
+        outcome = checks.ablehnung(hedge, grenzfall=True, abgelehnt=True)
+
+        assert outcome.ergebnis == checks.KORREKT_ABGELEHNT
+        assert outcome.auffaellig is False
+
+    def test_the_same_hedge_without_the_judge_is_still_a_finding(self):
+        """The fallback when the judge cannot be reached: conservative, and it
+        sends a human to look rather than passing silently."""
+        hedge = _answer_text(
+            "Die Frage kann auf Basis der Auszüge nicht beantwortet werden.", "A", "B"
+        )
+
+        outcome = checks.ablehnung(hedge, grenzfall=True)
+
+        assert outcome.ergebnis == checks.NICHT_ABGELEHNT
+
+    def test_an_ordinary_question_that_hedges_is_a_finding(self):
+        """The direction that was previously invisible: retrieval found nothing
+        useful for something the corpus should cover, and SENTRA said so in
+        prose rather than emitting the exact string."""
+        hedge = _answer_text("Dazu liegen keine passenden Auszüge vor.", "A")
+
+        outcome = checks.ablehnung(hedge, grenzfall=False, abgelehnt=True)
+
+        assert outcome.ergebnis == checks.ABLEHNUNG_UNERWARTET
+        assert outcome.auffaellig is True
+
+    def test_the_evidence_says_who_decided(self):
+        """A reviewer should be able to tell a literal match from a model's
+        judgement, because the second can be wrong."""
+        hedge = _answer_text("Kann ich nicht beantworten.", "A")
+
+        judged = checks.ablehnung(hedge, grenzfall=True, abgelehnt=True)
+        literal = checks.ablehnung(REFUSAL, grenzfall=True)
+
+        assert judged.belege["beurteilt_durch"] == "Prüfmodell"
+        assert literal.belege["beurteilt_durch"] == "Wortlaut"
+
+    def test_the_literal_refusal_needs_no_judge(self):
+        """The cheap path. The exact string with no sources is unambiguous, so
+        a round spends no model call recognising it."""
+        assert checks.ist_wortliche_ablehnung(REFUSAL) is True
+        assert checks.ist_wortliche_ablehnung(_answer_text("Eine Antwort.", "A")) is False
+
     def test_the_expected_string_is_pinned(self):
         """The harness is a separate distribution and cannot import SENTRA's
         copy of this sentence. So it asserts it: rewording the refusal over

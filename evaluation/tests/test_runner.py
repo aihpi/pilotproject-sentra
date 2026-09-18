@@ -51,6 +51,24 @@ def db(monkeypatch, tmp_path):
     get_engine.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def no_judge_calls(monkeypatch):
+    """Keep the offline tier offline.
+
+    4.4 now asks the judge whether an answer hedged, which every round does
+    once per case. Left unstubbed these tests wait on DNS for a hub that is
+    deliberately unreachable — the suite went from 61 to 139 seconds before
+    this existed. Tests that are about the judge stub it themselves with a
+    verdict; this one just stops the call happening.
+    """
+    from sentra_eval import judge as judge_module
+
+    def not_asked(*args, **kwargs):
+        raise judge_module.JudgeUnavailable("stubbed out in the offline tier")
+
+    monkeypatch.setattr(judge_module, "beurteile_ablehnung", not_asked)
+
+
 @pytest.fixture
 def session(db):
     with Session(get_engine()) as s:

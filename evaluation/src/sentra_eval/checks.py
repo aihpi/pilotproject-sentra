@@ -223,26 +223,57 @@ KEINE_ABLEHNUNG_ERWARTET = "keine Ablehnung erwartet"
 REFUSAL_TEXT = "Es wurden keine relevanten Dokumente gefunden."
 
 
-def ablehnung(response: dict, *, grenzfall: bool) -> CheckOutcome:
-    """Whether an out-of-corpus question was refused, and an ordinary one was not.
+def ist_wortliche_ablehnung(response: dict) -> bool:
+    """Whether this is the exact refusal, with nothing cited.
 
-    4.4 is where the real risk sits: a system that invents an answer rather than
-    saying it has nothing is worse than one that finds nothing. The Vorlage
-    keeps Grenzfälle out of automated filtering entirely for that reason, so
-    this never suppresses review — it says what happened so a reviewer arrives
-    already knowing.
+    The cheap, certain half. When SENTRA takes the no-results path it says this
+    and nothing else, so no model is needed to recognise it — the same shortcut
+    the byte-duplicate check gives 4.1.
 
-    The opposite direction is a finding too. An ordinary question that gets
-    refused means retrieval returned nothing for something the corpus should
-    cover.
+    It is almost never true. The string only appears when retrieval returns
+    nothing, and vector search always returns the top-k however irrelevant, so
+    in practice SENTRA hedges in prose instead. That is why the judged path
+    below exists.
     """
     text = (response.get("text") or "").strip()
     sources = response.get("sources") or []
-    refused = text == REFUSAL_TEXT and not sources
+    return text == REFUSAL_TEXT and not sources
+
+
+def ablehnung(response: dict, *, grenzfall: bool, abgelehnt: bool | None = None) -> CheckOutcome:
+    """Whether an out-of-corpus question was refused, and an ordinary one was not.
+
+    `abgelehnt` is the answer to "did this decline to answer", determined by
+    the caller: the exact string where that applies, otherwise the judge. Left
+    as None it falls back to the literal comparison, which is what the offline
+    tests use and what applies when no judge is available.
+
+    **4.4 accepts prose.** The decision is recorded in #109: an answer that says
+    it cannot answer from the retrieved context, rather than inventing one,
+    meets what 4.4 asks for. It does not have to be the exact string — and it
+    almost never is, because that only appears when retrieval returns nothing.
+    Holding out for the literal sentence meant flagging every Grenzfall in every
+    round, and a check that always fires tells a reviewer nothing.
+
+    4.4 is where the real risk sits: a system that invents an answer rather than
+    saying it has nothing is worse than one that finds nothing. The Vorlage
+    keeps Grenzfälle out of automated filtering for that reason, so this never
+    suppresses review — it says what happened so a reviewer arrives already
+    knowing.
+
+    The opposite direction is a finding too, and it was previously invisible: an
+    ordinary question that gets hedged means retrieval found nothing useful for
+    something the corpus should cover.
+    """
+    text = (response.get("text") or "").strip()
+    sources = response.get("sources") or []
+    refused = ist_wortliche_ablehnung(response) if abgelehnt is None else abgelehnt
 
     belege = {
         "grenzfall": grenzfall,
         "abgelehnt": refused,
+        "woertliche_ablehnung": ist_wortliche_ablehnung(response),
+        "beurteilt_durch": "Wortlaut" if abgelehnt is None else "Prüfmodell",
         "anzahl_quellen": len(sources),
         "antwort_beginn": text[:120],
     }
