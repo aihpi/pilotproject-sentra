@@ -63,6 +63,7 @@ def _case(
     schweregrad=1,
     grenzfall=False,
     kategorie=Kategorie.GO,
+    repeats=1,
 ):
     case, version = case_store.create_case(
         session,
@@ -73,23 +74,25 @@ def _case(
         grenzfall=grenzfall,
     )
     case_store.approve(session, version)
-    call = Call(
-        run_id=run.id,
-        case_version_id=version.id,
-        zweck=ZWECK_ANTWORT,
-        status=OK,
-        endpoint="/api/explorer/answer",
-    )
-    session.add(call)
-    session.flush()
-    session.add(
-        CheckResult(
-            call_id=call.id,
-            pruefung="quellenauswahl",
-            ergebnis=QUELLE_FALSCH if machine_flagged else QUELLE_KORREKT,
-            auffaellig=machine_flagged,
+    for repeat_index in range(repeats):
+        call = Call(
+            run_id=run.id,
+            case_version_id=version.id,
+            zweck=ZWECK_ANTWORT,
+            status=OK,
+            repeat_index=repeat_index,
+            endpoint="/api/explorer/answer",
         )
-    )
+        session.add(call)
+        session.flush()
+        session.add(
+            CheckResult(
+                call_id=call.id,
+                pruefung="quellenauswahl",
+                ergebnis=QUELLE_FALSCH if machine_flagged else QUELLE_KORREKT,
+                auffaellig=machine_flagged,
+            )
+        )
     if human_says is not None:
         session.add(
             Verdict(
@@ -275,6 +278,18 @@ class TestTrend:
         _case(session, run, n=2, machine_flagged=True, human_says=QUELLE_FALSCH)
 
         assert report.trend(session).haeufigste_befunde["quellenauswahl"] == 2
+
+    def test_a_case_flagged_on_every_repeat_is_one_finding(self, session, run):
+        """#136. A CheckResult is written per call, so counting the rows scaled
+        this with `repeats` — three findings reported beside `faelle: 1`, and
+        two rounds run at different repeat counts not comparable, which is what
+        a trend is for."""
+        _case(session, run, n=1, machine_flagged=True, human_says=QUELLE_FALSCH, repeats=3)
+
+        found = report.trend(session)
+
+        assert found.faelle == 1
+        assert found.haeufigste_befunde["quellenauswahl"] == 1
 
     def test_the_disagreement_rate_is_combined_over_rounds(self, session, run):
         _case(session, run, n=1, machine_flagged=True, human_says=QUELLE_KORREKT)

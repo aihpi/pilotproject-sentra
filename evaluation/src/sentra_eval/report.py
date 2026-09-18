@@ -314,12 +314,26 @@ def trend(session: Session) -> Trend:
             if sheet.schweregrad is not None:
                 schweregrad[sheet.schweregrad] += 1
 
-    for (check,) in session.execute(
-        select(CheckResult.pruefung).where(CheckResult.auffaellig.is_(True))
+    # Per case, not per call. A CheckResult is written for every call, so a
+    # case flagged on all three of its repeats is one finding rather than
+    # three — and counting the rows would scale this with `repeats`, which
+    # makes two rounds run at different repeat counts incomparable. A trend
+    # that cannot be compared across rounds is not a trend.
+    #
+    # It also keeps one denominator. Group checks are already recorded once per
+    # case, so counting rows put per-call and per-case checks in the same table
+    # with the per-call ones inflated by a factor of `repeats`.
+    for check, _version_id in session.execute(
+        select(CheckResult.pruefung, Call.case_version_id)
+        .join(Call, CheckResult.call_id == Call.id)
+        .where(CheckResult.auffaellig.is_(True))
+        .distinct()
     ).all():
         befunde[check] += 1
-    for (check,) in session.execute(
-        select(GroupCheckResult.pruefung).where(GroupCheckResult.auffaellig.is_(True))
+    for check, _version_id in session.execute(
+        select(GroupCheckResult.pruefung, GroupCheckResult.case_version_id)
+        .where(GroupCheckResult.auffaellig.is_(True))
+        .distinct()
     ).all():
         befunde[check] += 1
 
