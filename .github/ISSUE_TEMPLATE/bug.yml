@@ -5,9 +5,6 @@ labels: ["bug"]
 # template that was used. Set here rather than by hand: a type nobody
 # remembers to pick is a type that is always empty.
 type: Bug
-# Assigned on creation. One person works this repository; an unassigned
-# issue means nobody noticed it rather than nobody owns it.
-assignees: ["mt0rm0"]
 body:
   - type: markdown
     attributes:

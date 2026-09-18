@@ -5,7 +5,6 @@ description: One unit of work belonging to a feature
 # came out unlabelled and this template looked like it was working.
 labels: ["task"]
 type: Task
-assignees: ["mt0rm0"]
 body:
   - type: markdown
     attributes:

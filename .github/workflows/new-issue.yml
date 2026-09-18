@@ -1,28 +1,56 @@
-# Turn the "Parent feature" field of a Task into a real sub-issue link.
+# The two things an issue form cannot do for itself.
 #
-# The task template asks for the parent and the answer lands in the body as
-# text. That is all an issue form can do — there is no template key for the
-# sub-issue relationship, so the hierarchy on the board stayed empty while the
-# issue itself said who its parent was. Somebody then had to drag it into place,
-# and mostly nobody did.
+# Type and labels are set in the templates, where they sit next to the fields
+# they describe. These two cannot be:
 #
-# This closes that gap, and only that gap. Type, labels and assignee are set by
-# the template, where they are visible next to the fields they describe.
+#   assignee   `assignees:` in a template takes fixed names, and the person who
+#              opened the issue is not known until it exists
+#   parent     there is no template key for the sub-issue relationship at all.
+#              The task template asks for the parent and the answer lands in
+#              the body as text, so the hierarchy on the board stayed empty
+#              while the issue itself said who its parent was — and somebody
+#              had to drag it into place afterwards.
 
-name: Link a task to its parent feature
+name: New issue
 
 on:
   issues:
     types: [opened, edited]
 
 permissions:
-  # addSubIssue writes to both issues.
+  # Assigning, and addSubIssue writes to both issues.
   issues: write
   contents: read
 
 jobs:
+  assign:
+    name: Assign the author
+    runs-on: ubuntu-latest
+    # Only on creation, and only when nobody is assigned — so that deliberately
+    # reassigning an issue is not undone the next time somebody edits it.
+    if: github.event.action == 'opened' && !github.event.issue.assignees[0]
+
+    steps:
+      - name: Assign whoever opened it
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NUMBER: ${{ github.event.issue.number }}
+          AUTHOR: ${{ github.event.issue.user.login }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Not fatal if it does not take. GitHub only allows assigning people
+          # with push access, so an issue opened by an outside contributor
+          # cannot be assigned to them — and that is a normal event, not a
+          # broken workflow. Going red on it would train everyone to ignore a
+          # red cross on new issues.
+          if gh issue edit "$NUMBER" --repo "$REPO" --add-assignee "$AUTHOR"; then
+            echo "Assigned #$NUMBER to $AUTHOR"
+          else
+            echo "::warning::Could not assign #$NUMBER to $AUTHOR — no push access?"
+          fi
+
   link:
-    name: Link to parent
+    name: Link a task to its parent feature
     runs-on: ubuntu-latest
     # Only tasks have a parent. Guarding here rather than inside keeps a bug or
     # a feature from spending a runner on nothing.

@@ -203,3 +203,8 @@ cython_debug/
 # See data/README.md.
 data/*
 !data/README.md
+
+# Personal notes kept beside the design docs, deliberately not shared. Ignored
+# rather than merely untracked, because `git add -A` sweeps up untracked files
+# and has already committed this one once by accident.
+docs/To do.md
