@@ -76,7 +76,10 @@ export function RoundControls({
         </label>
 
         <label className="flex flex-col gap-1 text-xs">
-          <span className="font-medium" title="4.1 Wiederholungslauf verlangt drei.">
+          <span
+            className="font-medium"
+            title="4.1 Wiederholungslauf verlangt drei."
+          >
             Wiederholungen
           </span>
           <input
@@ -126,8 +129,9 @@ export function RoundControls({
       )}
 
       <p className="text-xs text-muted-foreground">
-        Hochgeladene Testfälle sind immer Entwürfe. Über die Freigabe entscheidet die fachliche
-        Durchsicht — ein Upload kann nicht ändern, wogegen eine Runde misst.
+        Hochgeladene Testfälle sind immer Entwürfe. Über die Freigabe
+        entscheidet die fachliche Durchsicht — ein Upload kann nicht ändern,
+        wogegen eine Runde misst.
       </p>
     </section>
   );
@@ -162,7 +166,10 @@ function Progress({ run }: { run: EvalRun }) {
         aria-valuemax={100}
         aria-label="Fortschritt der Testrunde"
       >
-        <div className="h-full bg-primary transition-all" style={{ width: `${percent}%` }} />
+        <div
+          className="h-full bg-primary transition-all"
+          style={{ width: `${percent}%` }}
+        />
       </div>
     </div>
   );
@@ -192,7 +199,9 @@ function ImportSummary({ report }: { report: ImportReport }) {
           </p>
         ))}
       {lines.every(([, ids]) => ids.length === 0) && (
-        <p className="text-muted-foreground">Die Datei enthielt keine Testfälle.</p>
+        <p className="text-muted-foreground">
+          Die Datei enthielt keine Testfälle.
+        </p>
       )}
     </div>
   );

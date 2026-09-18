@@ -13,6 +13,11 @@ const NAV_ITEMS: { key: ViewType; label: string }[] = [
   // shows an error rather than nothing when it is not running, which is its
   // normal state outside a test round.
   { key: "evaluation", label: "Auswertung" },
+  // Changing the test set is a different job from judging against it, done by
+  // different people at different times. A tab rather than a permission —
+  // there is no authentication anywhere in SENTRA yet, so this separates the
+  // two jobs without restricting who does them.
+  { key: "administration", label: "Administration" },
 ];
 
 export function Header({ activeView, onViewChange }: HeaderProps) {

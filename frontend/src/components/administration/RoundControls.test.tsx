@@ -21,7 +21,8 @@ vi.mock("@/lib/evalApi", () => ({
   startRun: (...a: unknown[]) => startRun(...a),
 }));
 
-const { RoundControls } = await import("@/components/evaluation/RoundControls");
+const { RoundControls } =
+  await import("@/components/administration/RoundControls");
 
 const RUNNING: EvalRun = {
   id: "run-1",
@@ -41,7 +42,13 @@ const RUNNING: EvalRun = {
 function renderControls(running: EvalRun | null = null) {
   const onStarted = vi.fn();
   const onImported = vi.fn();
-  render(<RoundControls running={running} onStarted={onStarted} onImported={onImported} />);
+  render(
+    <RoundControls
+      running={running}
+      onStarted={onStarted}
+      onImported={onImported}
+    />,
+  );
   return { onStarted, onImported };
 }
 
@@ -61,17 +68,26 @@ describe("starting a round", () => {
     startRun.mockResolvedValue({ ...RUNNING, done: 0 });
     const { onStarted } = renderControls();
 
-    await userEvent.type(screen.getByLabelText(/Bezeichnung/), "Runde September");
-    await userEvent.click(screen.getByRole("button", { name: /Testrunde starten/ }));
+    await userEvent.type(
+      screen.getByLabelText(/Bezeichnung/),
+      "Runde September",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: /Testrunde starten/ }),
+    );
 
-    await waitFor(() => expect(startRun).toHaveBeenCalledWith("Runde September", 3));
+    await waitFor(() =>
+      expect(startRun).toHaveBeenCalledWith("Runde September", 3),
+    );
     expect(onStarted).toHaveBeenCalled();
   });
 
   it("is refused while one is already running, and says so", async () => {
     renderControls(RUNNING);
 
-    const button = screen.getByRole("button", { name: /Eine Runde läuft bereits/ });
+    const button = screen.getByRole("button", {
+      name: /Eine Runde läuft bereits/,
+    });
 
     expect(button).toBeDisabled();
     expect(startRun).not.toHaveBeenCalled();
@@ -81,9 +97,13 @@ describe("starting a round", () => {
     startRun.mockRejectedValue(new Error("Es läuft bereits eine Testrunde."));
     renderControls();
 
-    await userEvent.click(screen.getByRole("button", { name: /Testrunde starten/ }));
+    await userEvent.click(
+      screen.getByRole("button", { name: /Testrunde starten/ }),
+    );
 
-    expect(await screen.findByText(/Es läuft bereits eine Testrunde/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Es läuft bereits eine Testrunde/),
+    ).toBeInTheDocument();
   });
 });
 
@@ -92,7 +112,10 @@ describe("a round in flight", () => {
     renderControls(RUNNING);
 
     expect(screen.getByText(/45 von 180 Aufrufen/)).toBeInTheDocument();
-    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "25");
+    expect(screen.getByRole("progressbar")).toHaveAttribute(
+      "aria-valuenow",
+      "25",
+    );
   });
 
   it("calls out failed calls, which a percentage hides", async () => {
@@ -112,7 +135,10 @@ describe("uploading a collection sheet", () => {
     });
     const { onImported } = renderControls();
 
-    await userEvent.upload(screen.getByLabelText(/Erfassungsvorlage hochladen/), sheet());
+    await userEvent.upload(
+      screen.getByLabelText(/Erfassungsvorlage hochladen/),
+      sheet(),
+    );
 
     expect(await screen.findByText(/TF-GO-001, TF-GO-002/)).toBeInTheDocument();
     expect(onImported).toHaveBeenCalled();
@@ -124,7 +150,10 @@ describe("uploading a collection sheet", () => {
     );
     renderControls();
 
-    await userEvent.upload(screen.getByLabelText(/Erfassungsvorlage hochladen/), sheet());
+    await userEvent.upload(
+      screen.getByLabelText(/Erfassungsvorlage hochladen/),
+      sheet(),
+    );
 
     expect(await screen.findByText(/Zeile 4/)).toBeInTheDocument();
   });
@@ -138,7 +167,10 @@ describe("uploading a collection sheet", () => {
     });
     renderControls();
 
-    await userEvent.upload(screen.getByLabelText(/Erfassungsvorlage hochladen/), sheet());
+    await userEvent.upload(
+      screen.getByLabelText(/Erfassungsvorlage hochladen/),
+      sheet(),
+    );
 
     expect(await screen.findByText(/keine Testfälle/)).toBeInTheDocument();
   });

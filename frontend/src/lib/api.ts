@@ -30,7 +30,10 @@ export function formatDate(dateStr: string): string {
 interface RequestOptions {
   /** Fallback shown to the user when the server said nothing more useful. */
   label: string;
-  method?: "GET" | "POST";
+  /** PATCH is here for the case store, where changing a case is deliberately
+   *  not a full replacement: omitted fields are carried over, and the harness
+   *  decides whether that edits the draft or adds a version. */
+  method?: "GET" | "POST" | "PATCH";
   /** Sent as JSON. Its presence is what adds the Content-Type header. */
   body?: unknown;
   /** Sent as-is, for an endpoint that takes bytes rather than JSON — the
