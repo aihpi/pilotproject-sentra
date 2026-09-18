@@ -120,6 +120,14 @@ class Settings(BaseSettings):
     # bare LoadBalancer. Defaulting this off would be convenient and would mean
     # nobody ever noticed. See references/SECURITY_NOTES.md and #161 item 1.
     session_cookie_secure: bool = True
+    # The document registry (#141). Its own database, not the evaluation
+    # harness's: the harness is a separate distribution on purpose, and sharing
+    # a server would re-couple them. Port 5434 because 5433 is already the
+    # harness's, and 5432 is whatever a developer has running locally.
+    #
+    # Nothing connects at import and retrieval never reads this, so SENTRA
+    # answers questions normally with the registry database down.
+    registry_database_url: str = "postgresql+psycopg://sentra:sentra@localhost:5434/sentra_registry"
 
     @field_validator("cors_origins", mode="before")
     @classmethod

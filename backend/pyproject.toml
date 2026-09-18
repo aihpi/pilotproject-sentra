@@ -20,6 +20,13 @@ dependencies = [
     "pypdfium2>=4.30.0",        # ingestion/parser.py
     "numpy>=1.26",              # rag/store.py
     "itsdangerous>=2.2",
+    # The document registry (#141). SENTRA's first SQL database: until now the
+    # corpus was whatever happened to be in Qdrant, which is how 17 documents
+    # came to be citable with no file behind them (#140). Same three packages
+    # as the evaluation harness, and deliberately a separate database from it.
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.2",     # psycopg 3, which postgresql+psycopg wants
 ]
 
 [dependency-groups]
@@ -100,15 +107,30 @@ name = "Layered architecture"
 type = "layers"
 containers = ["sentra"]
 layers = [
+    # Not imported by anything — alembic executes env.py by path. Optional,
+    # because the directory carries no __init__.py and so is not an importable
+    # module; naming it outright is a hard error. It is listed at all because
+    # exhaustive = true, and because if it ever does become importable it
+    # belongs above the models it reads.
+    "(migrations)",
     "main",
     "api",
     "services",
+    # The document registry (#141). Above rag and ingestion because the scan
+    # reads what the index already knows and reuses the filename parsing, and
+    # below services because nothing serves it yet — the API for it arrives
+    # with the job queue in task 3.
+    "documents",
     "rag | ingestion",
     # Generic background-job orchestration. Extracted from services in #81 and
     # left here: the evaluation harness has since moved to its own
     # distribution and carries its own copy, so this serves ingestion and
     # whatever comes next.
     "jobs",
+    # The registry's engine and session scope. Imports config and nothing else,
+    # so it sits with the other infrastructure rather than with the tables it
+    # happens to serve.
+    "db",
     "domain",
     "config",
 ]
