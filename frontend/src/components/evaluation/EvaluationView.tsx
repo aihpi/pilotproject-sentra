@@ -21,7 +21,7 @@ import { MachineVerdictPane } from "@/components/evaluation/MachineVerdictPane";
 import { PdfPane } from "@/components/evaluation/PdfPane";
 import { QueueList } from "@/components/evaluation/QueueList";
 import { ResultsView } from "@/components/evaluation/ResultsView";
-import { RoundControls } from "@/components/evaluation/RoundControls";
+import { RunPicker } from "@/components/evaluation/RunPicker";
 import { VerdictForm } from "@/components/evaluation/VerdictForm";
 
 /** Stufe 2: working a round's queue.
@@ -148,37 +148,11 @@ export function EvaluationView() {
     );
   }
 
-  const run = runs.find((r) => r.id === runId) ?? null;
-
   return (
     <div className="mx-auto max-w-7xl space-y-4 p-6">
       <header className="flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-semibold">Auswertung</h2>
-        <select
-          value={runId ?? ""}
-          onChange={(e) => setRunId(e.target.value)}
-          aria-label="Testrunde"
-          className="rounded-md border bg-background px-2 py-1 text-xs"
-        >
-          {runs.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.label || r.id.slice(0, 8)} — {r.status}
-            </option>
-          ))}
-        </select>
-        {run && !run.audit_ok && (
-          <span
-            className="rounded-md bg-destructive/10 px-2 py-1 text-xs text-destructive"
-            title="Mindestens ein Testfall wurde erst nach dem Start der Runde freigegeben."
-          >
-            Prüfkette nicht belastbar
-          </span>
-        )}
-        {runs.length === 0 && (
-          <span className="text-xs text-muted-foreground">
-            Keine Testrunden vorhanden.
-          </span>
-        )}
+        <RunPicker runs={runs} runId={runId} onSelect={setRunId} />
 
         <nav className="ml-auto flex gap-1" aria-label="Ansicht">
           {(
@@ -203,16 +177,6 @@ export function EvaluationView() {
           ))}
         </nav>
       </header>
-
-      <RoundControls
-        running={active}
-        onStarted={(run) => {
-          setRuns((current) => [run, ...current]);
-          setRunId(run.id);
-          setTab("pruefen");
-        }}
-        onImported={() => runId && loadQueue(runId)}
-      />
 
       {tab === "ergebnisse" &&
         (runId ? (
