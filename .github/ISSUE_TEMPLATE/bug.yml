@@ -1,6 +1,10 @@
 name: Bug
 description: Something behaves differently than it should
 labels: ["bug"]
+# The org-level issue type, so the board and the type filter agree with the
+# template that was used. Set here rather than by hand: a type nobody
+# remembers to pick is a type that is always empty.
+type: Bug
 body:
   - type: markdown
     attributes:
