@@ -1,6 +1,6 @@
 import re
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from sentra import domain
 
@@ -74,6 +74,23 @@ class FeedbackEntry(BaseModel):
     comment: str | None = None
 
 
+class LoginRequest(BaseModel):
+    benutzername: str = Field(min_length=1)
+    passwort: str = Field(min_length=1)
+
+
+class MeResponse(BaseModel):
+    """The authenticated caller. Deliberately small — a name and a role.
+
+    Nothing else belongs here: every field this grows is a field the frontend
+    starts depending on, and the whole point is that swapping the prototype for
+    an IdP changes this endpoint and nothing above it.
+    """
+
+    benutzername: str
+    rolle: str
+
+
 class HealthResponse(BaseModel):
     status: str
     qdrant: str
@@ -83,6 +100,9 @@ class HealthResponse(BaseModel):
     # answers "healthy" while its write path is open is answering the wrong
     # question. See api/auth.py.
     auth: str = "offen"
+    # Whether a login is configured at all. Distinct from `auth`: the token
+    # guards two endpoints, this says whether anybody can identify themselves.
+    login: str = "nicht eingerichtet"
 
 
 # ── Explorer API models (v2) ────────────────────────────────────────

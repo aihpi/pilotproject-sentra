@@ -8,6 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from sentra.api.auth import require_token, write_paths_state
+from sentra.api.identity import (
+    Subject,
+    authenticate,
+    login_configured,
+    require_subject,
+)
 from sentra.api.models import (
     AnswerRequest,
     AnswerSourceRef,
@@ -26,6 +32,8 @@ from sentra.api.models import (
     HealthResponse,
     IngestionStatusResponse,
     IngestStartResponse,
+    LoginRequest,
+    MeResponse,
     ReferatOption,
     RetrievedChunk,
     SimilarDocumentsRequest,
@@ -273,6 +281,56 @@ def list_feedback(
 # ── Health endpoint ──────────────────────────────────────────────────
 
 
+# ── Who the caller is ───────────────────────────────────────────────
+#
+# Establishing identity only. What a subject may do is a separate question and
+# a separate task; nothing here enforces anything.
+
+
+@router.post("/login", response_model=MeResponse)
+def login(
+    body: LoginRequest,
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> MeResponse:
+    """Start a session.
+
+    One refusal for every failure, and the same work done either way:
+    `authenticate` verifies against a dummy hash when the user is unknown, so
+    a missing account costs a full scrypt derivation like a wrong password
+    does. Answering faster for an unknown user is a user-enumeration oracle
+    however carefully the message is worded.
+    """
+    if not login_configured(settings):
+        raise HTTPException(
+            status_code=503,
+            detail="Für diese Installation ist keine Anmeldung eingerichtet.",
+        )
+
+    subject = authenticate(body.benutzername, body.passwort, settings)
+    if subject is None:
+        raise HTTPException(status_code=401, detail="Benutzername oder Passwort ist falsch.")
+
+    request.session["subject"] = {"name": subject.name, "role": subject.role}
+    return MeResponse(benutzername=subject.name, rolle=subject.role)
+
+
+@router.get("/me", response_model=MeResponse)
+def me(subject: Subject = Depends(require_subject)) -> MeResponse:
+    """The current session. 401 when there is none."""
+    return MeResponse(benutzername=subject.name, rolle=subject.role)
+
+
+@router.post("/logout", status_code=204)
+def logout(request: Request) -> None:
+    """End the session.
+
+    Never an error. Logging out of a session that is already gone is what
+    somebody clicking the button twice does, and it has already succeeded.
+    """
+    request.session.clear()
+
+
 @router.get("/health", response_model=HealthResponse)
 def health(
     store: VectorStore = Depends(get_store),
@@ -286,6 +344,7 @@ def health(
     control, and this is the endpoint somebody actually looks at.
     """
     auth = write_paths_state(settings)
+    login_state = "eingerichtet" if login_configured(settings) else "nicht eingerichtet"
     try:
         collection = store.collection_info()
         return HealthResponse(
@@ -293,12 +352,14 @@ def health(
             qdrant="connected",
             collection=collection,
             auth=auth,
+            login=login_state,
         )
     except Exception as e:
         return HealthResponse(
             status="degraded",
             qdrant=f"error: {e}",
             auth=auth,
+            login=login_state,
         )
 
 
