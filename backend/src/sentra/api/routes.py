@@ -7,6 +7,7 @@ from uuid import NAMESPACE_URL, uuid5
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
+from sentra.api.auth import require_token, write_paths_state
 from sentra.api.models import (
     AnswerRequest,
     AnswerSourceRef,
@@ -67,7 +68,11 @@ def get_generator(request: Request) -> AnswerGenerator:
 # ── Ingestion endpoints ──────────────────────────────────────────────
 
 
-@router.post("/ingest", response_model=IngestStartResponse)
+@router.post(
+    "/ingest",
+    response_model=IngestStartResponse,
+    dependencies=[Depends(require_token)],
+)
 def ingest(
     force: bool = False,
     job: IngestionJob = Depends(get_ingestion_job),
@@ -209,7 +214,11 @@ def submit_feedback(
     return FeedbackResponse(status="ok")
 
 
-@router.get("/feedback", response_model=list[FeedbackEntry])
+@router.get(
+    "/feedback",
+    response_model=list[FeedbackEntry],
+    dependencies=[Depends(require_token)],
+)
 def list_feedback(
     rating: str | None = None,
     limit: int = 100,
@@ -267,19 +276,29 @@ def list_feedback(
 @router.get("/health", response_model=HealthResponse)
 def health(
     store: VectorStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
 ) -> HealthResponse:
-    """Health check endpoint. Verifies Qdrant connectivity."""
+    """Health check endpoint. Verifies Qdrant connectivity.
+
+    It also reports whether the write path and the personal-data read path are
+    guarded. That belongs here rather than only in a startup log: a control
+    that is switched off while the service reads as healthy is worse than no
+    control, and this is the endpoint somebody actually looks at.
+    """
+    auth = write_paths_state(settings)
     try:
         collection = store.collection_info()
         return HealthResponse(
             status="healthy",
             qdrant="connected",
             collection=collection,
+            auth=auth,
         )
     except Exception as e:
         return HealthResponse(
             status="degraded",
             qdrant=f"error: {e}",
+            auth=auth,
         )
 
 

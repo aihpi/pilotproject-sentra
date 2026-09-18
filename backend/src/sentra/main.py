@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from sentra.api.auth import warn_if_open
 from sentra.api.errors import register_error_handlers
 from sentra.api.routes import router
 from sentra.config import get_settings
@@ -29,6 +30,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     reused across all requests instead of being created per-request.
     """
     settings = get_settings()
+
+    # Before anything else, because it is about how this instance is exposed
+    # rather than whether it works. An unset token leaves the write path and
+    # the feedback read path open, and that has to be said somewhere an
+    # operator sees it — /api/health carries the same fact for anyone who is
+    # not reading logs.
+    warn_if_open(settings)
 
     store = VectorStore(settings)
     # Before creating anything: an existing collection built for a different

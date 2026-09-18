@@ -59,7 +59,16 @@ def fetch(
     settings = get_eval_settings()
     owned = client is None
     client = client or httpx.Client(
-        base_url=settings.sentra_base_url, timeout=settings.runner_timeout_seconds
+        base_url=settings.sentra_base_url,
+        timeout=settings.runner_timeout_seconds,
+        # Sent only when configured. SENTRA leaves the endpoint open when it
+        # has no token of its own, and a harness that refused to read in that
+        # case would be enforcing a rule SENTRA is not applying.
+        headers=(
+            {"Authorization": f"Bearer {settings.sentra_admin_token}"}
+            if settings.sentra_admin_token
+            else {}
+        ),
     )
     try:
         response = client.get(FEEDBACK_ENDPOINT, params={"rating": rating} if rating else None)
