@@ -10,18 +10,6 @@ import type {
 
 export const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
-/** The token for SENTRA's guarded paths — re-indexing, and reading feedback.
- *
- *  Build-time, which is worth being clear about: anything the browser sends,
- *  the person using the browser can read. This keeps the corpus from being
- *  re-indexed by the open internet; it does not keep it from being re-indexed
- *  by someone who opened the network tab. It is a placeholder for a real login
- *  and `references/SECURITY_NOTES.md` says so at more length.
- *
- *  Empty where the deployment sets no token, which is also when SENTRA leaves
- *  those paths open — so sending nothing is the matching behaviour rather than
- *  a missing feature. */
-const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN || "";
 
 export function pdfUrl(sourceFile: string): string {
   return `${API_BASE}/documents/${encodeURIComponent(sourceFile)}`;
@@ -77,11 +65,8 @@ export async function request<T>(
   let response: Response;
   try {
     // Headers built once rather than spread twice. Two `headers:` keys in one
-    // object literal is not a merge — the later one replaces the earlier — so
-    // the JSON branch would have silently dropped the token on exactly the
-    // request that needs it.
+    // object literal is not a merge — the later one replaces the earlier.
     const headers: Record<string, string> = {};
-    if (ADMIN_TOKEN) headers["X-Admin-Token"] = ADMIN_TOKEN;
     // No Content-Type for the raw case: the browser sets it from the Blob, and
     // the endpoint reads the body as bytes either way.
     if (raw === undefined && body !== undefined)
@@ -89,6 +74,12 @@ export async function request<T>(
 
     response = await fetch(`${API_BASE}${path}`, {
       method,
+      // The session cookie. Under compose nginx proxies /api, so the browser
+      // sees one origin and the default would have sent it anyway — but the
+      // vite dev server calls cross-origin, where the default is not to, and
+      // the difference would show up as "the login works in production and
+      // silently does not in development".
+      credentials: "include",
       ...(Object.keys(headers).length > 0 ? { headers } : {}),
       ...(raw !== undefined
         ? { body: raw }
