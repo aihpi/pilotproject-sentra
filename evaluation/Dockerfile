@@ -12,13 +12,18 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Dependencies first, as their own layer.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+# --extra vorlagen: two small pure-Python packages, so that the operator who
+# imports a collection sheet somebody filled in can do it in this container
+# rather than needing a checkout. `cli import` accepts .xlsx as well as .yaml,
+# and a harness that could not read the format its cases arrive in would push
+# a manual conversion step in front of every round.
+RUN uv sync --frozen --no-dev --extra vorlagen --no-install-project
 
 COPY README.md .
 COPY alembic.ini .
 COPY src/ src/
 
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --extra vorlagen
 
 # The schema is applied deliberately, not at startup: a process that migrates
 # when it boots decides the schema by whichever replica won the race.

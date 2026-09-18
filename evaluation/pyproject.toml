@@ -38,6 +38,17 @@ ragas = [
     "pillow>=10",
 ]
 
+# The collection templates: an Excel sheet and a Word form for the people
+# gathering cases, and the converter that turns a filled sheet into the case
+# file the CLI imports. Kept out of the base install because the harness itself
+# never reads a spreadsheet — this is the on-ramp, not the runtime.
+#
+#   uv sync --extra vorlagen
+vorlagen = [
+    "openpyxl>=3.1",
+    "python-docx>=1.1",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
@@ -88,7 +99,17 @@ disallow_untyped_defs = true
 # unless the optional extra is. mypy therefore sees a different world in CI
 # (extra absent) from a machine that has run `uv sync --extra ragas`, which is
 # how a type: ignore that was necessary locally became an error in CI.
-module = ["ragas.*", "langchain_openai.*", "langchain.*", "langchain_core.*"]
+# openpyxl and python-docx are the same situation one extra along: neither
+# ships type information, and both are absent unless `--extra vorlagen` was
+# synced, so mypy sees a different world in CI from a machine that has them.
+module = [
+    "ragas.*",
+    "langchain_openai.*",
+    "langchain.*",
+    "langchain_core.*",
+    "openpyxl.*",
+    "docx.*",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
