@@ -395,7 +395,7 @@ def _run_checks(session: Session, call: Call) -> None:
             checks.ablehnung(
                 call.response_body,
                 grenzfall=version.grenzfall,
-                abgelehnt=_abgelehnt(call, version),
+                abgelehnt=_abgelehnt(session, call, version),
             ),
             checks.abschneidung(call.response_body),
         ]
@@ -428,7 +428,7 @@ def _run_checks(session: Session, call: Call) -> None:
         session.add(result)
 
 
-def _abgelehnt(call: Call, version: CaseVersion) -> bool | None:
+def _abgelehnt(session: Session, call: Call, version: CaseVersion) -> bool | None:
     """Did this answer decline to answer? None means "fall back to the string".
 
     Two paths, cheap one first. The exact refusal with no sources is
@@ -438,9 +438,19 @@ def _abgelehnt(call: Call, version: CaseVersion) -> bool | None:
 
     Otherwise the judge decides, because 4.4 accepts prose (#109) and
     recognising "I cannot answer this from the context" is not a string
-    comparison. Asked once per case, on the first repeat of the original
-    question: whether the system hedged is a fact about the case, and 4.1
-    already covers whether the repeats differ.
+    comparison.
+
+    Once per *distinct answer*, not once per call. Repeats of a question
+    usually come back byte-identical, so this costs one judge call per case in
+    the common run while still judging a repeat that came back different —
+    which is the repeat worth judging.
+
+    Judging only the first repeat was the bug in #132. The other repeats
+    returned None, and None means "compare the literal string", so they did not
+    record "not assessed" — they recorded a verdict reached by the rule #109
+    decided against. Identical text came out `korrekt abgelehnt` on one row and
+    `nicht abgelehnt` on the next, and an ordinary question that SENTRA hedged
+    read as clean on two rows out of three.
 
     A judge that cannot be reached falls back to the literal comparison rather
     than guessing. That reports a hedging Grenzfall as "nicht abgelehnt" —
@@ -448,8 +458,10 @@ def _abgelehnt(call: Call, version: CaseVersion) -> bool | None:
     """
     if checks.ist_wortliche_ablehnung(call.response_body):
         return True
-    if call.repeat_index != 0 or call.variant_key != ORIGINAL:
-        return None
+
+    schon_beurteilt = _judgement_for_the_same_answer(session, call)
+    if schon_beurteilt is not None:
+        return schon_beurteilt
 
     try:
         abgelehnt, _grund = judge.beurteile_ablehnung(
@@ -459,6 +471,49 @@ def _abgelehnt(call: Call, version: CaseVersion) -> bool | None:
         logger.warning("Judge could not assess refusal for %s: %s", version.id, exc)
         return None
     return abgelehnt
+
+
+def _judgement_for_the_same_answer(session: Session, call: Call) -> bool | None:
+    """A verdict the judge already gave on this exact text, in this round.
+
+    Through the database rather than a dictionary, because a round resumes:
+    `execute` can be re-entered in a new process over calls stored by an
+    earlier one, and an in-memory cache would be empty there and would judge
+    the same answers again. It also keeps the cache per run, which is what the
+    record needs — a verdict belongs to the round that asked for it.
+
+    Scoped to the same case version, since that is the only place identical
+    answer text is plausible, and it keeps this to a handful of rows.
+    """
+    text = (call.response_body.get("text") or "").strip()
+    if not text:
+        return None
+
+    geschwister = session.execute(
+        select(Call).where(
+            Call.run_id == call.run_id,
+            Call.case_version_id == call.case_version_id,
+            Call.zweck == ZWECK_ANTWORT,
+            Call.status == OK,
+            Call.id != call.id,
+        )
+    ).scalars()
+
+    for other in geschwister:
+        if (other.response_body.get("text") or "").strip() != text:
+            continue
+        result = session.execute(
+            select(CheckResult).where(
+                CheckResult.call_id == other.id,
+                CheckResult.pruefung == checks.ABLEHNUNG,
+            )
+        ).scalar_one_or_none()
+        if result is None:
+            continue
+        belege = result.belege or {}
+        if belege.get("beurteilt_durch") == checks.DURCH_PRUEFMODELL:
+            return bool(belege["abgelehnt"])
+    return None
 
 
 def _run_group_checks(session: Session, run: Run) -> None:

@@ -240,6 +240,15 @@ def ist_wortliche_ablehnung(response: dict) -> bool:
     return text == REFUSAL_TEXT and not sources
 
 
+# Who decided whether the answer was a refusal. Recorded in the evidence
+# because the two are not interchangeable: the judge reads prose (#109), the
+# literal comparison is the fallback for when no judge could be reached, and a
+# reviewer looking at a verdict needs to know which one produced it. The runner
+# reads DURCH_PRUEFMODELL back to reuse a judgement across identical repeats.
+DURCH_WORTLAUT = "Wortlaut"
+DURCH_PRUEFMODELL = "Prüfmodell"
+
+
 def ablehnung(response: dict, *, grenzfall: bool, abgelehnt: bool | None = None) -> CheckOutcome:
     """Whether an out-of-corpus question was refused, and an ordinary one was not.
 
@@ -273,7 +282,7 @@ def ablehnung(response: dict, *, grenzfall: bool, abgelehnt: bool | None = None)
         "grenzfall": grenzfall,
         "abgelehnt": refused,
         "woertliche_ablehnung": ist_wortliche_ablehnung(response),
-        "beurteilt_durch": "Wortlaut" if abgelehnt is None else "Prüfmodell",
+        "beurteilt_durch": DURCH_WORTLAUT if abgelehnt is None else DURCH_PRUEFMODELL,
         "anzahl_quellen": len(sources),
         "antwort_beginn": text[:120],
     }
