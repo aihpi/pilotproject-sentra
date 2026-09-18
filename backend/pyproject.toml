@@ -19,6 +19,7 @@ dependencies = [
     "docling-core>=2.62.0",     # ingestion/parser.py, ContentLayer
     "pypdfium2>=4.30.0",        # ingestion/parser.py
     "numpy>=1.26",              # rag/store.py
+    "itsdangerous>=2.2",
 ]
 
 [dependency-groups]

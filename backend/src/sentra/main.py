@@ -4,9 +4,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 
 from sentra.api.auth import warn_if_open
 from sentra.api.errors import register_error_handlers
+from sentra.api.identity import login_configured
 from sentra.api.routes import router
 from sentra.config import get_settings
 from sentra.rag.embeddings import EmbeddingClient
@@ -65,6 +67,23 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# Before CORS in source order, which means it runs outside it: the session has
+# to be readable by the time a route runs, and Starlette applies middleware in
+# reverse.
+#
+# Only mounted when a login is configured. A SessionMiddleware with an empty
+# secret key is a signed cookie anybody can forge, so the absence of a secret
+# has to mean the absence of sessions rather than weak ones.
+if login_configured(get_settings()):
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=get_settings().session_secret,
+        session_cookie="sentra_session",
+        max_age=get_settings().session_max_age_seconds,
+        same_site="lax",
+        https_only=get_settings().session_cookie_secure,
+    )
 
 app.add_middleware(
     CORSMiddleware,

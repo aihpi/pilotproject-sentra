@@ -92,6 +92,35 @@ class Settings(BaseSettings):
     # and a developer running compose should not need a secret to start.
     admin_token: str = ""
 
+    # ── The prototype login (#165) ──────────────────────────────────
+    # Users as `name:role:hash`, comma- or newline-separated. Roles are leser,
+    # pruefer, admin. The hash contains no `$`, deliberately: docker compose
+    # substitutes variables in the env file it is handed, so a `$` in a value
+    # is read as the start of a variable name and silently becomes nothing.
+    # Produce a hash with:
+    #
+    #   cd backend && uv run python -m sentra.api.identity
+    #
+    # Empty means no login is possible, which /api/health reports.
+    sentra_users: str = ""
+
+    # Signs the session cookie. No default on purpose: a default signing key is
+    # a forged session for anyone who can read this repository, so absent means
+    # no login rather than a weak one.
+    session_secret: str = ""
+
+    session_max_age_seconds: int = 12 * 60 * 60
+
+    # Whether the session cookie is marked Secure, i.e. HTTPS only.
+    #
+    # **Defaults to on, and an operator has to turn it off deliberately to run
+    # without TLS.** This is the one place the decision to ship a login before
+    # TLS becomes visible in code rather than in a document: today there is no
+    # cookie to steal, afterwards there is one, and SENTRA is published as a
+    # bare LoadBalancer. Defaulting this off would be convenient and would mean
+    # nobody ever noticed. See references/SECURITY_NOTES.md and #161 item 1.
+    session_cookie_secure: bool = True
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:
