@@ -140,7 +140,19 @@ const { AdministrationView } =
 async function renderWith(cases: EvalCase[]) {
   fetchCases.mockResolvedValue(cases);
   render(<AdministrationView />);
-  await screen.findByText(/Testfälle \(/);
+  // Wait for something that only exists once the cases have arrived.
+  //
+  // This waited on the "Testfälle (n)" heading, which renders immediately —
+  // including as "Testfälle (0)" before the fetch resolves. Every test then
+  // raced the promise and won locally, because resolving an already-resolved
+  // mock takes a microtask; CI is slower and lost, so a test asserting on a
+  // row failed to find the row. A marker that is true of the empty state is
+  // not a marker that the list has loaded.
+  if (cases.length > 0) {
+    await screen.findByText(cases[0].test_id);
+  } else {
+    await screen.findByText(/Noch keine Testfälle/);
+  }
 }
 
 beforeEach(() => {
