@@ -89,7 +89,6 @@ export interface AppConfig {
   referate: ReferatOption[];
 }
 
-
 // ── Evaluation harness ──────────────────────────────────────────────
 //
 // Served by sentra_eval, a separate process reached through the same origin:
@@ -190,6 +189,18 @@ export interface Session {
   benutzername: string;
   /** leser | pruefer | admin, least to most. */
   rolle: string;
+}
+
+/** Somebody who can sign in.
+ *
+ *  `quelle` is where the account comes from: a row in the database, or a name
+ *  in `SENTRA_USERS`. Configured users are listed but cannot be edited here —
+ *  they live in the deployment, and an admin who could not see them would be
+ *  left wondering why a name they never created can log in. */
+export interface SentraUser {
+  benutzername: string;
+  rolle: string;
+  quelle: string;
 }
 
 /** One version of a test case's content. Immutable once approved.

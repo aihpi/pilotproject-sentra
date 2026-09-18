@@ -7,6 +7,7 @@ from uuid import NAMESPACE_URL, uuid5
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
+from sentra.api import users as user_store
 from sentra.api.auth import require_role, write_paths_state
 from sentra.api.identity import (
     ADMIN,
@@ -14,12 +15,14 @@ from sentra.api.identity import (
     Subject,
     authenticate,
     login_configured,
+    parse_users,
     require_subject,
 )
 from sentra.api.models import (
     AnswerRequest,
     AnswerSourceRef,
     ConfigResponse,
+    CreateUserRequest,
     DocumentInfo,
     DocumentSearchRequest,
     DocumentSearchResponse,
@@ -39,9 +42,12 @@ from sentra.api.models import (
     ReferatOption,
     RetrievedChunk,
     SimilarDocumentsRequest,
+    UpdateUserRequest,
+    UserResponse,
     date_range_params,
 )
 from sentra.config import Settings, get_settings
+from sentra.db import session_scope
 from sentra.domain import AnswerResult
 from sentra.ingestion.metadata import DOCUMENT_TYPE_VALUES, FACHBEREICH_NAMES
 from sentra.rag.embeddings import EmbeddingClient
@@ -314,7 +320,19 @@ def login(
             detail="Für diese Installation ist keine Anmeldung eingerichtet.",
         )
 
-    subject = authenticate(body.benutzername, body.passwort, settings)
+    # The database first, configuration second — see users.stored_credentials.
+    # Wrapped so a login still works when the registry database is down: the
+    # bootstrap admin lives in configuration precisely for the moments when
+    # something else is broken.
+    def stored(name: str) -> tuple[str, str] | None:
+        try:
+            with session_scope() as session:
+                return user_store.stored_credentials(session, name)
+        except Exception:  # noqa: BLE001 - a login must not depend on the registry
+            logger.warning("Could not read users from the database; using configuration only.")
+            return None
+
+    subject = authenticate(body.benutzername, body.passwort, settings, stored)
     if subject is None:
         raise HTTPException(status_code=401, detail="Benutzername oder Passwort ist falsch.")
 
@@ -336,6 +354,96 @@ def logout(request: Request) -> None:
     somebody clicking the button twice does, and it has already succeeded.
     """
     request.session.clear()
+
+
+# One closure, built once. Calling require_role in an argument default builds a
+# new guard per request and ruff rightly objects; naming it also makes the
+# endpoints below read as "admin only" at a glance.
+REQUIRE_ADMIN = Depends(require_role(ADMIN))
+
+
+# ── Administering users ─────────────────────────────────────────────
+#
+# Admin only, enforced by require_role rather than by the tab being hidden.
+#
+# Two lockout guards live in the store, not here, because they are rules about
+# the user set rather than about the request: the last administrator cannot be
+# removed or demoted, and nobody can do either to themselves. They are
+# different mistakes — one is reached by tidying up, the other by clicking the
+# wrong row — and an installation with no administrator is recoverable only by
+# editing the database by hand.
+
+
+@router.get("/users", response_model=list[UserResponse])
+def list_users(_: Subject | None = REQUIRE_ADMIN) -> list[UserResponse]:
+    """Everybody who can sign in, from the database and from configuration.
+
+    Configured users are listed too, and marked. Leaving them out would mean an
+    admin cannot see why a name they never created can log in.
+    """
+    settings = get_settings()
+    with session_scope() as session:
+        stored = user_store.list_users(session)
+        names = {user.name for user in stored}
+        entries = [
+            UserResponse(benutzername=user.name, rolle=user.role, quelle="Datenbank")
+            for user in stored
+        ]
+
+    entries += [
+        UserResponse(benutzername=name, rolle=role, quelle="Konfiguration")
+        for name, (role, _hash) in sorted(parse_users(settings.sentra_users).items())
+        if name not in names
+    ]
+    return entries
+
+
+@router.post("/users", response_model=UserResponse, status_code=201)
+def create_user(body: CreateUserRequest, _: Subject | None = REQUIRE_ADMIN) -> UserResponse:
+    with session_scope() as session:
+        try:
+            user = user_store.create_user(
+                session,
+                name=body.benutzername,
+                role=body.rolle,
+                password=body.passwort,
+            )
+        except user_store.DuplicateUser as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return UserResponse(benutzername=user.name, rolle=user.role)
+
+
+@router.patch("/users/{name}", response_model=UserResponse)
+def update_user(
+    name: str,
+    body: UpdateUserRequest,
+    acting: Subject | None = REQUIRE_ADMIN,
+) -> UserResponse:
+    with session_scope() as session:
+        try:
+            user = user_store.update_user(
+                session, name, acting=acting, role=body.rolle, password=body.passwort
+            )
+        except user_store.UnknownUser as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (user_store.LastAdmin, user_store.Self) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return UserResponse(benutzername=user.name, rolle=user.role)
+
+
+@router.delete("/users/{name}", status_code=204)
+def delete_user(name: str, acting: Subject | None = REQUIRE_ADMIN) -> None:
+    with session_scope() as session:
+        try:
+            user_store.delete_user(session, name, acting=acting)
+        except user_store.UnknownUser as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (user_store.LastAdmin, user_store.Self) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/health", response_model=HealthResponse)

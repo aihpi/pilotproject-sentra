@@ -31,6 +31,7 @@ import hashlib
 import hmac
 import logging
 import secrets
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from fastapi import Depends, HTTPException, Request
@@ -145,7 +146,12 @@ def parse_users(raw: str) -> dict[str, tuple[str, str]]:
     return users
 
 
-def authenticate(name: str, password: str, settings: Settings) -> Subject | None:
+def authenticate(
+    name: str,
+    password: str,
+    settings: Settings,
+    stored_lookup: Callable[[str], tuple[str, str] | None] | None = None,
+) -> Subject | None:
     """The configured user, if the password matches.
 
     An unknown user and a wrong password take the same path and the same time:
@@ -154,8 +160,17 @@ def authenticate(name: str, password: str, settings: Settings) -> Subject | None
     faster than "wrong password", which is a user-enumeration oracle whatever
     the message says.
     """
-    users = parse_users(settings.sentra_users)
-    found = users.get(name)
+    # The database first, configuration second. A user administered in the UI
+    # has to win over one of the same name left in SENTRA_USERS, or a password
+    # changed there is silently undone by the environment — and that is the
+    # kind of precedence discovered during an incident rather than before one.
+    #
+    # Passed in rather than imported: identity sits below the user table in the
+    # layering, and a login that could not work without a database would make
+    # the bootstrap impossible.
+    found = stored_lookup(name) if stored_lookup else None
+    if found is None:
+        found = parse_users(settings.sentra_users).get(name)
     stored = found[1] if found else _DUMMY_HASH
     matched = verify_password(password, stored)
     if found and matched:
@@ -187,6 +202,15 @@ def current_subject(request: Request, settings: Settings = Depends(get_settings)
     """
     if not login_configured(settings):
         return None
+
+    # No SessionMiddleware mounted. main.py only mounts it when a login is
+    # configured, so the two normally agree — but an app that includes this
+    # router without it must treat the caller as anonymous rather than raise,
+    # which is a 500 on an endpoint whose answer is "you are not signed in".
+    # Found by a test app doing exactly that.
+    if "session" not in request.scope:
+        return None
+
     data = request.session.get("subject")
     if not isinstance(data, dict):
         return None

@@ -9,6 +9,8 @@ from logging.config import fileConfig
 
 from alembic import context
 
+from sentra.api import users as _users  # noqa: F401
+
 # Imported for its side effect: the models have to be loaded before
 # Base.metadata knows about them, or `revision --autogenerate` cheerfully
 # produces an empty migration and the schema silently stops being tracked.
