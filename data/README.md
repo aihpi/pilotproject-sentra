@@ -23,7 +23,7 @@ Ingestion globs `*.pdf`. There are also `.docx` files here, mostly abstracts of
 documents that are already indexed as PDFs, and they are skipped on purpose.
 Docling could read them; the open question is how an abstract and its parent
 should relate, since they share an Aktenzeichen. See
-`docs/SOURCE_MANAGEMENT_NOTES.md`.
+`references/SOURCE_MANAGEMENT_NOTES.md`.
 
 ## This is not the test corpus
 

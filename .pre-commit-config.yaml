@@ -14,10 +14,10 @@ repos:
         # Two or more trailing spaces are a hard line break in markdown, and the
         # PR template relies on them. Without this the hook silently reflows it.
         args: [--markdown-linebreak-ext=md]
-        exclude: ^docs/
+        exclude: ^references/
       - id: end-of-file-fixer
-        # docs/ holds documents we received rather than source we own.
-        exclude: ^docs/
+        # references/ holds documents we received rather than source we own.
+        exclude: ^references/
       - id: check-merge-conflict
       - id: check-yaml
       - id: check-toml

@@ -1,7 +1,7 @@
 # Evaluation harness
 
 Structured test rounds for SENTRA, implementing
-`docs/Vorlage_Strukturierte_Testverfahren_KISZ.md`.
+`references/Vorlage_Strukturierte_Testverfahren_KISZ.md`.
 
 Its own process and its own distribution. It depends on nothing of SENTRA's and
 reaches it over HTTP at `SENTRA_BASE_URL`, because SENTRA's API layer is part of
