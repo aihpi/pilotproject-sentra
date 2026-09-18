@@ -1,7 +1,11 @@
 import type {
+  Agreement,
   EvalRun,
   MachineVerdicts,
   QueueEntry,
+  Sheet,
+  Trend,
+  TriageSummary,
   SubmitVerdict,
   Verdict,
   VorlageOptions,
@@ -74,5 +78,51 @@ export function fetchMachineVerdicts(callId: string): Promise<MachineVerdicts> {
   return request(`/eval/calls/${callId}/machine-verdicts`, {
     label: "Automatikprüfung konnte nicht geladen werden",
     statusMessages: { 502: NOT_RUNNING },
+  });
+}
+
+
+// ── What the round concluded ────────────────────────────────────────
+//
+// None of these are ordered before a sheet is submitted, unlike
+// fetchMachineVerdicts above: they are about the round rather than about the
+// case in front of the reviewer, and a reviewer working the queue does not see
+// this screen.
+
+export function fetchTriage(runId: string): Promise<TriageSummary> {
+  return request(`/eval/runs/${runId}/triage`, {
+    label: "Triage konnte nicht geladen werden",
+    statusMessages: { 502: NOT_RUNNING, 503: NOT_RUNNING },
+  });
+}
+
+/** Stufe 1 against a human. Section 6 calls this the most important number in
+ *  the process, and it is the one that calibrates the Prüfschwelle. */
+export function fetchAgreement(runId: string): Promise<Agreement> {
+  return request(`/eval/runs/${runId}/abweichung`, {
+    label: "Abweichungsquote konnte nicht geladen werden",
+    statusMessages: { 502: NOT_RUNNING, 503: NOT_RUNNING },
+  });
+}
+
+export function fetchSheets(runId: string): Promise<Sheet[]> {
+  return request(`/eval/runs/${runId}/boegen`, {
+    label: "Dokumentationsbögen konnten nicht geladen werden",
+    statusMessages: { 502: NOT_RUNNING, 503: NOT_RUNNING },
+  });
+}
+
+/** Schweregrad 3 and 4, which leave the WD process and go to KISZ. */
+export function fetchKisz(runId: string): Promise<Verdict[]> {
+  return request(`/eval/runs/${runId}/kisz`, {
+    label: "KISZ-Meldungen konnten nicht geladen werden",
+    statusMessages: { 502: NOT_RUNNING, 503: NOT_RUNNING },
+  });
+}
+
+export function fetchTrend(): Promise<Trend> {
+  return request("/eval/trend", {
+    label: "Trendauswertung konnte nicht geladen werden",
+    statusMessages: { 502: NOT_RUNNING, 503: NOT_RUNNING },
   });
 }

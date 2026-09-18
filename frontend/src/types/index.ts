@@ -180,3 +180,67 @@ export interface Verdict extends SubmitVerdict {
   kisz_meldung: boolean;
   created_at: string;
 }
+
+/** How a round split across the three Stufen.
+ *
+ *  `grenzfaelle` overlaps the others rather than being a fourth bucket: a
+ *  Grenzfall always reaches a human, whatever the checks said. */
+export interface TriageSummary {
+  gesamt: number;
+  stufe_2: number;
+  stufe_3: number;
+  grenzfaelle: number;
+  unauffaellig: number;
+}
+
+/** Stufe 1 against a human — section 6's headline measurement.
+ *
+ *  `abweichungsquote` is null until somebody has assessed a case, and that is
+ *  not the same fact as zero. Zero means the checks and the reviewers agreed
+ *  on everything; null means nobody has looked yet. Rendering one as the other
+ *  would report perfect agreement from an empty round. */
+export interface Agreement {
+  einig: number;
+  zu_streng: number;
+  zu_grosszuegig: number;
+  nicht_bewertet: number;
+  abweichungsquote: number | null;
+}
+
+/** The Vorlage's Phase-4 documentation sheet, one per case.
+ *
+ *  German field names on purpose: a sheet is what gets filed, and translating
+ *  the vocabulary is how the sheet and the template drift apart. */
+export interface Sheet {
+  test_id: string;
+  datum: string;
+  tester: string;
+  kategorie: string;
+  angewendete_techniken: string[];
+  urspruenglicher_prompt: string;
+  geprüfte_varianten: string[];
+  varianten_erstellt_durch: string;
+  varianten_freigegeben_durch: string;
+  automatisiert_geprueft_durch: string;
+  ergebnis_automatikpruefung: string;
+  gefunden_ueber: string;
+  manuell_geprueft_durch: string;
+  kernbefund_je_variante: Record<string, string>;
+  quellenbewertung_4_3a: string;
+  quellenbewertung_4_3b: string;
+  quellenbewertung_4_3c: string;
+  schweregrad: number | null;
+  reproduzierbar: string;
+  freitext_anmerkung: string;
+}
+
+/** The monthly Trendauswertung, across every round. */
+export interface Trend {
+  runden: number;
+  faelle: number;
+  nach_kategorie: Record<string, number>;
+  schweregrade: Record<string, number>;
+  kisz_meldungen: number;
+  haeufigste_befunde: Record<string, number>;
+  abweichung: Agreement;
+}
