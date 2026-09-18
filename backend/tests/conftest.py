@@ -237,6 +237,12 @@ def settings() -> Settings:
     and from the placeholders above where there is not; everything that says
     *which data* comes from here, so a test run can never touch the operator's
     index or read their corpus.
+
+    Auth is pinned off for the same reason. A developer who has configured a
+    login locally would otherwise watch nine endpoint tests fail for a reason
+    that has nothing to do with what they test — the guards refuse, correctly,
+    and those tests were written before guards existed. Tests that are *about*
+    auth build their own Settings and are unaffected.
     """
     if ENV_FILE.is_file():
         os.environ.setdefault("ENV_FILE", str(ENV_FILE))
@@ -245,6 +251,9 @@ def settings() -> Settings:
         collection_name=TEST_COLLECTION,
         doc_collection_name=TEST_DOC_COLLECTION,
         documents_dir=str(DATA_DIR),
+        admin_token="",
+        sentra_users="",
+        session_secret="",
     )
 
 

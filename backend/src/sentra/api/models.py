@@ -91,6 +91,32 @@ class MeResponse(BaseModel):
     rolle: str
 
 
+class UserResponse(BaseModel):
+    """A user, without anything secret about them.
+
+    No password and no hash, on any endpoint, ever. The column exists for the
+    verifier and nothing else may read it.
+    """
+
+    benutzername: str
+    rolle: str
+    quelle: str = "Datenbank"
+
+
+class CreateUserRequest(BaseModel):
+    benutzername: str = Field(min_length=1)
+    rolle: str
+    passwort: str = Field(min_length=1)
+
+
+class UpdateUserRequest(BaseModel):
+    """Omitted fields are left alone, so a role change need not resend a
+    password and a password reset need not restate the role."""
+
+    rolle: str | None = None
+    passwort: str | None = Field(default=None, min_length=1)
+
+
 class HealthResponse(BaseModel):
     status: str
     qdrant: str

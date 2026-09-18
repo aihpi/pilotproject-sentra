@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { CaseDraft, EvalCase, EvalRun } from "@/types";
+import type { CaseDraft, EvalCase, EvalRun, Session } from "@/types";
 import {
   approveCase,
   createCase,
@@ -14,6 +14,7 @@ import { RunPicker } from "@/components/evaluation/RunPicker";
 import { CaseForm } from "@/components/administration/CaseForm";
 import { CaseTable } from "@/components/administration/CaseTable";
 import { RoundControls } from "@/components/administration/RoundControls";
+import { UserPane } from "@/components/administration/UserPane";
 
 /** Everything that changes the test set, kept away from the screen where
  *  cases are judged.
@@ -41,7 +42,7 @@ const EMPTY: CaseDraft = {
   grenzfall: false,
 };
 
-export function AdministrationView() {
+export function AdministrationView({ session }: { session: Session | null }) {
   const [cases, setCases] = useState<EvalCase[]>([]);
   const [runs, setRuns] = useState<EvalRun[]>([]);
   // Whoever starts a round is usually the one who wants to see what it said,
@@ -49,7 +50,9 @@ export function AdministrationView() {
   // ends with nobody looking. The same view as in Auswertung, deliberately —
   // two renderings of one round is how two people come to quote different
   // numbers from it.
-  const [tab, setTab] = useState<"testfaelle" | "ergebnisse">("testfaelle");
+  const [tab, setTab] = useState<"testfaelle" | "ergebnisse" | "benutzer">(
+    "testfaelle",
+  );
   const [runId, setRunId] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -133,6 +136,7 @@ export function AdministrationView() {
               [
                 ["testfaelle", "Testfälle"],
                 ["ergebnisse", "Ergebnisse"],
+                ["benutzer", "Benutzer"],
               ] as const
             ).map(([key, label]) => (
               <button
@@ -157,11 +161,15 @@ export function AdministrationView() {
         </p>
       </header>
 
-      <RoundControls
-        running={active}
-        onStarted={(run) => setRuns((cur) => [run, ...cur])}
-        onImported={load}
-      />
+      {tab !== "benutzer" && (
+        <RoundControls
+          running={active}
+          onStarted={(run) => setRuns((cur) => [run, ...cur])}
+          onImported={load}
+        />
+      )}
+
+      {tab === "benutzer" && <UserPane session={session} />}
 
       {error && (
         <p className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">

@@ -139,7 +139,11 @@ const { AdministrationView } =
 
 async function renderWith(cases: EvalCase[]) {
   fetchCases.mockResolvedValue(cases);
-  render(<AdministrationView />);
+  // A session is required now that the tab administers users; these tests
+  // are about cases and rounds, so an admin is the neutral choice.
+  render(
+    <AdministrationView session={{ benutzername: "chef", rolle: "admin" }} />,
+  );
   // Wait for something that only exists once the cases have arrived.
   //
   // This waited on the "Testfälle (n)" heading, which renders immediately —

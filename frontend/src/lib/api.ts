@@ -34,7 +34,7 @@ interface RequestOptions {
   /** PATCH is here for the case store, where changing a case is deliberately
    *  not a full replacement: omitted fields are carried over, and the harness
    *  decides whether that edits the draft or adds a version. */
-  method?: "GET" | "POST" | "PATCH";
+  method?: "GET" | "POST" | "PATCH" | "DELETE";
   /** Sent as JSON. Its presence is what adds the Content-Type header. */
   body?: unknown;
   /** Sent as-is, for an endpoint that takes bytes rather than JSON — the
@@ -97,6 +97,9 @@ export async function request<T>(
   if (!response.ok) {
     throw new Error(await failureMessage(response, label, statusMessages));
   }
+  // 204 has no body. Parsing one would throw on exactly the calls that
+  // succeeded — deleting a user, signing out.
+  if (response.status === 204) return undefined as T;
   return response.json();
 }
 

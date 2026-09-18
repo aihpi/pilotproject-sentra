@@ -78,7 +78,9 @@ export default function App() {
             {activeView === "explorer" && <ExplorerView />}
             {activeView === "documents" && <DocumentsView />}
             {activeView === "evaluation" && <EvaluationView />}
-            {activeView === "administration" && <AdministrationView />}
+            {activeView === "administration" && (
+              <AdministrationView session={session} />
+            )}
           </>
         ) : (
           <p className="mx-auto max-w-2xl p-6 text-sm text-muted-foreground">
