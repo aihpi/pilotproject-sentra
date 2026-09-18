@@ -19,6 +19,7 @@ import { CasePane } from "@/components/evaluation/CasePane";
 import { MachineVerdictPane } from "@/components/evaluation/MachineVerdictPane";
 import { PdfPane } from "@/components/evaluation/PdfPane";
 import { QueueList } from "@/components/evaluation/QueueList";
+import { ResultsView } from "@/components/evaluation/ResultsView";
 import { VerdictForm } from "@/components/evaluation/VerdictForm";
 
 /** Stufe 2: working a round's queue.
@@ -43,6 +44,11 @@ export function EvaluationView() {
   // The document open for 4.3c. Cleared with the case, because a passage from
   // the previous case beside this one's answer is worse than no passage.
   const [openSource, setOpenSource] = useState<SourceRef | null>(null);
+  // Reviewing and reading results are different jobs, and the second must not
+  // be reachable by scrolling past the first: a reviewer who sees the round's
+  // verdicts while working the queue is anchored by them, which is the thing
+  // the whole screen is arranged to prevent.
+  const [tab, setTab] = useState<"pruefen" | "ergebnisse">("pruefen");
   const [tester, setTester] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -142,48 +148,93 @@ export function EvaluationView() {
           </span>
         )}
         {runs.length === 0 && (
-          <span className="text-xs text-muted-foreground">Keine Testrunden vorhanden.</span>
+          <span className="text-xs text-muted-foreground">
+            Keine Testrunden vorhanden.
+          </span>
         )}
+
+        <nav className="ml-auto flex gap-1" aria-label="Ansicht">
+          {(
+            [
+              ["pruefen", "Prüfen"],
+              ["ergebnisse", "Ergebnisse"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              aria-current={tab === key ? "page" : undefined}
+              className={
+                tab === key
+                  ? "rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground"
+                  : "rounded-md px-3 py-1 text-xs text-muted-foreground hover:bg-muted"
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
       </header>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(12rem,1fr)_minmax(0,2.4fr)_minmax(14rem,1.2fr)]">
-        <QueueList entries={queue} selected={selected} onSelect={selectCase} />
-
-        {entry ? (
-          <div className="space-y-4">
-            <AnswerPane
-              calls={entry.calls}
-              activeIndex={activeCall}
-              onSelectCall={setActiveCall}
-              onSelectSource={setOpenSource}
-              selectedSource={openSource?.aktenzeichen}
-            />
-            {openSource && (
-              <PdfPane source={openSource} onClose={() => setOpenSource(null)} />
-            )}
-          </div>
+      {tab === "ergebnisse" &&
+        (runId ? (
+          <ResultsView key={runId} runId={runId} />
         ) : (
           <p className="text-sm text-muted-foreground">
-            Keinen Testfall ausgewählt.
+            Keine Testrunde ausgewählt.
           </p>
-        )}
+        ))}
 
-        {entry && <CasePane entry={entry} />}
-      </div>
-
-      {entry && options && (
+      {tab === "pruefen" && (
         <>
-          <VerdictForm
-            key={entry.case_version_id}
-            calls={entry.calls}
-            options={options}
-            tester={tester}
-            onTesterChange={setTester}
-            onSubmit={submit}
-            submitting={submitting}
-            error={error}
-          />
-          <MachineVerdictPane verdicts={verdicts} />
+          <div className="grid gap-4 lg:grid-cols-[minmax(12rem,1fr)_minmax(0,2.4fr)_minmax(14rem,1.2fr)]">
+            <QueueList
+              entries={queue}
+              selected={selected}
+              onSelect={selectCase}
+            />
+
+            {entry ? (
+              <div className="space-y-4">
+                <AnswerPane
+                  calls={entry.calls}
+                  activeIndex={activeCall}
+                  onSelectCall={setActiveCall}
+                  onSelectSource={setOpenSource}
+                  selectedSource={openSource?.aktenzeichen}
+                />
+                {openSource && (
+                  <PdfPane
+                    source={openSource}
+                    onClose={() => setOpenSource(null)}
+                  />
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Keinen Testfall ausgewählt.
+              </p>
+            )}
+
+            {entry && <CasePane entry={entry} />}
+          </div>
+
+          {entry && options && (
+            <>
+              <VerdictForm
+                key={entry.case_version_id}
+                calls={entry.calls}
+                options={options}
+                tester={tester}
+                onTesterChange={setTester}
+                onSubmit={submit}
+                submitting={submitting}
+                error={error}
+              />
+              <MachineVerdictPane verdicts={verdicts} />
+            </>
+          )}
         </>
       )}
     </div>

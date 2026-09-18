@@ -19,3 +19,26 @@ export function labelFor(call: QueueCall): string {
 export function kernbefundKey(call: QueueCall): string {
   return `${call.variant_key}#${call.repeat_index}`;
 }
+
+/** The same label, from the stored key rather than from a call.
+ *
+ *  A Phase-4 sheet carries `kernbefund_je_variante` keyed "<variant>#<repeat>"
+ *  and has no call objects to hand — the sheet is about the round, not about
+ *  what is on screen. Reading the key here rather than showing it raw keeps
+ *  the sheet and the review tabs saying the same thing about the same answer,
+ *  which is the whole reason `labelFor` was extracted in the first place.
+ *
+ *  Anything that is not in that shape is passed through. A key this does not
+ *  recognise is still more useful on screen than an empty cell. */
+export function labelForKey(key: string): string {
+  const [variant, repeat] = key.split("#");
+  if (repeat === undefined) return key;
+  const index = Number(repeat);
+  if (!Number.isInteger(index)) return key;
+  return variant === "original" ? `W${index + 1}` : `${variant} ${index + 1}`;
+}
+
+/** A variant name on its own, as `geprüfte_varianten` lists them. */
+export function labelForVariant(variant: string): string {
+  return variant === "original" ? "Original" : variant;
+}
