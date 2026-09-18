@@ -1,6 +1,7 @@
 import type {
   Agreement,
   EvalRun,
+  ImportReport,
   MachineVerdicts,
   QueueEntry,
   Sheet,
@@ -123,6 +124,56 @@ export function fetchKisz(runId: string): Promise<Verdict[]> {
 export function fetchTrend(): Promise<Trend> {
   return request("/eval/trend", {
     label: "Trendauswertung konnte nicht geladen werden",
+    statusMessages: { 502: NOT_RUNNING, 503: NOT_RUNNING },
+  });
+}
+
+// ── Getting a round going ───────────────────────────────────────────
+//
+// Both of these were `docker compose exec` commands, which made whoever has a
+// terminal the bottleneck for every round. Reviewing worked in the browser and
+// nothing before it did.
+
+/** Upload a filled collection sheet.
+ *
+ *  Posts the file's bytes directly rather than as multipart: a `File` is a
+ *  `Blob`, and it saves a dependency in the harness's image for one endpoint.
+ *
+ *  Only ever creates drafts — the reader forces every row to `entwurf`, so an
+ *  upload cannot approve anything and cannot change what a round measures
+ *  against. That is what makes this safe to expose to a browser at all. */
+export function importSheet(file: File): Promise<ImportReport> {
+  return request("/eval/faelle/import", {
+    method: "POST",
+    raw: file,
+    label: "Die Datei konnte nicht importiert werden",
+    statusMessages: {
+      413: "Die Datei ist zu groß. Das ist vermutlich nicht die Erfassungsvorlage.",
+      502: NOT_RUNNING,
+      503: NOT_RUNNING,
+    },
+  });
+}
+
+/** Start a round. Returns immediately — a round is roughly 180 generation
+ *  calls at 20 to 29 seconds each, so the caller polls. */
+export function startRun(label: string, repeats: number): Promise<EvalRun> {
+  return request("/eval/runs", {
+    method: "POST",
+    body: { label, repeats },
+    label: "Die Testrunde konnte nicht gestartet werden",
+    statusMessages: {
+      409: "Es läuft bereits eine Testrunde. Erst abwarten oder abbrechen.",
+      502: NOT_RUNNING,
+      503: NOT_RUNNING,
+    },
+  });
+}
+
+/** One round's progress, for polling while it runs. */
+export function fetchRun(runId: string): Promise<EvalRun> {
+  return request(`/eval/runs/${runId}`, {
+    label: "Der Stand der Testrunde konnte nicht geladen werden",
     statusMessages: { 502: NOT_RUNNING, 503: NOT_RUNNING },
   });
 }

@@ -181,6 +181,21 @@ export interface Verdict extends SubmitVerdict {
   created_at: string;
 }
 
+/** What an uploaded collection sheet did, by Test-ID.
+ *
+ *  Test-IDs rather than counts: "3 angelegt" leaves the author wondering which
+ *  three, and the IDs are what they will look for next.
+ *
+ *  `freigegeben` is always empty for a sheet — an upload can only create
+ *  drafts. The field exists because the same shape reports a CLI import, where
+ *  approval is possible. */
+export interface ImportReport {
+  angelegt: string[];
+  aktualisiert: string[];
+  unveraendert: string[];
+  freigegeben: string[];
+}
+
 /** How a round split across the three Stufen.
  *
  *  `grenzfaelle` overlaps the others rather than being a fourth bucket: a

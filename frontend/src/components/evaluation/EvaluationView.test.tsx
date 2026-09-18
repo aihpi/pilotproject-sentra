@@ -243,7 +243,11 @@ async function submitSheet() {
     screen.getByLabelText("4.3c Kontextprüfung"),
     "Quelle stützt Aussage",
   );
-  await userEvent.type(screen.getAllByRole("textbox")[0], "Stimmt.");
+  // By its label rather than by position. "the first textbox on the page" was
+  // the first answer's Kernbefund box until controls were added above the
+  // form, and then it silently became the round's name field — the assertion
+  // still ran, against the wrong input.
+  await userEvent.type(screen.getByLabelText("W1"), "Stimmt.");
   await userEvent.click(screen.getByRole("button", { name: /Bewertung abschicken/ }));
 }
 
