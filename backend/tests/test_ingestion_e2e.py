@@ -315,7 +315,7 @@ class TestChunkingRealDocs:
             meta = extract_metadata(
                 doc.markdown, doc.furniture_text, doc.source_file, doc.pdf_metadata
             )
-            chunks = chunk_document(doc.markdown, meta)
+            chunks = chunk_document(doc.blocks, meta)
             assert len(chunks) > 0, f"{doc.source_file}: produced zero chunks"
 
     def test_chunk_text_not_empty(self, parsed_docs):
@@ -323,7 +323,7 @@ class TestChunkingRealDocs:
             meta = extract_metadata(
                 doc.markdown, doc.furniture_text, doc.source_file, doc.pdf_metadata
             )
-            chunks = chunk_document(doc.markdown, meta)
+            chunks = chunk_document(doc.blocks, meta)
             for i, chunk in enumerate(chunks):
                 assert len(chunk.text.strip()) > 10, (
                     f"{doc.source_file} chunk {i}: text is too short"
@@ -335,7 +335,7 @@ class TestChunkingRealDocs:
             meta = extract_metadata(
                 doc.markdown, doc.furniture_text, doc.source_file, doc.pdf_metadata
             )
-            chunks = chunk_document(doc.markdown, meta)
+            chunks = chunk_document(doc.blocks, meta)
             for chunk in chunks:
                 assert chunk.metadata.aktenzeichen == meta.aktenzeichen
                 assert chunk.metadata.source_file == meta.source_file
@@ -345,7 +345,7 @@ class TestChunkingRealDocs:
             meta = extract_metadata(
                 doc.markdown, doc.furniture_text, doc.source_file, doc.pdf_metadata
             )
-            chunks = chunk_document(doc.markdown, meta)
+            chunks = chunk_document(doc.blocks, meta)
             indices = [c.chunk_index for c in chunks]
             assert indices == list(range(len(chunks))), (
                 f"{doc.source_file}: chunk indices not sequential: {indices}"

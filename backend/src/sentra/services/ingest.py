@@ -152,7 +152,11 @@ def _run_ingestion_inner(
             )
 
             # Chunk
-            chunks = chunk_document(doc.markdown, metadata, max_tokens=settings.chunk_max_tokens)
+            # Blocks rather than markdown: a chunk now carries the page and
+            # paragraph it came from, and the export cannot say where anything
+            # was. Metadata extraction above still reads the markdown, which is
+            # why both are on ParsedDocument.
+            chunks = chunk_document(doc.blocks, metadata, max_tokens=settings.chunk_max_tokens)
 
             if not chunks:
                 _progress.processed += 1
