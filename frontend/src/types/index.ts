@@ -36,6 +36,14 @@ export interface SourceRef {
   fachbereich?: string;
   completion_date?: string;
   source_file?: string;
+  /** Where the cited passage is: the best-matching one from this document,
+   *  which is what the [n] marker stands for.
+   *
+   *  Optional and zero-able, and both states mean the same thing — nobody
+   *  recorded a page. Every document indexed before page provenance existed is
+   *  in that state, which is all of them until the corpus is re-ingested. */
+  page?: number;
+  paragraph?: number;
 }
 
 export interface GeneratedAnswerResult {
