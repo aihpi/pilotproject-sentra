@@ -43,13 +43,26 @@ export function SourceCards({ sources, onSelect, selected }: SourceCardsProps) {
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge variant="outline" className="font-mono text-[10px] px-1 py-0">
+                  <Badge
+                    variant="outline"
+                    className="font-mono text-[10px] px-1 py-0"
+                  >
                     {source.aktenzeichen}
                   </Badge>
                   {source.completion_date && (
                     <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
                       <Calendar className="h-2.5 w-2.5" />
                       {formatDate(source.completion_date)}
+                    </span>
+                  )}
+                  {/* Where in the paper this passage is. Absent for a document
+                      indexed before #134, and then nothing is shown rather
+                      than a zero — the whole point is that a citation is
+                      checkable, and "Seite 0" is not. */}
+                  {!!source.page && (
+                    <span className="text-[10px] text-muted-foreground">
+                      S. {source.page}
+                      {!!source.paragraph && `, Abs. ${source.paragraph}`}
                     </span>
                   )}
                 </div>
@@ -60,7 +73,9 @@ export function SourceCards({ sources, onSelect, selected }: SourceCardsProps) {
           const className = [
             "flex items-start gap-3 rounded-lg border bg-card p-3 text-left transition-colors",
             "hover:border-primary/30 hover:shadow-sm no-underline cursor-pointer group",
-            selected === source.aktenzeichen ? "border-primary ring-1 ring-primary/30" : "",
+            selected === source.aktenzeichen
+              ? "border-primary ring-1 ring-primary/30"
+              : "",
           ].join(" ");
 
           return onSelect ? (
@@ -75,7 +90,11 @@ export function SourceCards({ sources, onSelect, selected }: SourceCardsProps) {
           ) : (
             <a
               key={source.aktenzeichen}
-              href={source.source_file ? pdfUrl(source.source_file) : undefined}
+              href={
+                source.source_file
+                  ? pdfUrl(source.source_file, source.page)
+                  : undefined
+              }
               target="_blank"
               rel="noopener noreferrer"
               className={className}
