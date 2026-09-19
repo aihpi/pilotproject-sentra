@@ -76,6 +76,10 @@ def _build_source_refs(hits: list[Hit]) -> list[SourceRef]:
                 fachbereich=hit.fachbereich,
                 completion_date=hit.completion_date,
                 source_file=hit.source_file,
+                # The first hit for this document is its best-matching chunk,
+                # which is the passage [n] stands for. See SourceRef.
+                page=hit.page_from,
+                paragraph=hit.paragraph_from,
             )
         )
     return refs

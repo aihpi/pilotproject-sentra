@@ -114,6 +114,17 @@ class Hit:
     completion_date: str
     language: str
     source_file: str
+    # Where in the paper this passage is, so the model can cite it and a
+    # reviewer can check it.
+    #
+    # Defaulted, and last, because zero is a real answer: every point written
+    # before #134 has no page recorded, and the index outlives a schema change.
+    # A citation invented for one of those would look checkable and not be,
+    # which is worse than none.
+    page_from: int = 0
+    page_to: int = 0
+    paragraph_from: int = 0
+    paragraph_to: int = 0
 
 
 @dataclass
@@ -141,6 +152,19 @@ class SourceRef:
     fachbereich: str
     completion_date: str
     source_file: str
+    # Where to open the document. The best-matching passage from it, not a
+    # range covering everything retrieved: a source cited through four chunks
+    # scattered over a paper would otherwise say "pages 2 to 19", which is not
+    # somewhere anybody can turn to.
+    #
+    # `[n]` in an answer refers to the nth source in order of first appearance,
+    # and the first hit for a source is its highest-scoring chunk — so this is
+    # the passage that marker most directly stands for. The per-chunk list in
+    # the debug payload carries all of them exactly.
+    #
+    # Zero for a document indexed before #134.
+    page: int = 0
+    paragraph: int = 0
 
 
 @dataclass

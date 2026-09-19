@@ -17,13 +17,33 @@ from sentra.rag.generator import format_context
 from sentra.services.explorer import _aggregate_docs, _build_source_refs
 
 
-def hit(az: str, score: float, *, title: str = "", section: str = "", text: str = "") -> Hit:
-    """A Hit with only the fields a test cares about set."""
+def hit(
+    az: str,
+    score: float,
+    *,
+    title: str = "",
+    section: str = "",
+    text: str = "",
+    page_from: int = 0,
+    page_to: int = 0,
+    paragraph_from: int = 0,
+    paragraph_to: int = 0,
+) -> Hit:
+    """A Hit with only the fields a test cares about set.
+
+    The location defaults to zero, which is what a chunk written before #134
+    carries — so a test that says nothing about pages is testing the case the
+    index is still full of.
+    """
     return Hit(
         score=score,
         text=text,
         section_title=section,
         section_path="",
+        page_from=page_from,
+        page_to=page_to,
+        paragraph_from=paragraph_from,
+        paragraph_to=paragraph_to,
         chunk_index=0,
         aktenzeichen=az,
         fachbereich_number=az.split(" - ")[0],
@@ -119,7 +139,63 @@ class TestFormatContext:
         assert out.count("[Quelle:") == 2
         assert "---" in out
 
-    def test_contains_no_page_information(self):
-        """The model cannot cite a page because it is never shown one."""
+    def test_a_chunk_with_no_page_gets_no_location(self):
+        """This test used to assert that the context contained no page at all,
+        and documented why: the model could not cite one because it was never
+        shown one. Since #183 it is shown one — when there is one.
+
+        A chunk written before provenance existed has no page recorded, and it
+        must not acquire an invented one: a citation that looks checkable and
+        is not is worse than a section reference that is honest about its
+        precision. The index outlives a schema change, so this is the ordinary
+        case until the corpus is re-ingested, not an edge.
+        """
         out = format_context([hit(AZ_A, 0.9, section="2.1", text="Inhalt")])
-        assert "Seite" not in out and "page" not in out.lower()
+
+        assert "Seite" not in out
+        assert f"[Quelle: {AZ_A}, Abschnitt: 2.1]" in out
+
+    def test_a_chunk_with_a_page_is_cited_with_it(self):
+        out = format_context(
+            [
+                hit(
+                    AZ_A,
+                    0.9,
+                    section="2.1",
+                    text="Inhalt",
+                    page_from=4,
+                    page_to=4,
+                    paragraph_from=3,
+                    paragraph_to=3,
+                )
+            ]
+        )
+
+        assert "Seite 4, Absatz 3" in out
+
+    def test_a_passage_crossing_a_page_break_names_both_ends(self):
+        """The paragraph is given with its own page at each end, because the
+        count restarts on every page — "Absatz 1" means nothing on its own."""
+        out = format_context(
+            [
+                hit(
+                    AZ_A,
+                    0.9,
+                    section="2.1",
+                    text="Inhalt",
+                    page_from=4,
+                    page_to=5,
+                    paragraph_from=5,
+                    paragraph_to=1,
+                )
+            ]
+        )
+
+        assert "Seite 4, Absatz 5 bis Seite 5, Absatz 1" in out
+
+    def test_the_location_is_german_like_the_prompt_around_it(self):
+        """A model told "page" writes "page", and the answer is German."""
+        out = format_context([hit(AZ_A, 0.9, text="Inhalt", page_from=2, page_to=2)])
+
+        assert "page" not in out.lower()
+        assert "Seite 2" in out
