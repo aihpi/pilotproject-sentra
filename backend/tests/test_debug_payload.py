@@ -153,6 +153,13 @@ class TestTheDebugPayload:
             "chunk_index",
             "score",
             "text",
+            # Since #183. A check asking whether a claim is supported by the
+            # cited passage needs the passage, and the exact range rather than
+            # the source card's single best-matching page.
+            "page_from",
+            "page_to",
+            "paragraph_from",
+            "paragraph_to",
         }
 
     @pytest.mark.parametrize("path", ENDPOINTS)

@@ -80,6 +80,13 @@ def _hit_from_point(point: object, payload: dict) -> Hit:
         section_title=payload.get("section_title", ""),
         section_path=payload.get("section_path", ""),
         chunk_index=payload.get("chunk_index", 0),
+        # Absent on every point written before #134. Zero rather than a guess:
+        # the index outlives a schema change, and a citation invented for a
+        # chunk whose page nobody recorded would be worse than none.
+        page_from=payload.get("page_from", 0),
+        page_to=payload.get("page_to", 0),
+        paragraph_from=payload.get("paragraph_from", 0),
+        paragraph_to=payload.get("paragraph_to", 0),
         aktenzeichen=payload.get("aktenzeichen", ""),
         fachbereich_number=payload.get("fachbereich_number", ""),
         fachbereich=payload.get("fachbereich", ""),
@@ -329,6 +336,10 @@ class VectorStore:
                     "section_title": chunk.section_title,
                     "section_path": chunk.section_path,
                     "chunk_index": chunk.chunk_index,
+                    "page_from": chunk.page_from,
+                    "page_to": chunk.page_to,
+                    "paragraph_from": chunk.paragraph_from,
+                    "paragraph_to": chunk.paragraph_to,
                     "aktenzeichen": chunk.metadata.aktenzeichen,
                     "fachbereich_number": chunk.metadata.fachbereich_number,
                     "fachbereich": chunk.metadata.fachbereich,

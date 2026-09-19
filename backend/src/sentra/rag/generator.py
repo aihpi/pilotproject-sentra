@@ -79,15 +79,51 @@ DEFAULT_PROMPTS: dict[str, str] = {
 def format_context(hits: list[Hit]) -> str:
     """Format retrieved chunks into the context string the model sees.
 
-    This is the whole universe the model gets per hit: an Aktenzeichen, a section
-    title and the chunk text. There is no page or paragraph, which is why a
-    generated citation cannot be more precise than a section.
+    This is the whole universe the model gets per hit, so a citation can be no
+    more precise than this header. It carried an Aktenzeichen and a section
+    title, which is why a generated citation could not be finer than a section
+    — and a section can run for four pages, which is not something a reviewer
+    can check by hand. Since #134 it carries the page and paragraph as well.
+
+    The location is omitted rather than faked where the chunk has none. Every
+    point written before #134 has no page recorded, and inventing one would
+    produce a citation that looks checkable and is not — which is worse than a
+    section reference that is honest about its precision.
     """
     parts = []
     for hit in hits:
-        header = f"[Quelle: {hit.aktenzeichen}, Abschnitt: {hit.section_title}]"
-        parts.append(f"{header}\n{hit.text}")
+        header = f"[Quelle: {hit.aktenzeichen}, Abschnitt: {hit.section_title}"
+        location = format_location(hit)
+        if location:
+            header += f", {location}"
+        parts.append(f"{header}]\n{hit.text}")
     return "\n\n---\n\n".join(parts)
+
+
+def format_location(hit: Hit) -> str:
+    """ "Seite 4, Absatz 3" or "Seite 4, Absatz 3 bis Seite 5, Absatz 1".
+
+    Empty where the chunk carries no page — see format_context.
+
+    German, because it goes into a German prompt and comes back in a German
+    answer; a model told "page" tends to write "page". The paragraph is given
+    with its page on both ends because the count restarts on each page, so
+    "Absatz 3" means nothing without knowing which page it is on.
+    """
+    if not hit.page_from:
+        return ""
+
+    start = f"Seite {hit.page_from}"
+    if hit.paragraph_from:
+        start += f", Absatz {hit.paragraph_from}"
+
+    if (hit.page_to, hit.paragraph_to) == (hit.page_from, hit.paragraph_from):
+        return start
+
+    end = f"Seite {hit.page_to}"
+    if hit.paragraph_to:
+        end += f", Absatz {hit.paragraph_to}"
+    return f"{start} bis {end}"
 
 
 class AnswerGenerator:

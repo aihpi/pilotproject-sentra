@@ -288,6 +288,10 @@ class AnswerSourceRef(BaseModel):
     fachbereich: str
     completion_date: str
     source_file: str
+    # Where to open the document: the best-matching passage from it. Zero for
+    # anything indexed before #134 — see domain.SourceRef.
+    page: int = 0
+    paragraph: int = 0
 
     @classmethod
     def from_domain(cls, ref: domain.SourceRef) -> "AnswerSourceRef":
@@ -297,6 +301,8 @@ class AnswerSourceRef(BaseModel):
             fachbereich=ref.fachbereich,
             completion_date=ref.completion_date,
             source_file=ref.source_file,
+            page=ref.page,
+            paragraph=ref.paragraph,
         )
 
 
@@ -313,6 +319,13 @@ class RetrievedChunk(BaseModel):
     chunk_index: int
     score: float
     text: str
+    # The exact range this chunk came from, unlike the source card's single
+    # best-matching page: a check asking whether a claim is supported by the
+    # cited passage needs the passage, not an approximation of it.
+    page_from: int = 0
+    page_to: int = 0
+    paragraph_from: int = 0
+    paragraph_to: int = 0
 
     @classmethod
     def from_domain(cls, hit: domain.Hit) -> "RetrievedChunk":
@@ -322,6 +335,10 @@ class RetrievedChunk(BaseModel):
             chunk_index=hit.chunk_index,
             score=hit.score,
             text=hit.text,
+            page_from=hit.page_from,
+            page_to=hit.page_to,
+            paragraph_from=hit.paragraph_from,
+            paragraph_to=hit.paragraph_to,
         )
 
 
