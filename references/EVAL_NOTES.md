@@ -59,22 +59,28 @@ All three held.
 ## 4.3a is blocked, and the way out is now decided
 
 `format_context()` gives the model exactly `[Quelle: <AZ>, Abschnitt: <section_title>]`
-plus chunk text. No page, no paragraph, no offset. Docling knows the page, the
-chunker discards it — `parse_pdfs` exports to Markdown and the export does not
-carry provenance. The model **cannot** cite finer than a section.
+plus chunk text. No page, no paragraph, no offset. Docling knows both, the
+chunker discards them — `parse_pdfs` exports to Markdown and the export does
+not carry provenance. The model **cannot** cite finer than a section.
 
-**WD expects finer than section level** (2026-09-18). So the question the draft
+**WD expects finer than section level** (2026-09-18), and specifically
+**paragraph, with the page as well** (2026-09-19). So the question the draft
 left open — section-level verification, or provenance through the chunker and a
 full re-ingest — is answered with the expensive option. That is #134.
+
+The paragraph half turned out to be free rather than extra: a Docling
+`TextItem` is a paragraph and carries its own page. 242 of 242 items in a
+normal Ausarbeitung have one.
 
 Marker alignment remains as far as automation reaches *until* that lands. It is
 not a substitute: it checks that the markers in the answer line up with the
 sources returned, not that the cited passage says what the answer claims, which
 is what 4.3a asks. A section can run for four pages, and a reviewer given "look
-in section 2.1" cannot do 4.3a by hand either.
+in section 2.1" cannot do 4.3a by hand either. "Page 4, third paragraph" they
+can — which is the whole reason the anchor has to be this fine.
 
-What that means for the harness is small — a check comparing a cited page
-against the page a claim was drawn from — and what it means for ingestion is
+What that means for the harness is small — a check comparing a cited paragraph
+against the one a claim was drawn from — and what it means for ingestion is
 not: chunking has to move from splitting a Markdown string to walking the
 document's items, and every existing point has to be re-ingested, because a
 page number cannot be added to a payload that was never given one.
@@ -202,13 +208,35 @@ read-only right, one assessment sheet below.
 
 ## Open
 
-- ~~**section vs page citations**~~ **decided** (2026-09-18): WD expects finer
-  than section level, so page provenance has to be carried through ingestion
-  and the corpus re-ingested. #134. 4.3a stays unimplemented until it lands;
-  whether WD means page or paragraph is worth confirming before the re-ingest
-  rather than after, since paragraph is not something Docling gives for free.
-- **auth**: still none. `Tester/in` and `Varianten freigegeben durch` are typed
-  names, required so a finding has an owner, but unverified.
+- ~~**section vs page citations**~~ **decided** (2026-09-18, extended
+  2026-09-19): WD expects finer than section level — **paragraph, with the page
+  as well.** Provenance has to be carried through ingestion and the corpus
+  re-ingested. #134. 4.3a stays unimplemented until it lands.
+
+  These notes previously said paragraph "is not something Docling gives for
+  free". That was wrong, and checking cost one file: a Docling `TextItem` *is*
+  a paragraph and carries its own `prov` with `page_no`, `bbox` and `charspan`.
+  On `WD 5-077-23.pdf`, 242 of 242 text items carry a page, and the labels
+  separate body text from `footnote` and `caption` — which matters, because
+  counting a footnote as a paragraph would misplace citations in exactly the
+  documents that have the most of them.
+
+  What remains open is how a paragraph is **numbered**, and it is baked into
+  every chunk so it wants settling before the re-ingest rather than after. Per
+  page, restarting each page, is the recommendation: "page 4, third paragraph"
+  is something a reviewer holding the PDF can verify by counting, and 4.3a is
+  answered by a human. Document-wide numbering is stable, unambiguous, and no
+  use to somebody counting down a page.
+- ~~**auth**: still none~~ **partly closed** (2026-09-19). SENTRA has a
+  prototype login with roles, and `Tester/in` now comes from the signed-in
+  reviewer rather than being typed — #164, #177. `Varianten freigegeben durch`
+  is still typed.
+
+  It is not verification. The harness is a separate process with no session of
+  its own, so it receives a name rather than checking one: the ordinary path
+  records the truth without anybody typing it, and a client could still send
+  anything. Proof needs signature verification against the IdP, which needs an
+  IdP to be chosen — #161 item 3.
 - **the Aktenzeichen on every case** has to be looked up by hand. Deliberately
   not automated: a helper that searched the corpus would let the system under
   test choose its own yardstick.
