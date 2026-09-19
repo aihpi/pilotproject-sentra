@@ -62,9 +62,16 @@ class TestChunkMaxTokens:
             source_file="test.pdf",
         )
         # One section far longer than a small limit, so it has to be split.
-        body = "## Abschnitt\n\n" + "\n\n".join(["Ein Satz. " * 40] * 20)
-        few = chunk_document(body, meta, max_tokens=4096)
-        many = chunk_document(body, meta, max_tokens=64)
+        # Blocks rather than markdown since #181 — the chunker walks the
+        # document's items now, and a block boundary is the paragraph boundary
+        # it used to infer from blank lines.
+        from sentra.ingestion.parser import number_paragraphs
+
+        blocks = number_paragraphs(
+            [("Abschnitt", "section_header", 1)] + [("Ein Satz. " * 40, "text", 1)] * 20
+        )
+        few = chunk_document(blocks, meta, max_tokens=4096)
+        many = chunk_document(blocks, meta, max_tokens=64)
         assert len(many) > len(few), "a smaller token limit must produce more chunks"
 
 

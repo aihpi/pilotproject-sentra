@@ -38,6 +38,21 @@ class Chunk:
     section_path: str
     chunk_index: int
     metadata: DocumentMetadata
+    # Where in the paper this came from, so an answer can cite it and a
+    # reviewer can check it — technique 4.3a asks whether the cited passage
+    # supports the claim, and somebody has to be able to find the passage.
+    #
+    # A range rather than a point: a chunk is usually several paragraphs and
+    # can cross a page break. `paragraph_from` belongs to `page_from` and
+    # `paragraph_to` to `page_to`, since paragraph numbers restart on each
+    # page — "S. 4, Abs. 3 bis S. 5, Abs. 1" reads the way it is meant to.
+    #
+    # Zero means unknown, which happens for a block Docling could not place
+    # and for anything chunked from text rather than from a document.
+    page_from: int = 0
+    page_to: int = 0
+    paragraph_from: int = 0
+    paragraph_to: int = 0
 
 
 @dataclass
