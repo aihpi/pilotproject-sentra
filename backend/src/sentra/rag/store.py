@@ -301,7 +301,12 @@ class VectorStore:
         """Create the chunk collection if it doesn't exist."""
         self._chunks.ensure()
 
-    def upsert_chunks(self, chunks: list[Chunk], embeddings: list[list[float]]) -> int:
+    def upsert_chunks(
+        self,
+        chunks: list[Chunk],
+        embeddings: list[list[float]],
+        document_id: str | None = None,
+    ) -> int:
         """Replace a document's chunks in Qdrant.
 
         Returns the number of points written.
@@ -326,9 +331,18 @@ class VectorStore:
         """
         points = [
             PointStruct(
+                # Keyed on the document rather than on its filename (#187).
+                # A point keyed on a name cannot survive a rename: the old
+                # points stay, the new ones are written beside them, and
+                # nothing connects the two — which is exactly how seventeen
+                # documents came to be indexed with no file behind them.
+                #
+                # Falls back to the filename where no document id was given, so
+                # that a caller which has not been taught about the registry
+                # still writes consistent ids rather than colliding ones.
                 id=uuid5(
                     NAMESPACE_URL,
-                    f"{chunk.metadata.source_file}::{chunk.chunk_index}",
+                    f"{document_id or chunk.metadata.source_file}::{chunk.chunk_index}",
                 ).hex,
                 vector=embedding,
                 payload={
@@ -336,6 +350,10 @@ class VectorStore:
                     "section_title": chunk.section_title,
                     "section_path": chunk.section_path,
                     "chunk_index": chunk.chunk_index,
+                    # Carried so the read path never has to consult the
+                    # registry. Answering a question reads Qdrant and nothing
+                    # else, and has to keep working when the registry is down.
+                    "document_id": document_id or "",
                     "page_from": chunk.page_from,
                     "page_to": chunk.page_to,
                     "paragraph_from": chunk.paragraph_from,
@@ -354,9 +372,22 @@ class VectorStore:
         ]
 
         # Before writing: every point already recorded for these documents.
-        # Deleting by source_file rather than by the ids we are about to write
-        # is what removes the surplus — the ids we write are by definition the
-        # ones that would have been overwritten anyway.
+        # Deleting rather than relying on the upsert is what removes the
+        # surplus — the ids we write are by definition the ones that would have
+        # been overwritten anyway, so a document that chunked into twelve
+        # pieces and now chunks into six would keep points 6 to 11.
+        #
+        # By document id *and* by filename. The id is the identity going
+        # forward; the filename clears points written under the old scheme,
+        # which is every point in the index until the corpus is re-ingested. A
+        # first run without it would index every document twice. Once the
+        # corpus has been re-ingested the filename half can go.
+        if document_id:
+            self._chunks.delete_by_filter(
+                Filter(
+                    must=[FieldCondition(key="document_id", match=MatchValue(value=document_id))]
+                )
+            )
         for source_file in sorted({chunk.metadata.source_file for chunk in chunks}):
             self._chunks.delete_by_filter(
                 Filter(
