@@ -10,9 +10,16 @@ import type {
 
 export const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
-
-export function pdfUrl(sourceFile: string): string {
-  return `${API_BASE}/documents/${encodeURIComponent(sourceFile)}`;
+/** Where to fetch a document, optionally opening it at a page.
+ *
+ *  `#page=` is the PDF open-parameter every browser viewer understands, and it
+ *  is a fragment — never sent to the server, so it cannot affect what is
+ *  served or be logged. Omitted for page 0, which is what a chunk indexed
+ *  before #134 carries: a viewer told to open at page 0 lands wherever it
+ *  likes, which is worse than not being told. */
+export function pdfUrl(sourceFile: string, page = 0): string {
+  const url = `${API_BASE}/documents/${encodeURIComponent(sourceFile)}`;
+  return page > 0 ? `${url}#page=${page}` : url;
 }
 
 export function formatDate(dateStr: string): string {
