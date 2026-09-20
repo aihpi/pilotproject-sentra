@@ -56,34 +56,54 @@ All three held.
 | `_complete` discards `finish_reason` | **fixed** (#91). Truncation is its own check |
 | point ids, no delete before upsert | **fixed** (#83). Existing indexes still hold their orphans; a repair pass is a separate decision |
 
-## 4.3a is blocked, and the way out is now decided
+## 4.3a was blocked by the data, and is not any more
 
-`format_context()` gives the model exactly `[Quelle: <AZ>, Abschnitt: <section_title>]`
-plus chunk text. No page, no paragraph, no offset. Docling knows both, the
-chunker discards them — `parse_pdfs` exports to Markdown and the export does
-not carry provenance. The model **cannot** cite finer than a section.
+`format_context()` used to give the model exactly `[Quelle: <AZ>, Abschnitt:
+<section_title>]` plus chunk text. No page, no paragraph, no offset. Docling
+knew both and the chunker discarded them — `parse_pdfs` exported to Markdown
+and the export does not carry provenance. The model **could not** cite finer
+than a section, so there was nothing for a 4.3a check to compare.
 
 **WD expects finer than section level** (2026-09-18), and specifically
-**paragraph, with the page as well** (2026-09-19). So the question the draft
-left open — section-level verification, or provenance through the chunker and a
-full re-ingest — is answered with the expensive option. That is #134.
+**paragraph, with the page as well** (2026-09-19). The question the draft left
+open — section-level verification, or provenance through the chunker and a full
+re-ingest — was therefore answered with the expensive option, #134, and that is
+now built: parser → chunker → Qdrant payload → prompt → UI all carry
+`page_from/page_to` and `paragraph_from/paragraph_to`, and a source card opens
+the PDF at its page.
 
 The paragraph half turned out to be free rather than extra: a Docling
 `TextItem` is a paragraph and carries its own page. 242 of 242 items in a
 normal Ausarbeitung have one.
 
-Marker alignment remains as far as automation reaches *until* that lands. It is
-not a substitute: it checks that the markers in the answer line up with the
-sources returned, not that the cited passage says what the answer claims, which
-is what 4.3a asks. A section can run for four pages, and a reviewer given "look
-in section 2.1" cannot do 4.3a by hand either. "Page 4, third paragraph" they
-can — which is the whole reason the anchor has to be this fine.
+The check exists as of #189 — `seitenangabe`, comparing the pages an answer
+names against the pages its retrieved chunks were drawn from. **Two honest
+limits:**
 
-What that means for the harness is small — a check comparing a cited paragraph
-against the one a claim was drawn from — and what it means for ingestion is
-not: chunking has to move from splitting a Markdown string to walking the
-document's items, and every existing point has to be re-ingested, because a
-page number cannot be added to a payload that was never given one.
+- it verifies the *page*, not the paragraph. Comparing a cited paragraph
+  against the one a claim came from is a judgement about meaning, which is 4.3c
+  and a human's. What this can do is catch a page nobody was shown, which is
+  the mechanical half.
+- it reports `nicht prüfbar`, not a pass, wherever it cannot read the answer or
+  the chunks carry no page. That is the whole corpus until the re-ingest: every
+  point indexed before #134 has no page in its payload. **The check is
+  therefore implemented and inert.**
+
+Parsing it conservatively mattered more than expected. The first version used
+`(?:Seiten?|S\.)` under IGNORECASE, which matches the "s." ending *"Abs."* —
+so `Siehe S. 4, Abs. 3`, the exact format this project puts in the prompt, was
+read as pages 3 and 4 and flagged as a deviation. German legal prose abbreviates
+Absatz constantly, so that was not an edge case, it was most answers. A false
+"weicht ab" on a correct citation is worse than a missed one, because it teaches
+reviewers to ignore the check.
+
+Marker alignment is not superseded and stays. It checks that the markers in the
+answer line up with the sources returned; `seitenangabe` checks that the pages
+were ones the model saw. Neither asks whether the cited passage says what the
+answer claims, which is the part only a person does — and a reviewer given
+"look in section 2.1" could not do it either, where a section runs four pages.
+"Page 4, third paragraph" they can, which is the whole reason the anchor had to
+be this fine.
 
 ## Cases
 
@@ -102,6 +122,7 @@ As drafted, and all of it holds.
 | source set diff | 4.3b | built (#87) |
 | retrieval recall | new | built (#87) |
 | marker alignment | 4.3a partial | built (#93) |
+| cited page vs retrieved pages | 4.3a | built (#189); `nicht prüfbar` until the re-ingest gives payloads a page |
 | refusal | 4.4 | built (#93), judged rather than literal since #109 |
 | truncation | new | built (#93) |
 | byte dupe: 2 of 3 repeats identical | 4.1 shortcut | built (#93); saves a judge call when repeats match |
@@ -201,17 +222,25 @@ read-only right, one assessment sheet below.
    processes still have to agree on a name
 4. ~~`GET /api/prompts`~~ **done as `GET /api/config` (#37)**
 5. delete-by-document before upsert — **landed** (#83)
-6. page provenance through the chunker — **not done**, and blocks 4.3a. Now
-   scoped as #134, since WD expects finer than section level
+6. page provenance through the chunker — **landed** (#134: #180, #182, #184,
+   #186, #188). Page *and* paragraph, since WD expects finer than section
+   level. Unblocks 4.3a in code; the corpus still has to be re-ingested before
+   any of it is visible
 7. wire up `/api/feedback` → "Testfall aus Feedback erstellen" — **landed**
    (#121)
 
 ## Open
 
-- ~~**section vs page citations**~~ **decided** (2026-09-18, extended
-  2026-09-19): WD expects finer than section level — **paragraph, with the page
-  as well.** Provenance has to be carried through ingestion and the corpus
-  re-ingested. #134. 4.3a stays unimplemented until it lands.
+- ~~**section vs page citations**~~ **decided and built** (decided 2026-09-18,
+  extended 2026-09-19, built #134): WD expects finer than section level —
+  **paragraph, with the page as well.** Provenance is carried through ingestion
+  and 4.3a has its check (#189).
+
+  **The re-ingest has not run**, and nothing above is visible until it does.
+  ~24k chunks, and it is not only a cost: it also clears the 17 orphaned points
+  the registry found. Until then every answer's chunks carry no page and the
+  check answers `nicht prüfbar` — which is the correct answer and not a
+  passing one, but it does mean 4.3a is measuring nothing yet.
 
   These notes previously said paragraph "is not something Docling gives for
   free". That was wrong, and checking cost one file: a Docling `TextItem` *is*

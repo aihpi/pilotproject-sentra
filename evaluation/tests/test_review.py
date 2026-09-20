@@ -207,6 +207,10 @@ class TestMachineVerdicts:
         assert {c["pruefung"] for c in body["per_call"]} == {
             "quellenauswahl",
             "marker_ausrichtung",
+            # 4.3a since #189: the pages an answer names against the pages it
+            # drew on. "nicht prüfbar" here, since these fixtures carry no
+            # page — which is every chunk until the corpus is re-ingested.
+            "seitenangabe",
             "ablehnung",
             "abschneidung",
         }
