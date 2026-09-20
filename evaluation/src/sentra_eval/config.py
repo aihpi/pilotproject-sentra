@@ -116,3 +116,21 @@ class EvalSettings(BaseSettings):
 @lru_cache
 def get_eval_settings() -> EvalSettings:
     return EvalSettings()
+
+
+def sentra_headers(settings: EvalSettings) -> dict[str, str]:
+    """What every request to SENTRA carries, which is a token or nothing.
+
+    **Sent only when configured**, and that is not laziness. SENTRA leaves its
+    guarded endpoints open when it has no token of its own, and a harness that
+    refused to work in that case would be enforcing a rule SENTRA is not
+    applying — including against a developer's compose stack, which has none.
+
+    Shared because it was not: the token was read in `feedback` and nowhere
+    else, so the runner reached SENTRA anonymously while the config field read
+    as though the harness were an authenticated client. One of two call sites
+    is the shape a setting takes when it is about to be quietly wrong.
+    """
+    if not settings.sentra_admin_token:
+        return {}
+    return {"Authorization": f"Bearer {settings.sentra_admin_token}"}

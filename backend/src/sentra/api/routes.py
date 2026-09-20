@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from sentra.api import users as user_store
-from sentra.api.auth import require_role, write_paths_state
+from sentra.api.auth import PromptRights, prompt_rights, require_role, write_paths_state
 from sentra.api.identity import (
     ADMIN,
     PRUEFER,
@@ -590,8 +590,12 @@ def explorer_answer(
     embedder: EmbeddingClient = Depends(get_embedder),
     generator: AnswerGenerator = Depends(get_generator),
     settings: Settings = Depends(get_settings),
+    rights: PromptRights = Depends(prompt_rights),
 ) -> GeneratedAnswerResponse:
     """UC#10: Answer a specific Fachfrage."""
+    # The endpoint stays open; replacing the prompt does not. See PromptRights.
+    rights.check(body.system_prompt)
+
     date_from, date_to = date_range_params(body.date_range)
     result = explorer.answer_question(
         query=body.query,
@@ -620,8 +624,12 @@ def explorer_overview(
     embedder: EmbeddingClient = Depends(get_embedder),
     generator: AnswerGenerator = Depends(get_generator),
     settings: Settings = Depends(get_settings),
+    rights: PromptRights = Depends(prompt_rights),
 ) -> GeneratedAnswerResponse:
     """UC#2: Generate a structured topic overview."""
+    # The endpoint stays open; replacing the prompt does not. See PromptRights.
+    rights.check(body.system_prompt)
+
     date_from, date_to = date_range_params(body.date_range)
     result = explorer.generate_overview(
         query=body.query,
