@@ -27,6 +27,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -347,6 +348,63 @@ def _apply_enrichment(document: Document, enrichment: dict) -> bool:
             setattr(document, field_name, value)
             changed = True
     return changed
+
+
+def register_file(session: Session, path: Path, root: Path) -> UUID:
+    """The id of the document these bytes are, creating a row if there is none.
+
+    What ingestion calls, one file at a time, where `scan` walks a tree. Both
+    identify a document the same way — by the hash of its contents — so a file
+    the scan already recorded is recognised here rather than duplicated.
+
+    Identity by content is the point. A point keyed on a filename cannot
+    survive a rename: the old points stay behind, the new ones are written
+    beside them, and nothing connects the two. That is #140 — seventeen
+    documents indexed under names the flattening of `data/` later changed,
+    still searchable and citable with no file behind them. The same bytes under
+    a new name are the same document here, and its chunks replace themselves.
+    """
+    content_hash = hash_file(path)
+    existing = session.execute(
+        select(Document).where(Document.content_hash == content_hash)
+    ).scalar_one_or_none()
+
+    if existing is not None:
+        # Known bytes. The name may have changed, and recording that is how the
+        # registry stays able to tell a rename from a disappearance.
+        _attach_file(session, content_hash, path, root)
+        if existing.original_name != path.name:
+            existing.original_name = path.name
+            existing.storage_key = str(path.relative_to(root))
+            session.flush()
+        return existing.id
+
+    found = aktenzeichen_in(path.name)
+    document = Document(
+        content_hash=content_hash,
+        storage_key=str(path.relative_to(root)),
+        original_name=path.name,
+        status=NEEDS_REVIEW if not found else PENDING,
+        source=FOLDER_IMPORT,
+        review_reason="" if found else "Kein Aktenzeichen im Dateinamen",
+        size_bytes=path.stat().st_size,
+        file_type=path.suffix.lower().lstrip("."),
+    )
+    session.add(document)
+    session.flush()
+    session.add(
+        DocumentFile(
+            document_id=document.id,
+            storage_key=document.storage_key,
+            original_name=document.original_name,
+        )
+    )
+    for index, az in enumerate(found):
+        session.add(
+            DocumentAktenzeichen(document_id=document.id, aktenzeichen=az, is_primary=index == 0)
+        )
+    session.flush()
+    return document.id
 
 
 def drift(session: Session, indexed_names: Iterable[str]) -> Drift:

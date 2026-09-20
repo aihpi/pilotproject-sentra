@@ -5,6 +5,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from sentra.config import Settings
+from sentra.db import session_scope
+from sentra.documents import registry
 from sentra.domain import DocumentMetadata
 from sentra.ingestion.chunker import Chunk, chunk_document
 from sentra.ingestion.metadata import extract_metadata
@@ -141,6 +143,11 @@ def _run_ingestion_inner(
         _progress.skipped,
     )
 
+    # Which file each parsed document came from, so it can be registered.
+    # parse_pdfs yields a name, and registration needs the bytes.
+    paths_by_name = {path.name: path for path in paths_to_process}
+    root = Path(settings.documents_dir)
+
     for doc in parse_pdfs(settings.documents_dir, pdf_paths=paths_to_process):
         doc_start = time.monotonic()
         _progress.current_file = doc.source_file
@@ -167,8 +174,30 @@ def _run_ingestion_inner(
             texts = [chunk.text for chunk in chunks]
             embeddings = embedder.embed_documents(texts)
 
+            # The document's identity, from the registry. Qdrant is derived
+            # from it: a point keyed on a filename cannot survive a rename, and
+            # seventeen documents are indexed with no file behind them because
+            # of exactly that (#140, #187).
+            #
+            # A hard dependency, deliberately. A document with no row has no
+            # identity, and inventing one per run would put us back where we
+            # started — so this fails the file loudly rather than falling back
+            # to the filename, which would write points under a second identity
+            # scheme that nobody would notice until the next rename.
+            source_path = paths_by_name.get(doc.source_file)
+            if source_path is None:
+                # Should not happen — the names come from the paths we passed
+                # in — but a document with no file has no identity, and
+                # guessing one is the mistake this whole change removes.
+                _progress.errors.append(f"{doc.source_file}: keine Datei zugeordnet")
+                _progress.processed += 1
+                continue
+
+            with session_scope() as session:
+                document_id = str(registry.register_file(session, source_path, root))
+
             # Upsert chunks to Qdrant
-            store.upsert_chunks(chunks, embeddings)
+            store.upsert_chunks(chunks, embeddings, document_id=document_id)
             _progress.chunks_created += len(chunks)
 
             # Build and store doc-level record
