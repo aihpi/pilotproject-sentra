@@ -75,7 +75,7 @@ export default function App() {
       <main>
         {allowed(activeView) ? (
           <>
-            {activeView === "explorer" && <ExplorerView />}
+            {activeView === "explorer" && <ExplorerView session={session} />}
             {activeView === "documents" && <DocumentsView />}
             {activeView === "evaluation" && (
               <EvaluationView session={session} />

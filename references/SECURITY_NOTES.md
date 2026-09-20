@@ -35,7 +35,7 @@ Write paths and the feedback read path first. Document read paths last.
 | no NetworkPolicy anywhere in `k8s/` | ClusterIP is not a boundary. Any pod reaches any service |
 | `POST /api/ingest` unauthenticated, `routes.py:70` | anyone can re-index the corpus |
 | `GET /api/feedback` unauthenticated, `routes.py:212` | personal data, world-readable |
-| `system_prompt` client-supplied, `api/models.py:226,280` | any caller replaces the system prompt on any generation call |
+| ~~`system_prompt` client-supplied~~ **closed** (#191) | was: any caller replaces the system prompt on any generation call. Now at least `pruefer`, and the gate is on the field rather than the endpoint — see below |
 | Qdrant has no API key, `k8s/qdrant/deployment.yaml`, default is open | read the corpus and its embeddings, or drop collections |
 | `Verdict.tester` is a free string, `sentra_eval/models.py:475` | the comment in the model already says why: there is no auth to derive it from |
 
@@ -83,7 +83,7 @@ Severity is "before this is a service", not "before the pilot".
 | 3 | NetworkPolicy: only the frontend pod reaches the backend, only the backend reaches Qdrant | high |
 | 4 | Qdrant API key, and stop relying on the namespace being a boundary | medium |
 | 5 | Per-user rate limit / quota on `/explorer/*` | medium |
-| 6 | `system_prompt` restricted to reviewer and admin. The harness needs it, end users do not | medium |
+| ~~6~~ | ~~`system_prompt` restricted to reviewer and admin~~ **done** (#191). The note that the harness needs it turned out to be wrong: it never sets one, and that is what made the fix safe | ~~medium~~ |
 | 7 | Audit log: who triggered a re-index, who filed or changed a verdict | medium |
 | 8 | Feedback gets a retention rule and a DSGVO basis, not just an author field | medium |
 | 9 | `Verdict.tester` becomes the authenticated subject; keep the typed name for rounds already recorded | low, but it is the point of the whole exercise |
@@ -113,10 +113,43 @@ Noted rather than ranked.
 1  TLS                                                  prerequisite for anything real
 2  JWKS verification in the backend                     retires the trusted header
 3  NetworkPolicy                                        makes 2 hold even inside the cluster
-4  Qdrant key, rate limits, system_prompt gating
+4  Qdrant key, rate limits                             (system_prompt gating done, #191)
 5  audit log + feedback retention
 6  eval harness into k8s, with its own credentials
 ```
 
 0 is not on the path to 1. It is a pilot affordance that 1–3 replace, and
 keeping that visible is the reason this file exists.
+
+## What the `system_prompt` fix taught, since it is the one that is done
+
+**Gate the field, not the endpoint.** The obvious implementation puts
+`require_role` on `/explorer/answer` and is wrong: the evaluation harness posts
+there with no credential at all — `runner.py` builds its client with a base URL
+and a timeout and nothing else — so it would answer 401 to every round the
+moment a login was configured. The harness would report that as SENTRA being
+unreachable, which is a day spent looking in the wrong place.
+
+So the endpoint stayed open and one field closed. Everything that does not set
+`system_prompt` is untouched, which is every reader and every call a round
+makes, and that is what the larger half of the tests pins.
+
+**The harness never needed it.** This file said "the harness needs it, end
+users do not". The first half was wrong — nothing in `sentra_eval` sets a
+system prompt; it reads the one SENTRA echoes back, for provenance. The
+assumption was plausible and would have made the fix look much more expensive
+than it was, which is an argument for checking a claim like that before
+planning around it.
+
+**The second harm is the one specific to this project.** A caller-supplied
+prompt is the ordinary prompt-injection concern, but it also makes the system
+unmeasurable: a round measures the answers SENTRA gives, and an answer produced
+under somebody else's instructions is not one. No check in the harness could
+have told — the prompt is echoed back, so it was recorded faithfully, and
+nothing refused.
+
+**Blank is not an override; whitespace is.** `explorer._generate` computes
+`system_prompt or default`, so `""` changes nothing while `"   "` reaches the
+model *as* the system prompt — an empty instruction, which is the one worth
+sending if the goal were to strip the guardrails. The guard agrees with what
+the service does rather than with what the field looks like.
