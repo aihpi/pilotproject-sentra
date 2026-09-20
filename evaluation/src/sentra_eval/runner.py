@@ -392,6 +392,11 @@ def _run_checks(session: Session, call: Call) -> None:
         outcomes = [
             checks.quellenauswahl(call.response_body, version),
             checks.marker_ausrichtung(call.response_body),
+            # 4.3a. The retrieved chunks come from the debug payload, which is
+            # why the runner asks for it: the check compares the pages the
+            # answer names against the pages it actually drew on, and the
+            # sources list carries only the best-matching page per document.
+            checks.seitenangabe(call.response_body, call.response_body.get("hits") or []),
             checks.ablehnung(
                 call.response_body,
                 grenzfall=version.grenzfall,
