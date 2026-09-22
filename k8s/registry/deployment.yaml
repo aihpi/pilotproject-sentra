@@ -4,6 +4,11 @@ metadata:
   name: sentra-registry
   labels:
     app: sentra-registry
+  annotations:
+    # Wave 0 by default, spelled out because the ordering only reads as
+    # deliberate if all three say it: database, schema (wave 1), backend
+    # (wave 2). ArgoCD waits for each wave to go healthy first.
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   replicas: 1
   # One Postgres on one ReadWriteOnce volume. RollingUpdate would start the

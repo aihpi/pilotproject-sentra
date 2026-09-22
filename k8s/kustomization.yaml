@@ -10,6 +10,7 @@ resources:
   - registry/pvc.yaml
   - registry/deployment.yaml
   - registry/service.yaml
+  - registry/migrate-job.yaml
   - qdrant/pvc.yaml
   - qdrant/deployment.yaml
   - qdrant/service.yaml

@@ -1,26 +1,37 @@
-# The registry's schema, applied deliberately.
+# The registry's schema, applied as an ArgoCD sync hook.
 #
-#   kubectl create -f k8s/registry/migrate-job.yaml -n sentra
+# ArgoCD is what deploys this cluster: the application controller watches this
+# repo's k8s/ path and syncs on every change, and the CI job that rewrites the
+# image tags is what triggers it. So a migration that lives outside the synced
+# manifests never runs at all — there is no step between "CI pushed a tag" and
+# "the new backend is live" for a human to put it in.
 #
-# `create`, not `apply`, and `generateName` rather than `name`: a Job's pod
-# template is immutable, so a second `kubectl apply` of the same name fails
-# rather than running again. Each invocation gets its own name and its own log.
+# A hook rather than an ordinary resource, because a Job's pod template is
+# immutable and a plain re-apply of the same name fails instead of running
+# again. hook-delete-policy removes the previous run just before creating the
+# next, which is what makes a fixed name safe here.
 #
-# Deliberately NOT in kustomization.yaml. Applying the schema is a decision,
-# not a side effect of deploying — the same reason docker-compose.yml starts
-# sentra-db on `service_started` and leaves `alembic upgrade head` to a human.
-# An init container here would re-apply it on every pod restart, including
-# every crashloop.
+# Sync rather than PreSync, with a wave after the database: PreSync runs before
+# anything else exists, so on a first install it would race the Postgres it
+# needs. Waves are ordered and ArgoCD waits for each to go healthy, so wave 1
+# means "after sentra-registry is up" and the backend's wave 2 means "after the
+# schema is at head".
+#
+# Still runnable by hand -- deploy.sh does exactly this for the non-ArgoCD path:
+#   kubectl delete job sentra-registry-migrate -n sentra --ignore-not-found
+#   kubectl apply -f k8s/registry/migrate-job.yaml -n sentra
 apiVersion: batch/v1
 kind: Job
 metadata:
-  generateName: sentra-registry-migrate-
+  name: sentra-registry-migrate
   labels:
     app: sentra-registry-migrate
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   backoffLimit: 3
-  # Kept after it finishes so the log can be read, cleaned up an hour later.
-  ttlSecondsAfterFinished: 3600
   template:
     metadata:
       labels:
