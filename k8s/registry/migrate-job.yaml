@@ -1,0 +1,65 @@
+# The registry's schema, applied as an ArgoCD sync hook.
+#
+# ArgoCD is what deploys this cluster: the application controller watches this
+# repo's k8s/ path and syncs on every change, and the CI job that rewrites the
+# image tags is what triggers it. So a migration that lives outside the synced
+# manifests never runs at all — there is no step between "CI pushed a tag" and
+# "the new backend is live" for a human to put it in.
+#
+# A hook rather than an ordinary resource, because a Job's pod template is
+# immutable and a plain re-apply of the same name fails instead of running
+# again. hook-delete-policy removes the previous run just before creating the
+# next, which is what makes a fixed name safe here.
+#
+# Sync rather than PreSync, with a wave after the database: PreSync runs before
+# anything else exists, so on a first install it would race the Postgres it
+# needs. Waves are ordered and ArgoCD waits for each to go healthy, so wave 1
+# means "after sentra-registry is up" and the backend's wave 2 means "after the
+# schema is at head".
+#
+# Still runnable by hand -- deploy.sh does exactly this for the non-ArgoCD path:
+#   kubectl delete job sentra-registry-migrate -n sentra --ignore-not-found
+#   kubectl apply -f k8s/registry/migrate-job.yaml -n sentra
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sentra-registry-migrate
+  labels:
+    app: sentra-registry-migrate
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: sentra-registry-migrate
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          # Kept in step with k8s/backend/deployment.yaml by the deploy job in
+          # .github/workflows/docker-publish.yml. A migration run from a
+          # different build than the code that will read the schema is the
+          # thing this pin exists to prevent.
+          image: ghcr.io/aihpi/pilotproject-sentra/backend:sha-05dde59
+          # Needs alembic.ini, which the image only carries since #200.
+          command: ["uv", "run", "--no-dev", "alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: sentra-backend-config
+          env:
+            - name: REGISTRY_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: sentra-secret
+                  key: REGISTRY_DATABASE_URL
+          resources:
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+            requests:
+              cpu: "100m"
+              memory: "256Mi"

@@ -6,6 +6,10 @@ metadata:
     app: sentra-qdrant
 spec:
   replicas: 1
+  # Single writer over a ReadWriteOnce volume, same as the backend. See
+  # k8s/backend/deployment.yaml and #197.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: sentra-qdrant
