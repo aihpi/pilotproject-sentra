@@ -11,7 +11,14 @@ RUN npm run build
 FROM nginx:alpine
 
 COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# A template, not a finished conf: the entrypoint substitutes the local
+# resolver into it before nginx starts. See nginx.conf.template.
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+
+# Opt in to the entrypoint reading the nameservers out of /etc/resolv.conf
+# into $NGINX_LOCAL_RESOLVERS. Off by default in the image; without it the
+# template's `resolver` directive is substituted with nothing.
+ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
 
 EXPOSE 80
 

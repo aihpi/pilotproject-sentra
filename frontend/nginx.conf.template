@@ -4,6 +4,12 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # Filled in by the nginx image's 15-local-resolvers.envsh from
+    # /etc/resolv.conf, which is why this file is a template rather than a
+    # finished conf. Docker's embedded DNS and a Kubernetes cluster's DNS are
+    # at different addresses, and hardcoding either breaks the other.
+    resolver ${NGINX_LOCAL_RESOLVERS} valid=10s;
+
     location / {
         try_files $uri $uri/ /index.html;
     }
@@ -29,8 +35,15 @@ server {
     #
     # A 502 here means the harness is not running, which is the normal state:
     # it starts with `docker compose --profile eval up`.
+    #
+    # Via a variable, so nginx resolves `eval-harness` when a request arrives
+    # rather than when it reads this file. Written as a literal upstream,
+    # nginx treats an absent harness as a fatal config error and the whole
+    # frontend refuses to start -- which is the opposite of "a 502 here is
+    # normal", and meant `docker compose up` served nothing at all.
     location /api/eval {
-        proxy_pass http://eval-harness:8100;
+        set $eval_harness eval-harness;
+        proxy_pass http://$eval_harness:8100$request_uri;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
