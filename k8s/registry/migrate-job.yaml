@@ -1,0 +1,54 @@
+# The registry's schema, applied deliberately.
+#
+#   kubectl create -f k8s/registry/migrate-job.yaml -n sentra
+#
+# `create`, not `apply`, and `generateName` rather than `name`: a Job's pod
+# template is immutable, so a second `kubectl apply` of the same name fails
+# rather than running again. Each invocation gets its own name and its own log.
+#
+# Deliberately NOT in kustomization.yaml. Applying the schema is a decision,
+# not a side effect of deploying — the same reason docker-compose.yml starts
+# sentra-db on `service_started` and leaves `alembic upgrade head` to a human.
+# An init container here would re-apply it on every pod restart, including
+# every crashloop.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: sentra-registry-migrate-
+  labels:
+    app: sentra-registry-migrate
+spec:
+  backoffLimit: 3
+  # Kept after it finishes so the log can be read, cleaned up an hour later.
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: sentra-registry-migrate
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          # Kept in step with k8s/backend/deployment.yaml by the deploy job in
+          # .github/workflows/docker-publish.yml. A migration run from a
+          # different build than the code that will read the schema is the
+          # thing this pin exists to prevent.
+          image: ghcr.io/aihpi/pilotproject-sentra/backend:sha-05dde59
+          # Needs alembic.ini, which the image only carries since #200.
+          command: ["uv", "run", "--no-dev", "alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: sentra-backend-config
+          env:
+            - name: REGISTRY_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: sentra-secret
+                  key: REGISTRY_DATABASE_URL
+          resources:
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+            requests:
+              cpu: "100m"
+              memory: "256Mi"

@@ -81,8 +81,8 @@ _EVAL_JOB = BackgroundJob("eval-run")
 def health(settings: EvalSettings = Depends(get_eval_settings)) -> EvalHealthResponse:
     """Whether the harness is mounted, and what it is pointed at.
 
-    Reaching this at all is the answer to the first question: the router is
-    only mounted when EVAL_ENABLED is set. The two values say which judge the
+    Reaching this at all is the answer to the first question: the harness is
+    its own process, so a reply means it is up. The two values say which judge the
     verdicts will come from and which SENTRA the runner will call, both of
     which are worth being able to read off a running instance rather than
     inferring from a deployment.

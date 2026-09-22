@@ -17,6 +17,10 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy source code
 COPY README.md .
+# The migrations are under src/, but the file that points alembic at them
+# is not, and without it `alembic upgrade head` in a container fails with
+# "No 'script_location' key found in configuration" (#200).
+COPY alembic.ini .
 COPY src/ src/
 
 # Install the project itself
