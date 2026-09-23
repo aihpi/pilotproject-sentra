@@ -226,3 +226,9 @@ k8s/secrets/secret.yaml
 k8s/secrets/*-secret.yaml
 !k8s/secrets/example-secret.yaml
 !k8s/secrets/sealed-secret.yaml
+
+# The sealed-secrets public certificate, if someone fetches it to seal with.
+# A public key — harmless if committed — but it is a local working file, and
+# an accidental commit of something named *-cert.pem invites the assumption
+# that the private half might follow.
+*-cert.pem
