@@ -1,0 +1,65 @@
+# Applies the registry schema, as a plain Job you can run on its own.
+#
+# The real one is an ArgoCD Sync hook in k8s/registry/migrate-job.yaml, and it
+# should not need this. But a hook only runs as part of a sync, so if a sync
+# halts before its wave -- the first one did, at the Qdrant failure in wave 0
+# -- or if only some resources were synced, the schema is silently never
+# applied. Ingestion then fails every file with
+#
+#   relation "documents" does not exist
+#
+# which reports as 148 errors rather than as a deployment problem.
+#
+# This is the same command with no hook semantics and no waves, so it runs
+# when you sync it and its log is its own.
+#
+# This branch is not for merging. Delete the Application once the schema is at
+# head.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: run-registry-migration
+  labels:
+    app: run-registry-migration
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app: run-registry-migration
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          # The tag main currently deploys. Alembic lives in this image, and
+          # alembic.ini only since #200 -- an older tag fails with
+          # "No 'script_location' key found in configuration".
+          image: ghcr.io/aihpi/pilotproject-sentra/backend:sha-ca97c3a
+          command:
+            - sh
+            - -c
+            - |
+              echo "=== current revision ==="
+              uv run --no-dev alembic current || true
+              echo
+              echo "=== upgrading ==="
+              uv run --no-dev alembic upgrade head
+              echo
+              echo "=== revision after ==="
+              uv run --no-dev alembic current
+          envFrom:
+            - configMapRef:
+                name: sentra-backend-config
+          env:
+            - name: REGISTRY_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: sentra-secret
+                  key: REGISTRY_DATABASE_URL
+          resources:
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
