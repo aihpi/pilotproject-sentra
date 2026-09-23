@@ -15,10 +15,13 @@ export type ViewType =
 export default function App() {
   const [activeView, setActiveView] = useState<ViewType>("explorer");
   const [session, setSession] = useState<Session | null>(null);
-  // Three states, not two: unknown while the first fetch is in flight, because
-  // rendering the login screen and then replacing it half a second later is
-  // how a signed-in person is told they are not.
-  const [needsLogin, setNeedsLogin] = useState<boolean | null>(null);
+  /** Whether anybody *could* sign in. Decides whether to offer the button, not
+   *  whether to demand it. */
+  const [loginPossible, setLoginPossible] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
+  // Nothing renders until the first fetch lands. Showing the signed-out header
+  // and replacing it half a second later tells a signed-in person they are not.
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let current = true;
@@ -29,35 +32,49 @@ export default function App() {
       ]);
       if (!current) return;
       setSession(found);
-      // A deployment that cannot authenticate anybody is open by design and
-      // should look exactly as it did before any of this existed.
-      setNeedsLogin(configured && found === null);
+      setLoginPossible(configured);
+      setReady(true);
     })();
     return () => {
       current = false;
     };
   }, []);
 
-  if (needsLogin === null) return null;
+  if (!ready) return null;
 
-  if (needsLogin) {
+  /** **An anonymous visitor is a reader.**
+   *
+   *  This one line is the whole of #209. It used to say that no session meant
+   *  everything was allowed, which matched the backend — `require_role` opens
+   *  entirely while nothing is configured to check against — and which meant
+   *  that on the deployed instance every visitor was offered Administration,
+   *  including the screen that creates users.
+   *
+   *  That was defensible while there was nothing in front of SENTRA. There now
+   *  is: the site sits behind a shared password, so "anybody who reaches this
+   *  is trusted completely" describes a much larger group than it used to.
+   *
+   *  Signing in is how somebody becomes more than a reader, and the tabs that
+   *  belong to a reviewer or an admin are not offered until they do. */
+  const role = session?.rolle ?? "leser";
+  const allowed = (view: ViewType) => atLeast(role, VIEW_ROLES[view]);
+
+  if (signingIn) {
     return (
       <div className="min-h-screen bg-background">
         <LoginScreen
           onSignedIn={(found) => {
             setSession(found);
-            setNeedsLogin(false);
-            setActiveView(firstViewFor(found));
+            setSigningIn(false);
+            // Deliberately staying on the current tab. Signing in only ever
+            // adds, so wherever they were is still somewhere they may be, and
+            // moving them is the kind of surprise that reads as a bug.
           }}
+          onCancel={() => setSigningIn(false)}
         />
       </div>
     );
   }
-
-  // No session means no login is configured, and then everything is on offer —
-  // which matches what the backend does in that case.
-  const allowed = (view: ViewType) =>
-    session === null || atLeast(session.rolle, VIEW_ROLES[view]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -66,17 +83,29 @@ export default function App() {
         onViewChange={setActiveView}
         views={ALL_VIEWS.filter(allowed)}
         session={session}
+        loginPossible={loginPossible}
+        onSignIn={() => setSigningIn(true)}
         onSignOut={async () => {
           await logout();
           setSession(null);
-          setNeedsLogin(true);
+          // Signing out can take the current tab away, unlike signing in.
+          if (!atLeast("leser", VIEW_ROLES[activeView])) {
+            setActiveView("explorer");
+          }
         }}
       />
       <main>
         {allowed(activeView) ? (
           <>
             {activeView === "explorer" && <ExplorerView />}
-            {activeView === "documents" && <DocumentsView />}
+            {activeView === "documents" && (
+              /* Mirrors `require_role(ADMIN)` on POST /ingest rather than the
+                 tab rule above: the backend is open while no login is
+                 configured, so a compose installation keeps its button. */
+              <DocumentsView
+                canIngest={!loginPossible || atLeast(role, "admin")}
+              />
+            )}
             {activeView === "evaluation" && (
               <EvaluationView session={session} />
             )}
@@ -91,17 +120,5 @@ export default function App() {
         )}
       </main>
     </div>
-  );
-}
-
-/** Where somebody lands after signing in: the first view their role allows.
- *
- *  A reviewer who only has Auswertung should not arrive on a tab they cannot
- *  use — and the default cannot simply be "explorer", because a role that
- *  cannot search would then start on an empty screen. */
-function firstViewFor(session: Session): ViewType {
-  const views = Object.keys(VIEW_ROLES) as ViewType[];
-  return (
-    views.find((view) => atLeast(session.rolle, VIEW_ROLES[view])) ?? "explorer"
   );
 }

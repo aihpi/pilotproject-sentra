@@ -5,9 +5,14 @@ import type { Session } from "@/types";
 
 /** Signing in, and what each role is offered.
  *
- *  Two properties are worth more than the tab lists.
+ *  Three properties are worth more than the tab lists.
  *
- *  **A deployment that cannot authenticate anybody must not show a login.**
+ *  **An anonymous visitor is a reader.** Not an admin, which is what "no
+ *  session means everything is allowed" amounted to before #209, and which on
+ *  the deployed instance offered Administration — the screen that creates
+ *  users — to anybody who knew the site password.
+ *
+ *  **A deployment that cannot authenticate anybody must not offer a login.**
  *  There would be nothing to sign in as, and a sign-in box in front of an open
  *  installation is a lie about what it is.
  *
@@ -37,7 +42,9 @@ vi.mock("@/components/explorer/ExplorerView", () => ({
   ExplorerView: () => <div>Explorer-Inhalt</div>,
 }));
 vi.mock("@/components/DocumentsView", () => ({
-  DocumentsView: () => <div>Dokumente-Inhalt</div>,
+  DocumentsView: ({ canIngest }: { canIngest: boolean }) => (
+    <div>Dokumente-Inhalt{canIngest ? " mit Einlesen" : ""}</div>
+  ),
 }));
 vi.mock("@/components/evaluation/EvaluationView", () => ({
   EvaluationView: () => <div>Auswertung-Inhalt</div>,
@@ -73,7 +80,7 @@ beforeEach(() => {
 });
 
 describe("when no login is configured", () => {
-  it("shows no login screen", async () => {
+  it("offers no way to sign in, because there would be nothing to sign in as", async () => {
     given({ configured: false, session: null });
 
     expect(
@@ -84,10 +91,21 @@ describe("when no login is configured", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("offers every tab, matching what the backend does in that case", async () => {
+  it("still offers only a reader's tabs", async () => {
+    /** The backend is open in this case and the UI is not, deliberately. The
+     *  divergence is the point of #209: Administration creates users, and an
+     *  installation that cannot say who anybody is should not put that in
+     *  front of them. */
     given({ configured: false, session: null });
 
-    expect(await visibleTabs()).toEqual(TABS);
+    expect(await visibleTabs()).toEqual(["Suche", "Dokumente"]);
+  });
+
+  it("keeps the ingest button, because the backend would allow it", async () => {
+    given({ configured: false, session: null });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Dokumente" }));
+    expect(screen.getByText("Dokumente-Inhalt mit Einlesen")).toBeInTheDocument();
   });
 
   it("offers no way to sign out of a session that does not exist", async () => {
@@ -100,19 +118,48 @@ describe("when no login is configured", () => {
   });
 });
 
-describe("when a login is configured", () => {
-  it("asks for one when there is no session", async () => {
+describe("when a login is configured but nobody has used it", () => {
+  it("does not demand one", async () => {
+    /** The ordinary visitor is a WD staffer who only searches. Putting a
+     *  password box in front of that is asking for an account nobody issued. */
     given({ configured: true, session: null });
 
     expect(
-      await screen.findByRole("button", { name: "Anmelden" }),
+      await screen.findByRole("button", { name: "Suche" }),
     ).toBeInTheDocument();
+    expect(screen.queryByText("Anmeldung")).not.toBeInTheDocument();
   });
 
-  it("does not flash the login screen at somebody who is signed in", async () => {
-    /** Three states, not two: unknown while the first fetch is in flight.
-     *  Rendering the login and replacing it half a second later tells a
-     *  signed-in person they are not. */
+  it("offers a reader's tabs and nothing more", async () => {
+    given({ configured: true, session: null });
+
+    expect(await visibleTabs()).toEqual(["Suche", "Dokumente"]);
+  });
+
+  it("withholds the ingest button, because the backend would refuse it", async () => {
+    given({ configured: true, session: null });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Dokumente" }));
+    expect(screen.getByText("Dokumente-Inhalt")).toBeInTheDocument();
+  });
+
+  it("offers a way in, which can be cancelled", async () => {
+    given({ configured: true, session: null });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Anmelden" }));
+    expect(screen.getByText("Anmeldung")).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Zurück zur Suche" }),
+    );
+    expect(screen.queryByText("Anmeldung")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Suche" })).toBeInTheDocument();
+  });
+
+  it("does not flash anything at somebody who is already signed in", async () => {
+    /** Nothing renders until the first fetch lands. Showing the signed-out
+     *  header and replacing it half a second later tells a signed-in person
+     *  they are not. */
     given({ configured: true, session: ADMIN });
 
     expect(
@@ -161,7 +208,7 @@ describe("who is signed in", () => {
     expect(screen.getByText("pruefer")).toBeInTheDocument();
   });
 
-  it("can sign out, and lands back at the login", async () => {
+  it("can sign out, and lands back as a reader rather than at a login", async () => {
     given({ session: ADMIN });
     await screen.findByRole("button", { name: "Suche" });
 
@@ -170,7 +217,22 @@ describe("who is signed in", () => {
     expect(
       await screen.findByRole("button", { name: "Anmelden" }),
     ).toBeInTheDocument();
+    expect(screen.queryByText("Anmeldung")).not.toBeInTheDocument();
+    expect(await visibleTabs()).toEqual(["Suche", "Dokumente"]);
     expect(logout).toHaveBeenCalled();
+  });
+
+  it("is moved off a tab that signing out took away", async () => {
+    given({ session: ADMIN });
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Administration" }),
+    );
+    expect(screen.getByText("Administration-Inhalt")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Abmelden" }));
+
+    expect(await screen.findByText("Explorer-Inhalt")).toBeInTheDocument();
+    expect(screen.queryByText(/fehlt die nötige Rolle/)).toBeNull();
   });
 });
 
