@@ -1,0 +1,95 @@
+# Throwaway. Prints what is actually on the sentra-documents volume, so it can
+# be read from the ArgoCD UI by someone with no kubectl.
+#
+# This exists because nothing in the product can answer the question. All
+# fifteen API endpoints read Qdrant or the registry; the only code that walks
+# the disk is documents/registry.py, and it is wired to a CLI rather than to
+# HTTP. So "what is on the volume" and "what is indexed" cannot be compared
+# from the browser, which is exactly the comparison worth making after an
+# ingest run reports fewer documents than expected.
+#
+# This branch is not for merging. Delete the Application once you have the
+# listing.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: inspect-documents
+  labels:
+    app: inspect-documents
+spec:
+  backoffLimit: 1
+  # No ttlSecondsAfterFinished: the pod has to survive long enough to read its
+  # own logs from the UI.
+  template:
+    metadata:
+      labels:
+        app: inspect-documents
+    spec:
+      restartPolicy: Never
+      # sentra-documents is ReadWriteOnce, which means one *node* at a time.
+      # The backend already holds it, so this has to land on the same node or
+      # it sits in ContainerCreating with a multi-attach error until it times
+      # out -- the same failure the Recreate strategy exists to avoid (#197).
+      # Two pods on one node may share an RWO volume; two nodes may not.
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: sentra-backend
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: inspect
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              DIR=/data/Ausarbeitungen
+              echo "=== /data ==="
+              ls -la /data
+              echo
+              if [ ! -d "$DIR" ]; then
+                echo "$DIR does not exist. Nothing has ever been copied here."
+                exit 0
+              fi
+              echo "=== file count ==="
+              find "$DIR" -type f | wc -l
+              echo
+              echo "=== total size ==="
+              du -sh "$DIR"
+              echo
+              echo "=== by extension ==="
+              find "$DIR" -type f | sed 's/.*\.//' | sort | uniq -c | sort -rn
+              echo
+              echo "=== subdirectories ==="
+              find "$DIR" -type d
+              echo
+              echo "=== 25 most recently modified ==="
+              ls -lt "$DIR" | head -26
+          volumeMounts:
+            - name: documents
+              mountPath: /data
+              # Nothing here should be able to touch the corpus.
+              readOnly: true
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            limits:
+              cpu: "200m"
+              memory: "64Mi"
+            requests:
+              cpu: "10m"
+              memory: "16Mi"
+      volumes:
+        - name: documents
+          persistentVolumeClaim:
+            claimName: sentra-documents
+            readOnly: true
