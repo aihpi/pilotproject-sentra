@@ -1,27 +1,120 @@
 services:
   backend:
     build:
-      context: ./02_backend
+      context: ./backend
     ports:
+      # host:container. 8000 is uvicorn inside the image, 8001 is the host.
       - "8001:8000"
     env_file:
-      - .env
+      # The single source of configuration, shared with local runs and tests.
+      - backend/.env
+    environment:
+      # The values that differ inside a container. Everything else comes from
+      # the file above, so there is no second env file to keep in sync.
+      QDRANT_URL: http://qdrant:6333
+      DOCUMENTS_DIR: /data/Ausarbeitungen
+      FEEDBACK_FILE: /data/feedback.jsonl
+      REGISTRY_DATABASE_URL: postgresql+psycopg://sentra:sentra@sentra-db:5432/sentra_registry
+
     volumes:
-      - ./03_data:/data
+      - ./data:/data
     depends_on:
       qdrant:
+        condition: service_started
+      # Started, not healthy: nothing SENTRA serves reads the registry, so a
+      # registry database that is down must not stop it answering questions.
+      # The schema is applied deliberately, never at startup:
+      #   docker compose exec backend uv run alembic upgrade head
+      sentra-db:
         condition: service_started
 
   frontend:
     build:
-      context: ./01_frontend
+      context: ./frontend
     ports:
+      # host:container. 80 is nginx inside the image, 5173 on the host to match
+      # the port the vite dev server uses.
       - "5173:80"
     depends_on:
       - backend
 
+  # ── The evaluation harness. Its own process, started on request. ──
+  #
+  #   docker compose --profile eval up
+  #
+  # A profile rather than a plain service: the harness measures SENTRA and most
+  # people bringing the stack up are working on SENTRA. It also means `docker
+  # compose up` does not start a Postgres nobody is using, and does not fail on
+  # a harness that has no judge configured.
+  eval-harness:
+    profiles: ["eval"]
+    build:
+      context: ./evaluation
+    ports:
+      - "8100:8100"
+    env_file:
+      - backend/.env
+    environment:
+      # Over HTTP, at the other container. Never in process: SENTRA's API layer
+      # is part of what is being tested.
+      SENTRA_BASE_URL: http://backend:8000
+      EVAL_DATABASE_URL: postgresql+psycopg://sentra:sentra@eval-db:5432/sentra_eval
+      # So the harness can refuse to start when the judge resolves to the model
+      # it is meant to be checking.
+      CHAT_MODEL_UNDER_TEST: ${CHAT_MODEL:-llama-3-3-70b}
+    depends_on:
+      eval-db:
+        condition: service_started
+      backend:
+        condition: service_started
+
+  eval-db:
+    profiles: ["eval"]
+    # The harness's database. Postgres rather than SQLite because a round is
+    # worked through by Hotline and WD at the same time on the review screen,
+    # and a single writer is exactly the wrong shape for that.
+    #
+    # Pinned for the same reason as Qdrant below. SENTRA never touches it.
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_USER: sentra
+      POSTGRES_PASSWORD: sentra
+      POSTGRES_DB: sentra_eval
+    ports:
+      # 5433 on the host. 5432 is very often already taken by a local Postgres,
+      # and a port clash here would look like the whole stack failing to start.
+      - "5433:5432"
+    volumes:
+      - eval_db_storage:/var/lib/postgresql/data
+
+  sentra-db:
+    # The document registry (#141). SENTRA's first SQL database: until it
+    # existed, what the corpus contained was whatever happened to be in Qdrant,
+    # and nothing could notice the two disagreeing — which is how 17 documents
+    # came to be searchable and citable with no file behind them (#140).
+    #
+    # Its own server rather than a second database inside eval-db. The
+    # evaluation harness is a separate distribution on purpose, and a shared
+    # Postgres would put SENTRA's ability to start back in its hands.
+    #
+    # No profile: unlike the harness, this is part of SENTRA.
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_USER: sentra
+      POSTGRES_PASSWORD: sentra
+      POSTGRES_DB: sentra_registry
+    ports:
+      # 5434: 5432 is usually a local Postgres and 5433 is the harness's.
+      - "5434:5432"
+    volumes:
+      - sentra_db_storage:/var/lib/postgresql/data
+
   qdrant:
-    image: qdrant/qdrant:latest
+    # Pinned, not :latest. The client enforces a compatibility window of one
+    # minor version, so a rolling server tag drifts out of it on its own. Keep
+    # this, qdrant-client in backend/pyproject.toml, and
+    # k8s/qdrant/deployment.yaml on the same minor.
+    image: qdrant/qdrant:v1.19.1
     ports:
       - "6333:6333"
       - "6334:6334"
@@ -30,3 +123,5 @@ services:
 
 volumes:
   qdrant_storage:
+  eval_db_storage:
+  sentra_db_storage:

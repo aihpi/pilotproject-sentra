@@ -1,0 +1,135 @@
+[project]
+name = "sentra-eval"
+version = "0.1.0"
+description = "Structured test rounds for SENTRA, per the KISZ Testverfahren"
+requires-python = ">=3.12"
+# Depends on nothing of SENTRA's, on purpose. The harness reaches SENTRA over
+# HTTP at SENTRA_BASE_URL like any other client, because the API layer is part
+# of what is under test. Importing the package it measures would also drag
+# docling and qdrant-client into an image that parses no PDFs.
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.0.0",
+    "httpx>=0.27.0",          # the runner calls SENTRA
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.2",   # psycopg 3, which postgresql+psycopg wants
+    "pyyaml>=6.0",            # the case file format
+    "openai>=1.50.0",         # the judge, on a different hub from SENTRA's
+]
+
+[project.optional-dependencies]
+# ragas, kept out of the base install on purpose.
+#
+# It pulls 97 packages — the whole langchain stack, datasets, pandas — against
+# the twelve this harness otherwise needs, and it covers roughly one of six
+# checks. A deployment that wants the deterministic checks and the judge should
+# not carry that. `uv sync --extra ragas` for one that does.
+#
+# langchain-community is pinned below 0.4: ragas 0.3 imports
+# langchain_community.chat_models.vertexai at module level, and 0.4 removed it.
+ragas = [
+    "ragas>=0.2",
+    "langchain-openai>=0.2",
+    "langchain-community<0.4",
+    # langchain-community 0.3 imports PIL without declaring it.
+    "pillow>=10",
+]
+
+# The collection templates: an Excel sheet and a Word form for the people
+# gathering cases, and the converter that turns a filled sheet into the case
+# file the CLI imports. Kept out of the base install because the harness itself
+# never reads a spreadsheet — this is the on-ramp, not the runtime.
+#
+#   uv sync --extra vorlagen
+vorlagen = [
+    "openpyxl>=3.1",
+    "python-docx>=1.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13",
+    "types-PyYAML>=6.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency injection is a function call in a default argument by
+# design, so B008 is a false positive on every route handler.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Header",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Long assertion messages read better unwrapped.
+"tests/**" = ["E501"]
+# Alembic writes these, one sa.Column per line, and a column with a
+# server_default clears 100 characters on its own. A migration tidied by hand
+# is one nobody can regenerate to compare against.
+"src/sentra_eval/migrations/versions/**" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src/sentra_eval"]
+plugins = ["pydantic.mypy"]
+warn_redundant_casts = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+# ragas ships no py.typed marker. It is an optional extra that most
+# deployments will not install, so the alternative to this is a file full of
+# ignores for a dependency that is usually absent.
+# ragas ships no py.typed marker, and neither it nor langchain is installed
+# unless the optional extra is. mypy therefore sees a different world in CI
+# (extra absent) from a machine that has run `uv sync --extra ragas`, which is
+# how a type: ignore that was necessary locally became an error in CI.
+# openpyxl and python-docx are the same situation one extra along: neither
+# ships type information, and both are absent unless `--extra vorlagen` was
+# synced, so mypy sees a different world in CI from a machine that has them.
+module = [
+    "ragas.*",
+    "langchain_openai.*",
+    "langchain.*",
+    "langchain_core.*",
+    "openpyxl.*",
+    "docx.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The integration tier is opt-in, which is what every integration docstring in
+# this package already tells people to do — and, until #144, the one thing
+# nothing enforced. `test_migrations` downgrades to base against whatever
+# EVAL_DATABASE_URL points at, which by default is the compose database, so a
+# plain `uv run pytest` with the stack up dropped every case, round and human
+# verdict. Silently, and only noticed the next time somebody opened the review
+# screen.
+#
+#   uv run pytest                    the offline tier, what CI runs
+#   uv run pytest -m integration     needs Postgres, a judge, or a live SENTRA
+#   uv run pytest -m ""              everything
+addopts = ["-m", "not integration"]
+markers = [
+    "integration: requires Postgres, and for some a judge model or a running SENTRA",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.17,<0.9.0"]
+build-backend = "uv_build"

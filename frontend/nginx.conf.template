@@ -1,0 +1,68 @@
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Filled in by the nginx image's 15-local-resolvers.envsh from
+    # /etc/resolv.conf, which is why this file is a template rather than a
+    # finished conf. Docker's embedded DNS and a Kubernetes cluster's DNS are
+    # at different addresses, and hardcoding either breaks the other.
+    resolver ${NGINX_LOCAL_RESOLVERS} valid=10s;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # SSE streaming endpoint — must not buffer
+    location /api/query {
+        proxy_pass http://backend:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 300s;
+        chunked_transfer_encoding on;
+    }
+
+    # The evaluation harness is a separate process. Routed here rather than
+    # given its own origin, so the browser still sees one host and the frontend
+    # needs no CORS of its own. nginx matches the longest prefix, so this wins
+    # over /api below.
+    #
+    # A 502 here means the harness is not running, which is the normal state:
+    # it starts with `docker compose --profile eval up`.
+    #
+    # Via a variable, so nginx resolves `eval-harness` when a request arrives
+    # rather than when it reads this file. Written as a literal upstream,
+    # nginx treats an absent harness as a fatal config error and the whole
+    # frontend refuses to start -- which is the opposite of "a 502 here is
+    # normal", and meant `docker compose up` served nothing at all.
+    location /api/eval {
+        set $eval_harness eval-harness;
+        proxy_pass http://$eval_harness:8100$request_uri;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        # A round makes generation calls that take 20 to 29 seconds each, and
+        # starting one returns immediately — but re-checking a finished round
+        # walks every stored call, so this is not a fast endpoint either.
+        proxy_read_timeout 300s;
+    }
+
+    # All other API endpoints — default buffering (required for non-trivial responses)
+    location /api {
+        proxy_pass http://backend:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        proxy_read_timeout 120s;
+    }
+}

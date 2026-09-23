@@ -1,0 +1,9 @@
+# Revisions to skip when running git blame: bulk reformats with no logic change.
+#
+# Enable locally with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# GitHub applies this file automatically in its blame view.
+
+# #10 Apply ruff format - 18 files, layout only, ASTs verified identical
+ddc2f48182e03269a4118d6139f7c8c6fa60b40e

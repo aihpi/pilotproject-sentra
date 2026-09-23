@@ -174,9 +174,9 @@ cython_debug/
 .abstra/
 
 # Visual Studio Code
-#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
+#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore
 #  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
+#  and can be added to the global gitignore or merged into this file. However, if you prefer,
 #  you could uncomment the following to ignore the enitre vscode folder
 # .vscode/
 
@@ -196,4 +196,33 @@ cython_debug/
 .DS_Store
 
 # Data
-03_data/Extra/
+
+# Document corpus. Operational data rather than source: the contents are whatever
+# has been ingested on a given machine, currently hundreds of megabytes. The test
+# fixtures are versioned separately, in backend/tests/fixtures/corpus.
+# See data/README.md.
+data/*
+!data/README.md
+
+# Personal notes kept beside the design docs, deliberately not shared. Ignored
+# rather than merely untracked, because `git add -A` sweeps up untracked files
+# and has already committed this one once by accident.
+references/To do.md
+
+# LibreOffice's lock file, written beside a document while it is open. One of
+# these was committed once, which is a slightly embarrassing way to announce
+# that you had the spreadsheet open.
+.~lock.*#
+
+# The unsealed Secret that k8s/secrets/example-secret.yaml tells you to make.
+# That file has always said "secret.yaml is gitignored -- never commit real
+# secrets", and until now nothing here made that true. The sealed secret beside
+# it is the one that belongs in git; this is its plaintext input, and it holds
+# the AI Hub key and the registry database password.
+#
+# Ignored rather than merely untracked, for the reason the note above already
+# gives: `git add -A` sweeps up untracked files.
+k8s/secrets/secret.yaml
+k8s/secrets/*-secret.yaml
+!k8s/secrets/example-secret.yaml
+!k8s/secrets/sealed-secret.yaml

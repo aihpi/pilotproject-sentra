@@ -1,0 +1,837 @@
+"""Running a round, and being able to stop in the middle of one.
+
+A round is roughly 180 generation calls at 20 to 29 seconds each. That number
+is what shapes this: losing a round to a restart at call 45 costs an hour of
+wall clock and a slice of hub quota, so the call rows are the progress record
+and continuing means skipping what is already there.
+
+SENTRA is stubbed through httpx.MockTransport. The runner is a plain HTTP
+client, which is the whole point of it calling over HTTP, and that makes it
+testable without a server — or a hub bill. What is *not* stubbed is the
+decision-making: the plan, the resume arithmetic and the audit check all run
+for real against SQLite.
+"""
+
+import httpx
+import pytest
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from sentra_eval import cases as case_store
+from sentra_eval import checks, runner
+from sentra_eval.categories import Kategorie
+from sentra_eval.config import get_eval_settings
+from sentra_eval.db import Base, get_engine
+from sentra_eval.models import FEHLER, OK, ZWECK_ANTWORT, Call, Run
+
+
+def _answers(session):
+    """Only the calls under test. A round also probes the document search once
+    per case, for recall, and those are not answers."""
+    return [c for c in session.execute(select(Call)).scalars() if c.zweck == ZWECK_ANTWORT]
+
+
+ANSWER = {
+    "text": "Nach § 35 GOBT gilt eine Redezeit von 15 Minuten [1].",
+    "sources": [{"aktenzeichen": "WD 3 - 3000 - 029/23", "title": "Redezeit"}],
+    "system_prompt": "Du bist ein Assistent ...",
+}
+
+# How SENTRA actually declines: prose, not the literal refusal, which only
+# appears when retrieval returns nothing. Shortened from run 791750c2.
+HEDGE = (
+    "Die bereitgestellten Kontextauszüge enthalten keine Informationen dazu. "
+    "Daher kann ich auf Basis der bereitgestellten Informationen keine Antwort geben."
+)
+
+
+@pytest.fixture
+def db(monkeypatch, tmp_path):
+    """A real database the runner opens its own sessions against."""
+    monkeypatch.setenv("EVAL_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'runner.db'}")
+    monkeypatch.setenv("SENTRA_BASE_URL", "http://sentra.invalid")
+    get_eval_settings.cache_clear()
+    get_engine.cache_clear()
+    Base.metadata.create_all(get_engine())
+    yield
+    get_eval_settings.cache_clear()
+    get_engine.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def no_judge_calls(monkeypatch):
+    """Keep the offline tier offline.
+
+    4.4 now asks the judge whether an answer hedged, which every round does
+    once per case. Left unstubbed these tests wait on DNS for a hub that is
+    deliberately unreachable — the suite went from 61 to 139 seconds before
+    this existed. Tests that are about the judge stub it themselves with a
+    verdict; this one just stops the call happening.
+    """
+    from sentra_eval import judge as judge_module
+
+    def not_asked(*args, **kwargs):
+        raise judge_module.JudgeUnavailable("stubbed out in the offline tier")
+
+    monkeypatch.setattr(judge_module, "beurteile_ablehnung", not_asked)
+
+
+@pytest.fixture
+def session(db):
+    with Session(get_engine()) as s:
+        yield s
+
+
+def _approved_case(session, question="Wie lange darf ein Redner sprechen?"):
+    case, version = case_store.create_case(
+        session,
+        kategorie=Kategorie.GO,
+        ausgangsfrage=question,
+        erwartete_antwort="15 Minuten nach § 35 GOBT.",
+        referenz_korrekt="GOBT § 35",
+    )
+    case_store.approve(session, version)
+    session.commit()
+    return case
+
+
+def _client(handler) -> httpx.Client:
+    return httpx.Client(transport=httpx.MockTransport(handler), base_url="http://sentra.invalid")
+
+
+def _always(status=200, body=None):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, json=body if body is not None else ANSWER)
+
+    return handler
+
+
+# ── Planning ────────────────────────────────────────────────────────
+
+
+class TestPlanning:
+    def test_three_repeats_per_case(self, session):
+        _approved_case(session)
+        run = runner.start_run(session, repeats=3)
+
+        # Three answers, plus one probe of the document search for recall.
+        assert len(runner.plan(session, run)) == 4
+
+    def test_a_case_with_only_a_draft_is_skipped(self, session):
+        """A draft is not a yardstick. Running against one would measure an
+        answer against an expectation still being written."""
+        _approved_case(session)
+        case_store.create_case(session, kategorie=Kategorie.GO, ausgangsfrage="Noch im Entwurf")
+        session.commit()
+        run = runner.start_run(session, repeats=1)
+
+        assert len(runner.plan(session, run)) == 2  # one answer, one recall probe
+
+    def test_the_approved_version_is_used_not_the_newest(self, session):
+        """Drafting the next round's wording must not change what this round
+        measures."""
+        case = _approved_case(session, question="Originalfrage")
+        case_store.add_version(session, case, ausgangsfrage="Neuer Entwurf")
+        session.commit()
+        run = runner.start_run(session, repeats=1)
+
+        assert runner.plan(session, run)[0].frage == "Originalfrage"
+
+    def test_a_round_with_nothing_approved_is_refused(self, session):
+        """Rather than sitting at "completed, 0 calls", which looks like a
+        harness that silently does nothing."""
+        case_store.create_case(session, kategorie=Kategorie.GO, ausgangsfrage="Entwurf")
+        session.commit()
+
+        with pytest.raises(runner.RunnerError, match="nothing to run"):
+            runner.start_run(session)
+
+
+# ── Executing ───────────────────────────────────────────────────────
+
+
+class TestExecuting:
+    def test_every_planned_call_is_stored(self, session):
+        _approved_case(session)
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+
+        runner.execute(run.id, _client(_always()))
+
+        session.expire_all()
+        assert len(_answers(session)) == 3
+
+    def test_the_response_is_stored_whole(self, session):
+        """Every later check is a pure function over this row, including checks
+        that do not exist yet."""
+        _approved_case(session)
+        run = runner.start_run(session, repeats=1)
+        session.commit()
+
+        runner.execute(run.id, _client(_always()))
+
+        session.expire_all()
+        call = _answers(session)[0]
+        assert call.response_body["text"] == ANSWER["text"]
+        assert call.response_body["system_prompt"] == ANSWER["system_prompt"]
+
+    def test_the_question_that_was_asked_is_stored(self, session):
+        _approved_case(session, question="Sehr spezifische Frage")
+        run = runner.start_run(session, repeats=1)
+        session.commit()
+
+        runner.execute(run.id, _client(_always()))
+
+        session.expire_all()
+        assert _answers(session)[0].request_body["query"] == "Sehr spezifische Frage"
+
+    def test_a_clean_round_is_abgeschlossen(self, session):
+        _approved_case(session)
+        run = runner.start_run(session, repeats=2)
+        session.commit()
+
+        runner.execute(run.id, _client(_always()))
+
+        session.expire_all()
+        assert session.get(Run, run.id).status == "abgeschlossen"
+
+
+# ── Failures are rows, not lost rounds ──────────────────────────────
+
+
+class TestFailures:
+    def test_a_503_is_stored_and_the_round_continues(self, session):
+        """One blip must not cost the remaining cases."""
+        _approved_case(session)
+        calls: list[int] = []
+
+        def flaky(request: httpx.Request) -> httpx.Response:
+            calls.append(1)
+            if len(calls) == 1:
+                return httpx.Response(503, json={"detail": "Suchdatenbank nicht erreichbar"})
+            return httpx.Response(200, json=ANSWER)
+
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+
+        runner.execute(run.id, _client(flaky))
+
+        session.expire_all()
+        rows = session.execute(select(Call)).scalars().all()
+        assert len(rows) == 4  # three answers plus the recall probe
+        assert sum(1 for r in rows if r.status == FEHLER) == 1
+
+    def test_a_transport_failure_is_stored_too(self, session):
+        _approved_case(session)
+
+        def unreachable(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("connection refused")
+
+        run = runner.start_run(session, repeats=1)
+        session.commit()
+
+        runner.execute(run.id, _client(unreachable))
+
+        session.expire_all()
+        call = _answers(session)[0]
+        assert call.status == FEHLER
+        assert "ConnectError" in call.fehler
+
+    def test_a_round_with_failures_is_not_reported_clean(self, session):
+        _approved_case(session)
+
+        run = runner.start_run(session, repeats=2)
+        session.commit()
+        runner.execute(run.id, _client(_always(503, {"detail": "kaputt"})))
+
+        session.expire_all()
+        assert session.get(Run, run.id).status == "fehlgeschlagen"
+
+
+# ── Resuming ────────────────────────────────────────────────────────
+
+
+class TestResuming:
+    def test_a_finished_call_is_not_repeated(self, session):
+        """Repeating it would spend quota to overwrite evidence that is good."""
+        _approved_case(session)
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+        runner.execute(run.id, _client(_always()))
+
+        session.expire_all()
+        run = session.get(Run, run.id)
+        assert runner.outstanding(session, run) == []
+
+    def test_failed_calls_are_retried(self, session):
+        """Resuming is usually something you do because something went wrong."""
+        _approved_case(session)
+        run = runner.start_run(session, repeats=2)
+        session.commit()
+        runner.execute(run.id, _client(_always(503, {"detail": "kaputt"})))
+
+        session.expire_all()
+        run = session.get(Run, run.id)
+        assert len(runner.outstanding(session, run)) == 3  # two answers, one recall probe
+
+    def test_resuming_completes_the_round(self, session):
+        _approved_case(session)
+        run = runner.start_run(session, repeats=2)
+        session.commit()
+        runner.execute(run.id, _client(_always(503, {"detail": "kaputt"})))
+
+        runner.execute(run.id, _client(_always()))
+
+        session.expire_all()
+        rows = session.execute(select(Call)).scalars().all()
+        assert len(rows) == 3, "retrying created extra rows instead of replacing"
+        assert all(r.status == OK for r in rows)
+        assert session.get(Run, run.id).status == "abgeschlossen"
+
+    def test_an_interrupted_round_keeps_what_it_did(self, session):
+        """The scenario resumability exists for: the process dies partway."""
+        _approved_case(session)
+        made = {"n": 0}
+
+        def dies_after_two(request: httpx.Request) -> httpx.Response:
+            made["n"] += 1
+            if made["n"] > 2:
+                raise KeyboardInterrupt("someone stopped the container")
+            return httpx.Response(200, json=ANSWER)
+
+        run = runner.start_run(session, repeats=4)
+        session.commit()
+        with pytest.raises(KeyboardInterrupt):
+            runner.execute(run.id, _client(dies_after_two))
+
+        session.expire_all()
+        run = session.get(Run, run.id)
+        assert len(session.execute(select(Call)).scalars().all()) == 2
+        assert len(runner.outstanding(session, run)) == 3  # two answers and the recall probe
+
+
+# ── The audit property ──────────────────────────────────────────────
+
+
+class TestAudit:
+    def test_a_normal_round_is_sound(self, session):
+        """Every version used was approved before the round started."""
+        _approved_case(session)
+        run = runner.start_run(session, repeats=1)
+        session.commit()
+        runner.execute(run.id, _client(_always()))
+
+        session.expire_all()
+        run = session.get(Run, run.id)
+        assert runner.audit_is_sound(session, run) is True
+
+    def test_approving_after_the_round_started_is_not(self, session):
+        """The failure the case store exists to make visible: an expectation
+        that could have been written to fit the answers."""
+        from datetime import UTC, datetime, timedelta
+
+        case = _approved_case(session)
+        run = runner.start_run(session, repeats=1)
+        session.commit()
+        runner.execute(run.id, _client(_always()))
+
+        session.expire_all()
+        run = session.get(Run, run.id)
+        version = case_store.latest_approved(case_store.get_case(session, case.test_id))
+        version.freigegeben_at = datetime.now(UTC) + timedelta(hours=1)
+        session.commit()
+
+        assert runner.audit_is_sound(session, run) is False
+
+
+# ── Checks run with the round ───────────────────────────────────────
+
+
+class TestChecksDuringARun:
+    """Scored as each call is stored, because what the check said at the time
+    is part of the round's record."""
+
+    def _case_with_reference(self, session, az="WD 3 - 3000 - 029/23"):
+        case, version = case_store.create_case(
+            session,
+            kategorie=Kategorie.GO,
+            ausgangsfrage="Wie lange darf ein Redner sprechen?",
+            erwartete_antwort="15 Minuten.",
+            referenz_korrekt="GOBT § 35",
+            referenz_korrekt_az=az,
+        )
+        case_store.approve(session, version)
+        session.commit()
+        return case
+
+    def _handler(self, az):
+        def handler(request: httpx.Request) -> httpx.Response:
+            if "documents" in str(request.url):
+                return httpx.Response(200, json={"documents": [{"aktenzeichen": az}]})
+            return httpx.Response(
+                200, json={"text": "Antwort [1].", "sources": [{"aktenzeichen": az}]}
+            )
+
+        return handler
+
+    def test_a_round_probes_the_document_search_too(self, session):
+        """Once per case, not per repeat: what retrieval can find does not vary
+        with the repeat."""
+        self._case_with_reference(session)
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+
+        runner.execute(run.id, _client(self._handler("WD 3 - 3000 - 029/23")))
+
+        session.expire_all()
+        calls = session.execute(select(Call)).scalars().all()
+        assert sum(1 for c in calls if c.zweck == "antwort") == 3
+        assert sum(1 for c in calls if c.zweck == "recall") == 1
+
+    def test_a_correct_citation_is_scored_unauffaellig(self, session):
+        from sentra_eval.models import CheckResult
+
+        self._case_with_reference(session)
+        run = runner.start_run(session, repeats=1)
+        session.commit()
+
+        runner.execute(run.id, _client(self._handler("WD 3 - 3000 - 029/23")))
+
+        session.expire_all()
+        results = session.execute(select(CheckResult)).scalars().all()
+        assert {r.pruefung for r in results} == {
+            "quellenauswahl",
+            "marker_ausrichtung",
+            "ablehnung",
+            "abschneidung",
+            "retrieval_recall",
+        }
+        assert all(r.auffaellig is False for r in results), [
+            (r.pruefung, r.ergebnis) for r in results if r.auffaellig
+        ]
+
+    def test_a_wrong_citation_is_flagged(self, session):
+        from sentra_eval.models import CheckResult
+
+        self._case_with_reference(session)
+        run = runner.start_run(session, repeats=1)
+        session.commit()
+
+        runner.execute(run.id, _client(self._handler("WD 9 - 3000 - 999/25")))
+
+        session.expire_all()
+        flagged = (
+            session.execute(select(CheckResult).where(CheckResult.auffaellig.is_(True)))
+            .scalars()
+            .all()
+        )
+        assert len(flagged) == 2  # cited the wrong source, and it was not retrievable
+
+    def test_a_failed_call_is_not_scored(self, session):
+        """There is nothing to check in a 503, and a verdict on one would be a
+        finding about SENTRA being down rather than about its answer."""
+        from sentra_eval.models import CheckResult
+
+        self._case_with_reference(session)
+        run = runner.start_run(session, repeats=1)
+        session.commit()
+
+        runner.execute(run.id, _client(_always(503, {"detail": "kaputt"})))
+
+        session.expire_all()
+        assert session.execute(select(CheckResult)).scalars().all() == []
+
+    def test_a_round_can_be_rescored_without_calling_sentra(self, session):
+        """The property the checks were shaped around: pure functions over
+        stored rows, so a check that did not exist when a round ran can still
+        score it."""
+        from sentra_eval.models import CheckResult
+
+        self._case_with_reference(session)
+        run = runner.start_run(session, repeats=2)
+        session.commit()
+        runner.execute(run.id, _client(self._handler("WD 3 - 3000 - 029/23")))
+
+        session.expire_all()
+        for result in session.execute(select(CheckResult)).scalars():
+            session.delete(result)
+        session.commit()
+
+        scored = runner.recheck(session, session.get(Run, run.id))
+        session.commit()
+
+        # Three calls rescored: two answers and the recall probe.
+        assert scored == 3
+        # Four checks on each answer, one on the probe.
+        assert len(session.execute(select(CheckResult)).scalars().all()) == 9
+
+
+# ── Group checks ────────────────────────────────────────────────────
+
+
+class TestGroupChecksDuringARun:
+    """4.1's cheap half: a verdict about the repeats, not about any one of them."""
+
+    def _case(self, session):
+        case, version = case_store.create_case(
+            session,
+            kategorie=Kategorie.GO,
+            ausgangsfrage="Wie lange darf ein Redner sprechen?",
+            erwartete_antwort="15 Minuten.",
+            referenz_korrekt="GOBT § 35",
+        )
+        case_store.approve(session, version)
+        session.commit()
+        return case
+
+    def test_identical_repeats_are_recorded_as_identical(self, session):
+        from sentra_eval.models import GroupCheckResult
+
+        self._case(session)
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+
+        runner.execute(run.id, _client(_always()))
+
+        session.expire_all()
+        group = session.execute(select(GroupCheckResult)).scalar_one()
+        assert group.pruefung == "wiederholbarkeit"
+        assert group.ergebnis == "identisch"
+
+    def test_differing_repeats_are_recorded_as_differing(self, session, monkeypatch):
+        from sentra_eval import judge as judge_module
+        from sentra_eval.models import GroupCheckResult
+
+        # Stubbed, so this test says nothing about the judge and makes no
+        # request. Differing answers now also trigger a judge call, and an
+        # offline test must not depend on whether one can be reached.
+        monkeypatch.setattr(
+            judge_module,
+            "compare",
+            lambda *a, **k: {
+                "pruefung": judge_module.KONSISTENZ,
+                "verdict": judge_module.UNAUFFAELLIG,
+                "dimension": None,
+                "begruendung": "",
+                "judge_model": "stub",
+            },
+        )
+
+        self._case(session)
+        seen = {"n": 0}
+
+        def varying(request: httpx.Request) -> httpx.Response:
+            if "documents" in str(request.url):
+                return httpx.Response(200, json={"documents": []})
+            seen["n"] += 1
+            return httpx.Response(200, json={**ANSWER, "text": f"Antwort Nummer {seen['n']}."})
+
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+
+        runner.execute(run.id, _client(varying))
+
+        session.expire_all()
+        group = session.execute(
+            select(GroupCheckResult).where(GroupCheckResult.pruefung == "wiederholbarkeit")
+        ).scalar_one()
+        assert group.ergebnis == "abweichend"
+        assert group.belege["verschiedene_antworten"] == 3
+        # Not a finding on its own: differing wording is what the judge reads.
+        assert group.auffaellig is False
+
+    def test_there_is_one_verdict_per_case_not_per_repeat(self, session):
+        """Anchoring it to a repeat would make a reviewer ask what was wrong
+        with repeat 0, when the answer is nothing."""
+        from sentra_eval.models import GroupCheckResult
+
+        self._case(session)
+        self._case(session)
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+
+        runner.execute(run.id, _client(_always()))
+
+        session.expire_all()
+        # One wiederholbarkeit verdict per case; identical repeats mean no
+        # judge call, so no konsistenz rows.
+        results = session.execute(select(GroupCheckResult)).scalars().all()
+        assert [r.pruefung for r in results] == ["wiederholbarkeit", "wiederholbarkeit"]
+
+    def test_the_runner_asks_sentra_for_the_debug_payload(self, session):
+        """Without it there is no finish_reason, so no truncation check."""
+        self._case(session)
+        bodies: list[dict] = []
+
+        def recording(request: httpx.Request) -> httpx.Response:
+            import json as _json
+
+            bodies.append(_json.loads(request.content))
+            if "documents" in str(request.url):
+                return httpx.Response(200, json={"documents": []})
+            return httpx.Response(200, json=ANSWER)
+
+        run = runner.start_run(session, repeats=1)
+        session.commit()
+
+        runner.execute(run.id, _client(recording))
+
+        answer_bodies = [b for b in bodies if "top_k" not in b]
+        assert answer_bodies and all(b["debug"] is True for b in answer_bodies)
+
+
+# ── The judge ───────────────────────────────────────────────────────
+
+
+class TestTheJudgeIsAskedOnlyWhenNeeded:
+    """4.1 is the judge's, but only when the cheap check cannot settle it.
+
+    Identical repeats at temperature 0.1 are common, and each judge call is a
+    real request to a real model. These use a stubbed judge, so what is being
+    tested is when it is called — which is the expensive decision — rather than
+    what it says.
+    """
+
+    def _case(self, session):
+        case, version = case_store.create_case(
+            session,
+            kategorie=Kategorie.GO,
+            ausgangsfrage="Wie lange darf ein Redner sprechen?",
+            erwartete_antwort="15 Minuten.",
+            referenz_korrekt="GOBT § 35",
+        )
+        case_store.approve(session, version)
+        session.commit()
+        return case
+
+    def _varying(self):
+        seen = {"n": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if "documents" in str(request.url):
+                return httpx.Response(200, json={"documents": []})
+            seen["n"] += 1
+            return httpx.Response(200, json={**ANSWER, "text": f"Antwort {seen['n']}."})
+
+        return handler
+
+    def test_identical_repeats_cost_no_judge_call(self, session, monkeypatch):
+        from sentra_eval import judge as judge_module
+
+        calls = []
+        monkeypatch.setattr(judge_module, "compare", lambda *a, **k: calls.append(1))
+
+        self._case(session)
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+        runner.execute(run.id, _client(_always()))
+
+        assert calls == [], "spent a judge call confirming identical strings are identical"
+
+    def test_differing_repeats_are_put_to_the_judge(self, session, monkeypatch):
+        from sentra_eval import judge as judge_module
+        from sentra_eval.models import GroupCheckResult
+
+        monkeypatch.setattr(
+            judge_module,
+            "compare",
+            lambda *a, **k: {
+                "pruefung": judge_module.KONSISTENZ,
+                "verdict": judge_module.AUFFAELLIG,
+                "dimension": "Zahlen",
+                "begruendung": "Antwort 2 nennt eine andere Zahl.",
+                "judge_model": "qwen3-8-27b",
+            },
+        )
+
+        self._case(session)
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+        runner.execute(run.id, _client(self._varying()))
+
+        session.expire_all()
+        verdict = session.execute(
+            select(GroupCheckResult).where(GroupCheckResult.pruefung == "konsistenz")
+        ).scalar_one()
+        assert verdict.auffaellig is True
+        assert verdict.belege["dimension"] == "Zahlen"
+        assert verdict.belege["judge_model"] == "qwen3-8-27b"
+
+    def test_a_judge_that_cannot_answer_flags_the_case(self, session, monkeypatch):
+        """Recorded as a finding, not swallowed. Treating "the judge did not
+        answer" as "unauffällig" would mark a case clean because a request
+        timed out, which is the quietest way this process could lie."""
+        from sentra_eval import judge as judge_module
+        from sentra_eval.models import GroupCheckResult
+
+        def unavailable(*args, **kwargs):
+            raise judge_module.JudgeUnavailable("timeout")
+
+        monkeypatch.setattr(judge_module, "compare", unavailable)
+
+        self._case(session)
+        run = runner.start_run(session, repeats=2)
+        session.commit()
+        runner.execute(run.id, _client(self._varying()))
+
+        session.expire_all()
+        verdict = session.execute(
+            select(GroupCheckResult).where(GroupCheckResult.pruefung == "konsistenz")
+        ).scalar_one()
+        assert verdict.ergebnis == judge_module.JUDGE_FEHLER
+        assert verdict.auffaellig is True
+
+
+# ── 4.4 across the repeats of one case ──────────────────────────────
+
+
+class TestTheRefusalVerdictCoversEveryRepeat:
+    """#132. The judge is asked once per distinct answer, and every call that
+    produced that answer records what it said.
+
+    Judging only the first repeat did not leave the others unassessed. `None`
+    means "compare the literal string" to `checks.ablehnung`, so the other
+    repeats recorded a verdict reached by the rule #109 decided against:
+    identical text came out `korrekt abgelehnt` on one row and `nicht
+    abgelehnt` on the next, and an ordinary question SENTRA had hedged read as
+    clean on two rows out of three.
+    """
+
+    def _grenzfall(self, session):
+        case, version = case_store.create_case(
+            session,
+            kategorie=Kategorie.GO,
+            ausgangsfrage="Wie hoch ist die Mondtagegeldpauschale zum Mars?",
+            erwartete_antwort="Keine Antwort. Der Bestand enthält nichts dazu.",
+            grenzfall=True,
+        )
+        case_store.approve(session, version)
+        session.commit()
+        return case
+
+    def _hedging(self, text=HEDGE):
+        def handler(request: httpx.Request) -> httpx.Response:
+            if "documents" in str(request.url):
+                return httpx.Response(200, json={"documents": []})
+            return httpx.Response(200, json={**ANSWER, "text": text})
+
+        return handler
+
+    def _judge_says(self, monkeypatch, abgelehnt, *, counter=None):
+        from sentra_eval import judge as judge_module
+
+        def beurteile(text, *, frage):
+            if counter is not None:
+                counter.append(text)
+            return abgelehnt, "gestubbt"
+
+        monkeypatch.setattr(judge_module, "beurteile_ablehnung", beurteile)
+
+    def _ablehnung(self, session):
+        from sentra_eval.models import CheckResult
+
+        rows = session.execute(
+            select(CheckResult, Call)
+            .join(Call, CheckResult.call_id == Call.id)
+            .where(CheckResult.pruefung == "ablehnung")
+        ).all()
+        return sorted(
+            ((call.repeat_index, result) for result, call in rows), key=lambda pair: pair[0]
+        )
+
+    def test_identical_repeats_all_carry_the_judged_verdict(self, session, monkeypatch):
+        self._judge_says(monkeypatch, True)
+        self._grenzfall(session)
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+
+        runner.execute(run.id, _client(self._hedging()))
+
+        session.expire_all()
+        results = self._ablehnung(session)
+        assert len(results) == 3
+        for _repeat, result in results:
+            assert result.ergebnis == checks.KORREKT_ABGELEHNT
+            assert result.auffaellig is False
+            assert result.belege["beurteilt_durch"] == checks.DURCH_PRUEFMODELL
+
+    def test_and_cost_one_judge_call_between_them(self, session, monkeypatch):
+        """The saving the first-repeat-only gate was after, kept."""
+        asked: list[str] = []
+        self._judge_says(monkeypatch, True, counter=asked)
+        self._grenzfall(session)
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+
+        runner.execute(run.id, _client(self._hedging()))
+
+        assert len(asked) == 1, "judged the same answer text more than once"
+
+    def test_a_repeat_that_came_back_different_is_judged_on_its_own(self, session, monkeypatch):
+        """Where the texts differ the premise fails, and the differing repeat is
+        exactly the one worth putting to the judge rather than guessing at."""
+        asked: list[str] = []
+        self._judge_says(monkeypatch, True, counter=asked)
+        self._grenzfall(session)
+        run = runner.start_run(session, repeats=2)
+        session.commit()
+
+        seen = {"n": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if "documents" in str(request.url):
+                return httpx.Response(200, json={"documents": []})
+            seen["n"] += 1
+            return httpx.Response(200, json={**ANSWER, "text": f"{HEDGE} ({seen['n']})"})
+
+        runner.execute(run.id, _client(handler))
+
+        assert len(asked) == 2
+        session.expire_all()
+        for _repeat, result in self._ablehnung(session):
+            assert result.belege["beurteilt_durch"] == checks.DURCH_PRUEFMODELL
+
+    def test_a_hedged_ordinary_question_is_flagged_on_every_repeat(self, session, monkeypatch):
+        """The dangerous direction, and the reason #132 was not merely noise.
+
+        An ordinary question the corpus should cover, hedged rather than
+        answered, is a real finding. Recording it as clean on two rows out of
+        three is the quietest way this round could mislead.
+        """
+        self._judge_says(monkeypatch, True)
+        case, version = case_store.create_case(
+            session,
+            kategorie=Kategorie.GO,
+            ausgangsfrage="Wie lange darf ein Redner sprechen?",
+            erwartete_antwort="15 Minuten nach § 35 GOBT.",
+            referenz_korrekt="GOBT § 35",
+        )
+        case_store.approve(session, version)
+        session.commit()
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+
+        runner.execute(run.id, _client(self._hedging()))
+
+        session.expire_all()
+        results = self._ablehnung(session)
+        assert len(results) == 3
+        for _repeat, result in results:
+            assert result.ergebnis == checks.ABLEHNUNG_UNERWARTET
+            assert result.auffaellig is True
+
+    def test_without_a_judge_every_repeat_falls_back_the_same_way(self, session):
+        """The autouse fixture makes the judge unavailable. The fallback is the
+        literal comparison — conservative, and it has to be the same on every
+        row rather than judged on one and guessed on the rest."""
+        self._grenzfall(session)
+        run = runner.start_run(session, repeats=3)
+        session.commit()
+
+        runner.execute(run.id, _client(self._hedging()))
+
+        session.expire_all()
+        results = self._ablehnung(session)
+        assert len(results) == 3
+        assert {r.belege["beurteilt_durch"] for _n, r in results} == {checks.DURCH_WORTLAUT}
+        assert {r.ergebnis for _n, r in results} == {checks.NICHT_ABGELEHNT}

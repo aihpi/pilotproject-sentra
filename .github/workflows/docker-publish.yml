@@ -51,8 +51,8 @@ jobs:
       - name: Build and push Frontend image
         uses: docker/build-push-action@v5
         with:
-          context: ./01_frontend
-          file: ./01_frontend/Dockerfile
+          context: ./frontend
+          file: ./frontend/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
@@ -100,8 +100,8 @@ jobs:
       - name: Build and push Backend image
         uses: docker/build-push-action@v5
         with:
-          context: ./02_backend
-          file: ./02_backend/Dockerfile
+          context: ./backend
+          file: ./backend/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
@@ -127,6 +127,10 @@ jobs:
 
           sed -i "s|image: .*/frontend:.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${SHA_TAG}|" k8s/frontend/deployment.yaml
           sed -i "s|image: .*/backend:.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/backend:${SHA_TAG}|" k8s/backend/deployment.yaml
+          # The migration Job runs the same backend image. A schema applied by a
+          # different build than the code that reads it is the thing this keeps
+          # from happening (#196).
+          sed -i "s|image: .*/backend:.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/backend:${SHA_TAG}|" k8s/registry/migrate-job.yaml
 
       - name: Commit and push manifest changes
         run: |
@@ -136,7 +140,7 @@ jobs:
           if git diff --exit-code k8s/; then
             echo "No changes to K8s manifests."
           else
-            git add k8s/frontend/deployment.yaml k8s/backend/deployment.yaml
+            git add k8s/frontend/deployment.yaml k8s/backend/deployment.yaml k8s/registry/migrate-job.yaml
             git commit -m "update k8s image tags to $(echo ${{ github.sha }} | cut -c1-7) [skip ci]"
             git push
           fi

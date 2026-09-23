@@ -4,8 +4,20 @@ metadata:
   name: sentra-backend
   labels:
     app: sentra-backend
+  annotations:
+    # After the registry database and the schema migration. Starting
+    # before the schema is at head means ingestion fails every file, which
+    # is #196 in a different disguise.
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   replicas: 1
+  # The backend owns /data on a ReadWriteOnce volume. RollingUpdate starts
+  # the new pod before the old one releases it, so unless both land on the
+  # same node the rollout deadlocks on a multi-attach error and deploy.sh
+  # times out looking like the backend is broken (#197). Whether it happens
+  # depends on scheduling, which is what made it intermittent.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: sentra-backend
@@ -29,6 +41,16 @@ spec:
                   name: sentra-secret
                   key: AI_HUB_API_KEY
                   optional: true
+            # In the secret rather than the configmap because it embeds the
+            # password. Not optional: without it the backend falls back to its
+            # localhost default and every ingested file fails registration
+            # (#196) -- a run that reports itself finished with every document
+            # in the error list. Failing to start is the louder answer.
+            - name: REGISTRY_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: sentra-secret
+                  key: REGISTRY_DATABASE_URL
           volumeMounts:
             - name: documents
               mountPath: /data

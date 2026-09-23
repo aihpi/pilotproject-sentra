@@ -1,0 +1,142 @@
+[project]
+name = "sentra"
+version = "0.1.0"
+description = "RAG prototype for the German Bundestag Wissenschaftliche Dienste"
+requires-python = ">=3.12"
+dependencies = [
+    "docling>=2.72.0",
+    "qdrant-client>=1.19.0",  # keep within one minor of the server image, see docker-compose.yml
+    "openai>=1.50.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic-settings>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "langdetect>=1.0.9",
+    # Imported directly by our own modules, so declared even though they also
+    # arrive transitively. Floors match what the upstream packages already
+    # require, except numpy where nothing upstream constrains us.
+    "pydantic>=2.7.0",          # api/models.py
+    "docling-core>=2.62.0",     # ingestion/parser.py, ContentLayer
+    "pypdfium2>=4.30.0",        # ingestion/parser.py
+    "numpy>=1.26",              # rag/store.py
+    "itsdangerous>=2.2",
+    # The document registry (#141). SENTRA's first SQL database: until now the
+    # corpus was whatever happened to be in Qdrant, which is how 17 documents
+    # came to be citable with no file behind them (#140). Same three packages
+    # as the evaluation harness, and deliberately a separate database from it.
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.2",     # psycopg 3, which postgresql+psycopg wants
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13",
+    "import-linter>=2.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# E/F pycodestyle + pyflakes, I import order, UP pyupgrade,
+# B bugbear, SIM flake8-simplify
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency injection is a function call in a default argument by
+# design, so B008 is a false positive on every route handler.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Header",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Long assertion messages and the ground-truth table read better unwrapped.
+"tests/**" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src/sentra"]
+plugins = ["pydantic.mypy"]
+warn_redundant_casts = true
+# Makes the deferred ignores below self-cleaning: once the underlying cause is
+# fixed, the now-pointless ignore fails the check instead of lingering.
+warn_unused_ignores = true
+# An unannotated parameter is silently Any, so mypy checks nothing about it and
+# says nothing either. Two had been sitting unannotated since before domain/
+# existed to name their types, and nothing reported them. On at the cost of
+# four annotations.
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+# Neither ships type information or a py.typed marker.
+module = ["langdetect.*", "pypdfium2.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: requires Qdrant + AI Hub with ingested data",
+]
+
+[tool.importlinter]
+root_package = "sentra"
+
+[[tool.importlinter.contracts]]
+# Higher layers may import lower ones, never the reverse.
+#
+#   "a | b"   siblings that may NOT import each other
+#   "(a)"     optional: the contract holds whether or not the module exists
+#
+# evaluation sits just above domain on purpose. The harness talks to SENTRA over
+# HTTP and works from stored responses, so it has no reason to import the system
+# under test; putting it here means the layers contract restricts it to domain
+# and config on its own, while main is still allowed to import it in order to
+# mount its router. The module does not exist yet, hence the parentheses: a
+# forbidden-type contract naming a missing module is a hard error, an optional
+# layer is not.
+name = "Layered architecture"
+type = "layers"
+containers = ["sentra"]
+layers = [
+    # Not imported by anything — alembic executes env.py by path. Optional,
+    # because the directory carries no __init__.py and so is not an importable
+    # module; naming it outright is a hard error. It is listed at all because
+    # exhaustive = true, and because if it ever does become importable it
+    # belongs above the models it reads.
+    "(migrations)",
+    "main",
+    "api",
+    "services",
+    # The document registry (#141). Above rag and ingestion because the scan
+    # reads what the index already knows and reuses the filename parsing, and
+    # below services because nothing serves it yet — the API for it arrives
+    # with the job queue in task 3.
+    "documents",
+    "rag | ingestion",
+    # Generic background-job orchestration. Extracted from services in #81 and
+    # left here: the evaluation harness has since moved to its own
+    # distribution and carries its own copy, so this serves ingestion and
+    # whatever comes next.
+    "jobs",
+    # The registry's engine and session scope. Imports config and nothing else,
+    # so it sits with the other infrastructure rather than with the tables it
+    # happens to serve.
+    "db",
+    "domain",
+    "config",
+]
+# Fail if a new top-level module appears and nobody adds it here.
+exhaustive = true
+
+[build-system]
+requires = ["uv_build>=0.8.17,<0.9.0"]
+build-backend = "uv_build"

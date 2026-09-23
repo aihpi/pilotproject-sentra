@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  # Deliberately unfiltered. The branching model is feature branches from dev
+  # and task branches from the feature branch, so a task PR targets neither
+  # main nor dev — and with a base filter here, it got no checks at all. Ten
+  # task PRs on the evaluation harness merged that way before anybody noticed,
+  # and the first CI run over any of them was the 7645-line feature merge.
+  #
+  # This does not mean a run per pushed branch: GitHub starts a pull_request
+  # run only once a PR exists. It means a run per proposed merge, which is what
+  # the gate is for. The push filter above stays, because a PR branch does not
+  # need a second run on top of its PR run.
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch makes the previous run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "backend/uv.lock"
+
+      - name: Install the project and its dev dependencies
+        run: uv sync --frozen
+
+      - name: Cache pre-commit environments
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      # ruff, ruff-format and mypy run through pre-commit rather than being
+      # invoked directly here, so the hook and this pipeline cannot pin
+      # different versions and start disagreeing with each other. The mypy hook
+      # shells into backend and uses the environment synced above.
+      - name: Lint and type check
+        working-directory: ${{ github.workspace }}
+        run: uvx pre-commit run --all-files --show-diff-on-failure --color always
+
+      # The integration tier is excluded on purpose, see backend/README.md.
+      # It needs Qdrant with the corpus already ingested, which means a full
+      # Docling run plus embedding calls against the AI Hub.
+      - name: Offline test suite
+        run: uv run pytest -m "not integration" -q
+
+  evaluation:
+    name: Evaluation harness
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: evaluation
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "evaluation/uv.lock"
+
+      # --extra vorlagen, but not --all-extras. openpyxl and python-docx are two
+      # small pure-Python packages and they carry the collection templates, so
+      # the test that holds the spreadsheet's columns against the importer's
+      # fields has to run here — a sheet that has drifted is discovered by
+      # somebody who already filled in two hundred rows. ragas stays out: 97
+      # packages for roughly one of six checks.
+      - name: Install the project and its dev dependencies
+        run: uv sync --frozen --extra vorlagen
+
+      # Its own job rather than a step in the backend one, because it is its
+      # own distribution with its own lockfile and depends on nothing of
+      # SENTRA's. A break in one should not hide a break in the other.
+      #
+      # The linters run through the repository-wide pre-commit job above, which
+      # now covers evaluation/ as well.
+      #
+      # The integration tier is excluded: it needs Postgres, and the offline
+      # tier covers the database being unreachable, which is the behaviour that
+      # has to hold here.
+      - name: Offline test suite
+        run: uv run pytest -m "not integration" -q
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20" # matches frontend/Dockerfile
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      # jsdom only, no browser and no services, so this belongs in the same
+      # gate as the linter rather than in a tier of its own.
+      - name: Tests
+        run: npm test
+
+      # `npm run build` is `tsc -b && vite build`, so this type checks and then
+      # proves the bundle the image actually ships still builds.
+      - name: Type check and build
+        run: npm run build
