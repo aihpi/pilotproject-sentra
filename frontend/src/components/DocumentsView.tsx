@@ -7,7 +7,7 @@ import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 
 const POLL_INTERVAL_MS = 3000;
 
-export function DocumentsView() {
+export function DocumentsView({ canIngest }: { canIngest: boolean }) {
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -142,16 +142,24 @@ export function DocumentsView() {
             {documents.length} Dokumente in der Datenbank
           </p>
         </div>
-        <Button onClick={handleIngest} disabled={isRunning}>
-          {isRunning ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Verarbeite...
-            </>
-          ) : (
-            "Dokumente einlesen"
-          )}
-        </Button>
+        {/* Re-indexing is `require_role(ADMIN)` on the backend, so offering
+            the button to somebody it would refuse is offering a 403. App
+            decides, mirroring that rule rather than the tab rule: the backend
+            is open where no login is configured, and a compose installation
+            keeps its button. Progress below stays visible either way — a run
+            somebody else started is worth seeing. */}
+        {canIngest && (
+          <Button onClick={handleIngest} disabled={isRunning}>
+            {isRunning ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Verarbeite...
+              </>
+            ) : (
+              "Dokumente einlesen"
+            )}
+          </Button>
+        )}
       </div>
 
       {/* Progress bar during ingestion */}
