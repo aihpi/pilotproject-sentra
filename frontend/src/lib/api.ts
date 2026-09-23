@@ -1,12 +1,4 @@
-import type {
-  AppConfig,
-  DocumentInfo,
-  FeedbackRequest,
-  DocumentResult,
-  GeneratedAnswerResult,
-  ExternalSourceResult,
-  IngestionStatus,
-} from "@/types";
+import type { AppConfig, DocumentInfo, DocumentResult, ExternalSourceResult, FeedbackRequest, GeneratedAnswerResult, IngestionStatus, UploadResponse, VolumeFile } from "@/types";
 
 export const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -49,7 +41,11 @@ interface RequestOptions {
    *  rather than as its own fetch so that everything below, especially the
    *  server's own reason for refusing, is shared: an upload refused because
    *  row 4 has no expected answer must say that, not "(HTTP 422)". */
-  raw?: Blob;
+  /** A body the browser serialises itself: a Blob for bytes, FormData for
+   *  a file upload. Never given a Content-Type here — for FormData only the
+   *  browser knows the multipart boundary, and setting the header by hand
+   *  omits it and produces a request the server cannot parse. */
+  raw?: Blob | FormData;
   /** Statuses this client understands better than the server does, so its
    *  wording wins. Only the ingest 409 so far. */
   statusMessages?: Record<number, string>;
@@ -74,8 +70,8 @@ export async function request<T>(
     // Headers built once rather than spread twice. Two `headers:` keys in one
     // object literal is not a merge — the later one replaces the earlier.
     const headers: Record<string, string> = {};
-    // No Content-Type for the raw case: the browser sets it from the Blob, and
-    // the endpoint reads the body as bytes either way.
+    // No Content-Type for the raw case: the browser sets it from the Blob or
+    // the FormData, and it is the only thing that can — see RequestOptions.
     if (raw === undefined && body !== undefined)
       headers["Content-Type"] = "application/json";
 
@@ -305,5 +301,37 @@ export function generateOverview(
       system_prompt: systemPrompt || null,
     }),
     label: "Themenüberblick fehlgeschlagen",
+  });
+}
+
+/** Add documents to the corpus. Admin only; the backend enforces it.
+ *
+ *  Sent as FormData through `raw`, so no Content-Type is set here — the
+ *  browser has to write it itself, because only it knows the multipart
+ *  boundary. Setting `multipart/form-data` by hand omits the boundary and the
+ *  request arrives unparseable.
+ *
+ *  A 200 does not mean every file was taken. The response reports per file,
+ *  because one bad name in a dragged-in folder should not discard the rest. */
+export async function uploadDocuments(files: File[]): Promise<UploadResponse> {
+  const form = new FormData();
+  for (const file of files) form.append("files", file);
+
+  return request<UploadResponse>("/documents", {
+    method: "POST",
+    raw: form,
+    label: "Der Upload ist fehlgeschlagen",
+    statusMessages: {
+      401: "Zum Hochladen ist eine Anmeldung als Administrator nötig.",
+      403: "Zum Hochladen wird die Rolle „admin“ benötigt.",
+      413: "Die Dateien sind zu groß.",
+    },
+  });
+}
+
+/** What is on the volume, as opposed to what is indexed. Admin only. */
+export function fetchVolumeFiles(): Promise<VolumeFile[]> {
+  return request<VolumeFile[]>("/documents/files", {
+    label: "Die Dateien auf dem Volume konnten nicht gelesen werden",
   });
 }

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from sentra.api import users as user_store
@@ -43,7 +43,10 @@ from sentra.api.models import (
     RetrievedChunk,
     SimilarDocumentsRequest,
     UpdateUserRequest,
+    UploadedFile,
+    UploadResponse,
     UserResponse,
+    VolumeFile,
     date_range_params,
 )
 from sentra.config import Settings, get_settings
@@ -53,7 +56,7 @@ from sentra.ingestion.metadata import DOCUMENT_TYPE_VALUES, FACHBEREICH_NAMES
 from sentra.rag.embeddings import EmbeddingClient
 from sentra.rag.generator import DEFAULT_PROMPTS, AnswerGenerator
 from sentra.rag.store import VectorStore
-from sentra.services import explorer
+from sentra.services import explorer, uploads
 from sentra.services.ingest import get_ingestion_progress
 from sentra.services.jobs import IngestionJob
 
@@ -169,6 +172,82 @@ def list_documents(
         )
         for d in raw_docs
     ]
+
+
+@router.get(
+    "/documents/files",
+    response_model=list[VolumeFile],
+    # Deliberately not guarded, and the test in test_auth_gate.py is what makes
+    # that a decision rather than an omission.
+    #
+    # This is a read of a published corpus, and GET /documents beside it is
+    # open and says considerably more — title, Aktenzeichen, Fachbereich. A
+    # guard here would protect the filenames of documents whose full metadata
+    # is already served next door, which protects nothing and makes "who may
+    # see the corpus" answerable two different ways depending on which list
+    # you ask for.
+    #
+    # Writing is a different question, and POST below is guarded.
+)
+def list_volume_files(settings: Settings = Depends(get_settings)) -> list[VolumeFile]:
+    """What is on the documents volume, as opposed to what is indexed.
+
+    Deliberately a different endpoint from GET /documents, and the difference
+    between the two lists is the point of it. A file present here and missing
+    there is one that ingestion has not reached, or could not parse, or failed
+    to register — and until now telling those apart meant mounting the volume
+    from a throwaway Job, because nothing in the API could see a disk.
+
+    Open, like the list beside it. Noticing that a document is missing is not
+    a privileged act, and it is the people using SENTRA who notice first.
+
+    Declared before /documents/{filename} so that "files" is not read as a
+    filename. FastAPI matches in declaration order.
+    """
+    return [
+        VolumeFile(name=name, size_bytes=size, modified_at=modified, indexable=indexable)
+        for name, size, modified, indexable in uploads.listing(Path(settings.documents_dir))
+    ]
+
+
+@router.post(
+    "/documents",
+    response_model=UploadResponse,
+    # Admin, matching POST /ingest: adding to the corpus and re-indexing it are
+    # the same act seen from either end, and WD staff read the result as
+    # authoritative.
+    dependencies=[Depends(require_role(ADMIN))],
+)
+def upload_documents(
+    files: list[UploadFile],
+    settings: Settings = Depends(get_settings),
+) -> UploadResponse:
+    """Put one or more documents on the volume.
+
+    Reports per file rather than failing the request. Dragging in a folder
+    with one unreadable name in it is the ordinary case, and discarding the
+    nine good files to report the tenth would be the wrong trade.
+
+    Uploading does not index. The files appear in GET /documents/files
+    immediately and in GET /documents only after ingestion runs, which is a
+    separate and much more expensive act that the operator starts deliberately.
+    """
+    results: list[UploadedFile] = []
+    for upload in files:
+        try:
+            name, size = uploads.store(upload.file, upload.filename, Path(settings.documents_dir))
+            results.append(UploadedFile(name=name, accepted=True, size_bytes=size))
+        except uploads.RejectedUpload as rejected:
+            results.append(
+                UploadedFile(
+                    name=upload.filename or "(ohne Namen)",
+                    accepted=False,
+                    reason=str(rejected),
+                )
+            )
+
+    accepted = sum(1 for r in results if r.accepted)
+    return UploadResponse(accepted=accepted, rejected=len(results) - accepted, files=results)
 
 
 @router.get("/documents/{filename}")

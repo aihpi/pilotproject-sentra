@@ -340,3 +340,28 @@ export interface Trend {
   haeufigste_befunde: Record<string, number>;
   abweichung: Agreement;
 }
+
+/** A file as it sits on the documents volume, which is not the same thing as
+ *  a document the index knows about. The difference between this list and
+ *  DocumentInfo is the diagnostic: present here and missing there means
+ *  ingestion has not reached it, could not parse it, or failed to register it. */
+export interface VolumeFile {
+  name: string;
+  size_bytes: number;
+  modified_at: string;
+  /** Only PDFs are indexed. A .docx is on the volume and never searchable. */
+  indexable: boolean;
+}
+
+export interface UploadedFile {
+  name: string;
+  accepted: boolean;
+  size_bytes: number;
+  reason: string | null;
+}
+
+export interface UploadResponse {
+  accepted: number;
+  rejected: number;
+  files: UploadedFile[];
+}

@@ -1,6 +1,12 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import type { DocumentInfo, IngestionStatus } from "@/types";
-import { fetchDocuments, startIngestion, getIngestionStatus } from "@/lib/api";
+import type { DocumentInfo, IngestionStatus, VolumeFile } from "@/types";
+import {
+  fetchDocuments,
+  fetchVolumeFiles,
+  startIngestion,
+  getIngestionStatus,
+} from "@/lib/api";
+import { DocumentUpload } from "@/components/DocumentUpload";
 import { Button } from "@/components/ui/button";
 import { DocumentsTable } from "@/components/DocumentsTable";
 import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
@@ -9,6 +15,10 @@ const POLL_INTERVAL_MS = 3000;
 
 export function DocumentsView({ canIngest }: { canIngest: boolean }) {
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
+  // What is on the volume, which is not what is indexed. Only fetched where
+  // the caller may read it — the endpoint is admin-only, and a 401 in the
+  // console on every page load would be noise rather than information.
+  const [volume, setVolume] = useState<VolumeFile[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -20,6 +30,17 @@ export function DocumentsView({ canIngest }: { canIngest: boolean }) {
     details?: string;
   } | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const loadVolume = useCallback(async () => {
+    if (!canIngest) return;
+    try {
+      setVolume(await fetchVolumeFiles());
+    } catch {
+      // Not worth surfacing. The document list is the primary content and it
+      // has its own error path; this is a secondary count.
+      setVolume(null);
+    }
+  }, [canIngest]);
 
   const loadDocuments = useCallback(async () => {
     setIsLoading(true);
@@ -37,7 +58,8 @@ export function DocumentsView({ canIngest }: { canIngest: boolean }) {
 
   useEffect(() => {
     loadDocuments();
-  }, [loadDocuments]);
+    void loadVolume();
+  }, [loadDocuments, loadVolume]);
 
   // Check if ingestion is already running on mount
   useEffect(() => {
@@ -122,6 +144,14 @@ export function DocumentsView({ canIngest }: { canIngest: boolean }) {
   };
 
   const isRunning = ingestionStatus?.status === "running";
+
+  // Only meaningful where the volume could be read at all; null means the
+  // caller is not an admin, not that everything is indexed.
+  const indexedNames = new Set(documents.map((d) => d.source_file));
+  const notIndexed =
+    volume === null
+      ? 0
+      : volume.filter((f) => f.indexable && !indexedNames.has(f.name)).length;
   const progress =
     isRunning && ingestionStatus.total_files > 0
       ? Math.round(
@@ -140,6 +170,17 @@ export function DocumentsView({ canIngest }: { canIngest: boolean }) {
           </h2>
           <p className="text-muted-foreground">
             {documents.length} Dokumente in der Datenbank
+            {notIndexed > 0 && (
+              /* The comparison that needed a Job to make before #211. A file
+                 on the volume and not in the index is one ingestion has not
+                 reached, could not parse, or failed to register — and the
+                 last of those is what 148 identical errors looked like. */
+              <span className="ml-2 text-amber-700">
+                · {notIndexed}{" "}
+                {notIndexed === 1 ? "Datei" : "Dateien"} auf dem Volume noch
+                nicht indiziert
+              </span>
+            )}
           </p>
         </div>
         {/* Re-indexing is `require_role(ADMIN)` on the backend, so offering
@@ -161,6 +202,14 @@ export function DocumentsView({ canIngest }: { canIngest: boolean }) {
           </Button>
         )}
       </div>
+
+      {canIngest && (
+        <DocumentUpload
+          onUploaded={() => {
+            void loadVolume();
+          }}
+        />
+      )}
 
       {/* Progress bar during ingestion */}
       {isRunning && ingestionStatus && (

@@ -167,10 +167,22 @@ class TestWhatIsNotGuarded:
         # token check with role-aware closures, and a test that names the
         # mechanism breaks when the mechanism improves while saying nothing
         # about the property it was defending.
+        # Method and path, not path alone. /api/documents now answers an open
+        # GET and a guarded POST, and a set of bare paths cannot say that —
+        # it would report the whole path as guarded and hide the fact that
+        # reading it is not.
         guarded = {
-            getattr(route, "path", "")
+            (method, getattr(route, "path", ""))
             for route in router.routes
+            for method in sorted(getattr(route, "methods", []) or [])
             if getattr(route, "dependencies", [])
         }
 
-        assert guarded == {"/api/ingest", "/api/feedback"}
+        assert guarded == {
+            ("POST", "/api/ingest"),
+            ("GET", "/api/feedback"),
+            # Adding to the corpus, which WD staff read as authoritative. The
+            # write half of #211; its GET counterparts stay open, which is the
+            # property this test exists to keep honest.
+            ("POST", "/api/documents"),
+        }
