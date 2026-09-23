@@ -44,7 +44,7 @@ spec:
           # .github/workflows/docker-publish.yml. A migration run from a
           # different build than the code that will read the schema is the
           # thing this pin exists to prevent.
-          image: ghcr.io/aihpi/pilotproject-sentra/backend:sha-7fbbc80
+          image: ghcr.io/aihpi/pilotproject-sentra/backend:sha-2efe815
           # Needs alembic.ini, which the image only carries since #200.
           command: ["uv", "run", "--no-dev", "alembic", "upgrade", "head"]
           envFrom:
