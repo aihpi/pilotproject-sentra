@@ -14,6 +14,13 @@ resources:
   - qdrant/pvc.yaml
   - qdrant/deployment.yaml
   - qdrant/service.yaml
+  - evaluation/pvc.yaml
+  - evaluation/db-deployment.yaml
+  - evaluation/db-service.yaml
+  - evaluation/configmap.yaml
+  - evaluation/migrate-job.yaml
+  - evaluation/deployment.yaml
+  - evaluation/service.yaml
   - backend/configmap.yaml
   - backend/deployment.yaml
   - backend/service.yaml
