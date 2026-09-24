@@ -30,7 +30,7 @@ spec:
         - name: migrate
           # Kept in step with the harness Deployment by the deploy job in
           # .github/workflows/docker-publish.yml.
-          image: ghcr.io/aihpi/pilotproject-sentra/evaluation:sha-65a23be
+          image: ghcr.io/aihpi/pilotproject-sentra/evaluation:sha-aadb42d
           # The harness image already ships alembic.ini, so the trap in #200
           # does not repeat here.
           command: ["uv", "run", "--no-dev", "alembic", "upgrade", "head"]

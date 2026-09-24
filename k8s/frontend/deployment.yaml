@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: ghcr.io/aihpi/pilotproject-sentra/frontend:sha-65a23be
+          image: ghcr.io/aihpi/pilotproject-sentra/frontend:sha-aadb42d
           ports:
             - containerPort: 80
           env:
