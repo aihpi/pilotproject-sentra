@@ -41,8 +41,19 @@ server {
     # nginx treats an absent harness as a fatal config error and the whole
     # frontend refuses to start -- which is the opposite of "a 502 here is
     # normal", and meant `docker compose up` served nothing at all.
+    #
+    # The host comes from the environment because a bare service name does not
+    # work in both places. nginx's resolver does not apply the `search` list
+    # from /etc/resolv.conf, only the OS resolver does -- so in Kubernetes,
+    # where `eval-harness` resolves solely because `sentra.svc.cluster.local`
+    # is searched, nginx asks for the single label, gets NXDOMAIN and answers
+    # 502. Docker's embedded DNS resolves the bare name directly, which is why
+    # this looked correct under compose and failed in the cluster.
+    #
+    # Compose keeps the default from the Dockerfile; the k8s Deployment passes
+    # the fully qualified name.
     location /api/eval {
-        set $eval_harness eval-harness;
+        set $eval_harness "${EVAL_HARNESS_HOST}";
         proxy_pass http://$eval_harness:8100$request_uri;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
