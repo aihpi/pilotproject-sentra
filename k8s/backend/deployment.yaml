@@ -35,12 +35,17 @@ spec:
             - configMapRef:
                 name: sentra-backend-config
           env:
+            # Not optional, despite having been marked so. Settings requires
+            # ai_hub_api_key with no default, so a deployment without it does
+            # not start degraded — it crashes on import with a pydantic error
+            # naming a field rather than a missing secret. Failing at container
+            # creation says which key is absent, which is the actionable form
+            # of the same refusal.
             - name: AI_HUB_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: sentra-secret
                   key: AI_HUB_API_KEY
-                  optional: true
             # In the secret rather than the configmap because it embeds the
             # password. Not optional: without it the backend falls back to its
             # localhost default and every ingested file fails registration
