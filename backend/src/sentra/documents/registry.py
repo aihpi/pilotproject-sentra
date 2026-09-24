@@ -36,6 +36,7 @@ from sentra.documents.models import (
     FOLDER_IMPORT,
     NEEDS_REVIEW,
     PENDING,
+    WITHDRAWN,
     Document,
     DocumentAktenzeichen,
     DocumentFile,
@@ -433,3 +434,67 @@ def drift(session: Session, indexed_names: Iterable[str]) -> Drift:
     found.row_without_chunks = sorted(rows - indexed)
     found.agreed = len(indexed & rows)
     return found
+
+
+def document_id_for(session: Session, filename: str) -> UUID | None:
+    """The id of the document filed under `filename`, or None.
+
+    Read-only, and separate from `withdraw` because the points have to go
+    before the status changes, and removing them needs the id.
+    """
+    return session.execute(
+        select(Document.id)
+        .join(DocumentFile, DocumentFile.document_id == Document.id)
+        .where(DocumentFile.original_name == filename)
+    ).scalar_one_or_none()
+
+
+def withdraw(session: Session, filename: str) -> UUID | None:
+    """Mark the document filed under `filename` as withdrawn.
+
+    Returns its id, or None when no row knows that name.
+
+    Withdrawal is a registry decision and removing the points is a separate
+    act, done by the caller against the store. Keeping them apart matters: a
+    row marked withdrawn whose points survive is a document that is invisible
+    in the corpus listing and still answering questions, which is the worse of
+    the two halves to get wrong, so the status is set only after the points are
+    gone.
+
+    The row and the file are both kept. `drift` already excludes withdrawn
+    documents, so a withdrawn document does not read as an orphan afterwards.
+    """
+    document = session.execute(
+        select(Document)
+        .join(DocumentFile, DocumentFile.document_id == Document.id)
+        .where(DocumentFile.original_name == filename)
+    ).scalar_one_or_none()
+
+    if document is None:
+        return None
+
+    document.status = WITHDRAWN
+    session.flush()
+    return document.id
+
+
+def withdrawn_filenames(session: Session) -> set[str]:
+    """Every filename belonging to a withdrawn document.
+
+    Ingestion needs this. Its skip filter asks Qdrant what is already indexed,
+    so a document whose points have just been removed looks like one that has
+    never been seen, and the next run parses and re-embeds it. Withdrawal would
+    last until somebody pressed the ingest button.
+
+    Every name, not only the primary one, for the same reason `drift` uses
+    every name: a document filed twice would otherwise come back under its
+    other name.
+    """
+    return {
+        name
+        for (name,) in session.execute(
+            select(DocumentFile.original_name)
+            .join(Document, DocumentFile.document_id == Document.id)
+            .where(Document.status == WITHDRAWN)
+        ).all()
+    }
