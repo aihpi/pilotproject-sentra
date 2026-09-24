@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
         - name: eval-harness
-          image: ghcr.io/aihpi/pilotproject-sentra/evaluation:sha-55e7826
+          image: ghcr.io/aihpi/pilotproject-sentra/evaluation:sha-65a23be
           ports:
             - containerPort: 8100
           envFrom:
