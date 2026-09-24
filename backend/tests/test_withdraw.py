@@ -88,7 +88,9 @@ class TestWithdraw:
 class TestWithdrawnFilenames:
     def test_lists_every_name_of_every_withdrawn_document(self, registry_session):
         gone = _add(registry_session, "gone.pdf", status=models.WITHDRAWN)
-        gone.files.append(models.DocumentFile(original_name="gone-too.pdf", storage_key="store/gone-too.pdf"))
+        gone.files.append(
+            models.DocumentFile(original_name="gone-too.pdf", storage_key="store/gone-too.pdf")
+        )
         _add(registry_session, "kept.pdf")
         registry_session.flush()
 
@@ -144,9 +146,7 @@ class TestIngestionSkipsWithdrawn:
 
         monkeypatch.setattr(ingest, "parse_pdfs", _capture)
 
-        ingest._run_ingestion_inner(
-            _StoreStub(), _EmbedderStub(), _settings(tmp_path), force=force
-        )
+        ingest._run_ingestion_inner(_StoreStub(), _EmbedderStub(), _settings(tmp_path), force=force)
 
         assert "gone.pdf" not in parsed
         assert "kept.pdf" in parsed
