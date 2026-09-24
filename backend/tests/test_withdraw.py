@@ -152,6 +152,41 @@ class TestIngestionSkipsWithdrawn:
         assert "kept.pdf" in parsed
 
 
+class TestRegistryUnreachable:
+    def test_a_skip_only_run_still_works(self, tmp_path, monkeypatch):
+        """A dependency being down must not fail a run that writes nothing.
+
+        The offline test tier has no Postgres, and neither did CI, which is
+        how this was caught: an unconditional registry query at the top of
+        ingestion turned "everything is already indexed" into a failed run.
+
+        Anything that would actually be written fails per file at
+        register_file moments later, which is loud and specific, so there is
+        nothing to gain by failing earlier and less precisely.
+        """
+        from sentra.db import RegistryDatabaseUnavailable
+        from sentra.services import ingest
+
+        (tmp_path / "a.pdf").write_bytes(b"%PDF")
+
+        def _unreachable():
+            raise RegistryDatabaseUnavailable("connection refused")
+
+        monkeypatch.setattr(ingest, "session_scope", _unreachable)
+
+        parsed: list[str] = []
+
+        def _capture(_dir, pdf_paths):
+            parsed.extend(path.name for path in pdf_paths)
+            return []
+
+        monkeypatch.setattr(ingest, "parse_pdfs", _capture)
+
+        ingest._run_ingestion_inner(_StoreStub(), _EmbedderStub(), _settings(tmp_path), force=False)
+
+        assert parsed == ["a.pdf"]
+
+
 class _StoreStub:
     def get_indexed_source_files(self) -> set[str]:
         return set()

@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from sentra.config import Settings
-from sentra.db import session_scope
+from sentra.db import RegistryDatabaseUnavailable, session_scope
 from sentra.documents import registry
 from sentra.domain import DocumentMetadata
 from sentra.ingestion.chunker import Chunk, chunk_document
@@ -112,8 +112,22 @@ def _run_ingestion_inner(
     #
     # Outside the `force` branch on purpose: force means re-embed what is in
     # the corpus, not resurrect what was taken out of it.
-    with session_scope() as session:
-        withdrawn = registry.withdrawn_filenames(session)
+    #
+    # A registry that cannot be reached is not fatal here, deliberately. The
+    # skip paths above reach no database at all, and turning "everything is
+    # already indexed" into a failed run because a dependency is down would be
+    # a worse answer than the one the run can still give. Anything that would
+    # actually be written fails per file at register_file moments later, which
+    # is loud, specific, and already the behaviour.
+    try:
+        with session_scope() as session:
+            withdrawn = registry.withdrawn_filenames(session)
+    except RegistryDatabaseUnavailable:
+        logger.warning(
+            "Registry unreachable; withdrawn documents cannot be identified. "
+            "Nothing will be indexed either, since registration needs it."
+        )
+        withdrawn = set()
     if withdrawn:
         logger.info("Skipping %d withdrawn documents", len(withdrawn))
 
