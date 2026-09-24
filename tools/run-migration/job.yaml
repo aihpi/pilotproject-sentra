@@ -13,20 +13,26 @@
 # This is the same command with no hook semantics and no waves, so it runs
 # when you sync it and its log is its own.
 #
+# RENAMED from run-registry-migration. A Job's pod template is immutable, so
+# syncing a corrected spec under a name that already exists cannot change it:
+# the old Job stays, its old pod's logs stay, and it looks as though the fix
+# did nothing. A new name is the cheapest way to be certain you are reading a
+# fresh run. The old Job can be deleted whenever.
+#
 # This branch is not for merging. Delete the Application once the schema is at
 # head.
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: run-registry-migration
+  name: run-registry-migration-2
   labels:
-    app: run-registry-migration
+    app: run-registry-migration-2
 spec:
   backoffLimit: 2
   template:
     metadata:
       labels:
-        app: run-registry-migration
+        app: run-registry-migration-2
     spec:
       restartPolicy: Never
       containers:
