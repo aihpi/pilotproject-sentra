@@ -27,6 +27,7 @@ echo "[2/5] Applying Kustomize manifests..."
 # it per sync. `kubectl apply` has no such lifecycle and a Job's pod template is
 # immutable, so a re-run has to remove the old one first.
 kubectl delete job sentra-registry-migrate -n sentra --ignore-not-found
+kubectl delete job sentra-eval-migrate -n sentra --ignore-not-found
 kubectl apply -k .
 
 # 3. Wait for pods
@@ -35,11 +36,17 @@ echo "[3/5] Waiting for pods to be ready..."
 echo "  Waiting for the registry database..."
 kubectl wait --for=condition=ready pod -l app=sentra-registry -n sentra --timeout=120s
 
+echo "  Waiting for the evaluation database..."
+kubectl wait --for=condition=ready pod -l app=sentra-eval-db -n sentra --timeout=120s
+
 echo "  Waiting for Qdrant..."
 kubectl wait --for=condition=ready pod -l app=sentra-qdrant -n sentra --timeout=120s
 
 echo "  Waiting for backend..."
 kubectl wait --for=condition=ready pod -l app=sentra-backend -n sentra --timeout=120s
+
+echo "  Waiting for the evaluation harness..."
+kubectl wait --for=condition=ready pod -l app=sentra-eval-harness -n sentra --timeout=120s
 
 echo "  Waiting for frontend..."
 kubectl wait --for=condition=ready pod -l app=sentra-frontend -n sentra --timeout=60s
@@ -51,8 +58,9 @@ kubectl wait --for=condition=ready pod -l app=sentra-frontend -n sentra --timeou
 # and no waves, so on this path it is applied with everything else and simply
 # has to be waited for.
 echo "[4/5] Waiting for the registry schema..."
-if kubectl wait --for=condition=complete job/sentra-registry-migrate -n sentra --timeout=180s; then
-  echo "  Schema is at head."
+if kubectl wait --for=condition=complete job/sentra-registry-migrate -n sentra --timeout=180s \
+   && kubectl wait --for=condition=complete job/sentra-eval-migrate -n sentra --timeout=180s; then
+  echo "  Both schemas are at head."
 else
   echo "  MIGRATION FAILED. Ingestion registers every document, so it will"
   echo "  fail every file until this succeeds (#196). Logs:"
