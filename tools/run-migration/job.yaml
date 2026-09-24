@@ -56,6 +56,17 @@ spec:
                 secretKeyRef:
                   name: sentra-secret
                   key: REGISTRY_DATABASE_URL
+            # A migration has nothing to do with the AI hub, and needs this
+            # anyway: migrations/env.py takes the database URL from Settings so
+            # that there is one answer to "where is the registry database", and
+            # building Settings validates every field. ai_hub_api_key has no
+            # default, so without it alembic dies on a pydantic ValidationError
+            # before it opens a connection.
+            - name: AI_HUB_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: sentra-secret
+                  key: AI_HUB_API_KEY
           resources:
             limits:
               cpu: "1"
