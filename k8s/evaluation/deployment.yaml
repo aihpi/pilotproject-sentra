@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentra-eval-harness
+  labels:
+    app: sentra-eval-harness
+  annotations:
+    # After its database (wave 0) and its schema (wave 1). Starting before the
+    # schema exists is #196 in a different disguise.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sentra-eval-harness
+  template:
+    metadata:
+      labels:
+        app: sentra-eval-harness
+    spec:
+      containers:
+        - name: eval-harness
+          image: ghcr.io/aihpi/pilotproject-sentra/evaluation:sha-55e7826
+          ports:
+            - containerPort: 8100
+          envFrom:
+            - configMapRef:
+                name: sentra-eval-config
+          env:
+            # The same value as AI_HUB_API_KEY, so it references that key
+            # rather than duplicating a secret. If the judge ever moves to a
+            # different hub, this becomes its own entry.
+            - name: JUDGE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: sentra-secret
+                  key: AI_HUB_API_KEY
+            - name: EVAL_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: sentra-secret
+                  key: EVAL_DATABASE_URL
+          startupProbe:
+            httpGet:
+              path: /api/eval/health
+              port: 8100
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 12
+          readinessProbe:
+            httpGet:
+              path: /api/eval/health
+              port: 8100
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/eval/health
+              port: 8100
+            periodSeconds: 30
+            timeoutSeconds: 10
+          resources:
+            limits:
+              # A round makes generation calls that take 20 to 29 seconds each,
+              # but it spends that time waiting on two HTTP services rather
+              # than computing. No docling, no embeddings, no qdrant-client.
+              cpu: "1"
+              memory: "1Gi"
+            requests:
+              cpu: "100m"
+              memory: "256Mi"

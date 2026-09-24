@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentra-eval-db
+  labels:
+    app: sentra-eval-db
+  annotations:
+    # Wave 0: the database, before its schema and before the harness.
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  replicas: 1
+  # One Postgres on one ReadWriteOnce volume, same as the registry's (#197).
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sentra-eval-db
+  template:
+    metadata:
+      labels:
+        app: sentra-eval-db
+    spec:
+      containers:
+        - name: postgres
+          # Pinned to the same minor as docker-compose.yml and the registry's.
+          image: postgres:17.6-alpine
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            - name: POSTGRES_USER
+              value: sentra
+            - name: POSTGRES_DB
+              value: sentra_eval
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: sentra-secret
+                  key: EVAL_DB_PASSWORD
+            # A subdirectory of the mount, not the mount. A PVC arrives with a
+            # lost+found and initdb refuses a non-empty directory.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: eval-db-storage
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "sentra", "-d", "sentra_eval"]
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "sentra", "-d", "sentra_eval"]
+            periodSeconds: 15
+            timeoutSeconds: 5
+          resources:
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+      volumes:
+        - name: eval-db-storage
+          persistentVolumeClaim:
+            claimName: eval-db-storage

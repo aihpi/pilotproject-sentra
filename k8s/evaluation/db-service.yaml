@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: eval-db
+  labels:
+    app: sentra-eval-db
+spec:
+  type: ClusterIP
+  selector:
+    app: sentra-eval-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
