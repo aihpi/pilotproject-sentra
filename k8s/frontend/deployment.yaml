@@ -19,6 +19,14 @@ spec:
           image: ghcr.io/aihpi/pilotproject-sentra/frontend:sha-65a23be
           ports:
             - containerPort: 80
+          env:
+            # Fully qualified, and it has to be. nginx resolves this one per
+            # request through its own DNS client, which does not apply the
+            # search list from /etc/resolv.conf -- so the bare `eval-harness`
+            # that works under compose is NXDOMAIN here, and /api/eval answers
+            # 502 with the harness running perfectly well beside it.
+            - name: EVAL_HARNESS_HOST
+              value: eval-harness.sentra.svc.cluster.local
           readinessProbe:
             httpGet:
               path: /
