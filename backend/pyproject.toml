@@ -20,6 +20,10 @@ dependencies = [
     "pypdfium2>=4.30.0",        # ingestion/parser.py
     "numpy>=1.26",              # rag/store.py
     "itsdangerous>=2.2",
+    # Multipart form parsing, which is how a browser sends a file. FastAPI
+    # imports it lazily and raises at request time without it, so an upload
+    # endpoint would type-check, start, and then fail on first use (#211).
+    "python-multipart>=0.0.9",
     # The document registry (#141). SENTRA's first SQL database: until now the
     # corpus was whatever happened to be in Qdrant, which is how 17 documents
     # came to be citable with no file behind them (#140). Same three packages

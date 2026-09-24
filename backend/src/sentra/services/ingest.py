@@ -102,6 +102,21 @@ def _run_ingestion_inner(
         if indexed_files:
             logger.info("Found %d already-indexed documents", len(indexed_files))
 
+    # Withdrawn documents are skipped whichever way the run was started.
+    #
+    # The skip filter above asks Qdrant what is already indexed, and a document
+    # that has just been withdrawn has no points, so it looks like one that has
+    # never been seen. Without this it would be parsed and re-embedded on the
+    # next run, and withdrawal would last exactly until somebody pressed the
+    # ingest button.
+    #
+    # Outside the `force` branch on purpose: force means re-embed what is in
+    # the corpus, not resurrect what was taken out of it.
+    with session_scope() as session:
+        withdrawn = registry.withdrawn_filenames(session)
+    if withdrawn:
+        logger.info("Skipping %d withdrawn documents", len(withdrawn))
+
     store.ensure_collection()
     store.ensure_doc_collection()
 
@@ -125,6 +140,10 @@ def _run_ingestion_inner(
     _record_stale_documents(indexed_files, filesystem_files)
 
     for p in all_pdf_paths:
+        if p.name in withdrawn:
+            _progress.skipped += 1
+            logger.info("Skipping %s (withdrawn)", p.name)
+            continue
         if not force and p.name in indexed_files:
             _progress.skipped += 1
             logger.info("Skipping %s (already indexed)", p.name)

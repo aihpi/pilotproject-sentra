@@ -397,6 +397,33 @@ class VectorStore:
 
         return self._chunks.upsert(points)
 
+    def remove_document(self, source_file: str, document_id: str | None = None) -> None:
+        """Remove every point belonging to one document, from both collections.
+
+        Both, because they are keyed differently. Chunks carry `document_id`
+        since #188 and `source_file` on everything written before the
+        re-ingest; the doc-summary collection is keyed on `source_file` alone.
+        Clearing one and not the other leaves a document that no longer answers
+        questions but still appears in the corpus listing, or the reverse.
+
+        By filename as well as by id, for the same reason the delete before an
+        upsert does it: points written under the old scheme have no id, and a
+        removal that matched only on id would silently leave them searchable.
+        """
+        if document_id:
+            self._chunks.delete_by_filter(
+                Filter(
+                    must=[FieldCondition(key="document_id", match=MatchValue(value=document_id))]
+                )
+            )
+
+        self._chunks.delete_by_filter(
+            Filter(must=[FieldCondition(key="source_file", match=MatchValue(value=source_file))])
+        )
+        self._docs.delete_by_filter(
+            Filter(must=[FieldCondition(key="source_file", match=MatchValue(value=source_file))])
+        )
+
     def search(
         self,
         query_embedding: list[float],

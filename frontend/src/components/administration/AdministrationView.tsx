@@ -15,6 +15,7 @@ import { CaseForm } from "@/components/administration/CaseForm";
 import { CaseTable } from "@/components/administration/CaseTable";
 import { RoundControls } from "@/components/administration/RoundControls";
 import { UserPane } from "@/components/administration/UserPane";
+import { DocumentPane } from "@/components/administration/DocumentPane";
 
 /** Everything that changes the test set, kept away from the screen where
  *  cases are judged.
@@ -50,7 +51,9 @@ export function AdministrationView({ session }: { session: Session | null }) {
   // ends with nobody looking. The same view as in Auswertung, deliberately —
   // two renderings of one round is how two people come to quote different
   // numbers from it.
-  const [tab, setTab] = useState<"testfaelle" | "ergebnisse" | "benutzer">(
+  const [tab, setTab] = useState<
+    "testfaelle" | "ergebnisse" | "benutzer" | "dokumente"
+  >(
     "testfaelle",
   );
   const [runId, setRunId] = useState<string | null>(null);
@@ -137,6 +140,9 @@ export function AdministrationView({ session }: { session: Session | null }) {
                 ["testfaelle", "Testfälle"],
                 ["ergebnisse", "Ergebnisse"],
                 ["benutzer", "Benutzer"],
+                // Adding and withdrawing, not listing. The Dokumente tab keeps
+                // the list, which anybody may read.
+                ["dokumente", "Dokumente"],
               ] as const
             ).map(([key, label]) => (
               <button
@@ -170,6 +176,8 @@ export function AdministrationView({ session }: { session: Session | null }) {
       )}
 
       {tab === "benutzer" && <UserPane session={session} />}
+
+      {tab === "dokumente" && <DocumentPane />}
 
       {error && (
         <p className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
