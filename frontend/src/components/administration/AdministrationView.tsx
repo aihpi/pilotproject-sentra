@@ -10,7 +10,6 @@ import {
   withdrawCase,
 } from "@/lib/evalApi";
 import { ResultsView } from "@/components/evaluation/ResultsView";
-import { RunPicker } from "@/components/evaluation/RunPicker";
 import { CaseForm } from "@/components/administration/CaseForm";
 import { CaseTable } from "@/components/administration/CaseTable";
 import { RoundControls } from "@/components/administration/RoundControls";
@@ -50,13 +49,13 @@ export function AdministrationView({ session }: { session: Session | null }) {
   // and making them change tabs to find out is the kind of small friction that
   // ends with nobody looking. The same view as in Auswertung, deliberately —
   // two renderings of one round is how two people come to quote different
-  // numbers from it.
+  // numbers from it. Only the latest round, though: browsing old rounds is
+  // what Auswertung is for.
   const [tab, setTab] = useState<
     "testfaelle" | "ergebnisse" | "benutzer" | "dokumente"
   >(
     "testfaelle",
   );
-  const [runId, setRunId] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -72,10 +71,7 @@ export function AdministrationView({ session }: { session: Session | null }) {
   useEffect(() => {
     load();
     fetchRuns()
-      .then((loaded) => {
-        setRuns(loaded);
-        setRunId((current) => current ?? loaded[0]?.id ?? null);
-      })
+      .then(setRuns)
       .catch(() => {
         /* The case list is the point of this screen; a missing run list is not
            worth blanking it. */
@@ -83,6 +79,8 @@ export function AdministrationView({ session }: { session: Session | null }) {
   }, [load]);
 
   const active = runs.find((r) => r.status === "laufend") ?? null;
+  // The harness lists rounds newest first.
+  const latestRun = runs[0] ?? null;
 
   // Only while something is running. A round is roughly 180 calls at 20 to 29
   // seconds, and whoever started it is most likely still on this screen.
@@ -131,8 +129,8 @@ export function AdministrationView({ session }: { session: Session | null }) {
       <header className="space-y-2">
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-lg font-semibold">Administration</h2>
-          {tab === "ergebnisse" && (
-            <RunPicker runs={runs} runId={runId} onSelect={setRunId} />
+          {tab === "ergebnisse" && latestRun && (
+            <LatestRun run={latestRun} />
           )}
           <nav className="ml-auto flex gap-1" aria-label="Ansicht">
             {(
@@ -167,7 +165,7 @@ export function AdministrationView({ session }: { session: Session | null }) {
         </p>
       </header>
 
-      {tab !== "benutzer" && (
+      {tab === "testfaelle" && (
         <RoundControls
           running={active}
           onStarted={(run) => setRuns((cur) => [run, ...cur])}
@@ -186,11 +184,11 @@ export function AdministrationView({ session }: { session: Session | null }) {
       )}
 
       {tab === "ergebnisse" &&
-        (runId ? (
-          <ResultsView key={runId} runId={runId} />
+        (latestRun ? (
+          <ResultsView key={latestRun.id} runId={latestRun.id} />
         ) : (
           <p className="text-sm text-muted-foreground">
-            Noch keine Testrunde gelaufen. Oben eine starten.
+            Noch keine Testrunde gelaufen. Unter Testfälle eine starten.
           </p>
         ))}
 
@@ -255,5 +253,25 @@ export function AdministrationView({ session }: { session: Session | null }) {
         </>
       )}
     </div>
+  );
+}
+
+/** Which round Ergebnisse is showing, and the audit warning RunPicker would
+ *  otherwise have carried. Dropping the picker must not drop the warning. */
+function LatestRun({ run }: { run: EvalRun }) {
+  return (
+    <>
+      <span className="text-xs text-muted-foreground">
+        Letzte Runde: {run.label || run.id.slice(0, 8)} — {run.status}
+      </span>
+      {!run.audit_ok && (
+        <span
+          className="rounded-md bg-destructive/10 px-2 py-1 text-xs text-destructive"
+          title="Mindestens ein Testfall wurde erst nach dem Start der Runde freigegeben."
+        >
+          Prüfkette nicht belastbar
+        </span>
+      )}
+    </>
   );
 }
