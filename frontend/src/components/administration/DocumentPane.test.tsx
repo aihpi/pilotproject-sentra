@@ -13,9 +13,11 @@ import type { DocumentInfo } from "@/types";
 
 const fetchDocuments = vi.fn();
 const withdrawDocument = vi.fn();
+const fetchVolumeFiles = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   fetchDocuments: () => fetchDocuments(),
+  fetchVolumeFiles: () => fetchVolumeFiles(),
   withdrawDocument: (name: string) => withdrawDocument(name),
   uploadDocuments: vi.fn(),
 }));
@@ -48,6 +50,7 @@ function doc(name: string, title = "Ein Titel"): DocumentInfo {
 beforeEach(() => {
   fetchDocuments.mockReset();
   withdrawDocument.mockReset();
+  fetchVolumeFiles.mockReset().mockResolvedValue([]);
   fetchDocuments.mockResolvedValue([doc("a.pdf", "Erstes"), doc("b.pdf", "Zweites")]);
   withdrawDocument.mockResolvedValue({ name: "a.pdf", registered: true });
 });
@@ -122,5 +125,29 @@ describe("the document pane", () => {
     await userEvent.click(screen.getByRole("button", { name: "Ja, zurückziehen" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/Rolle/);
+  });
+});
+
+describe("the comparison in the pane", () => {
+  it("compares the volume against the index", async () => {
+    fetchVolumeFiles.mockResolvedValue([
+      { name: "a.pdf", size_bytes: 1, modified_at: "", indexable: true, withdrawn: false },
+      { name: "neu.pdf", size_bytes: 1, modified_at: "", indexable: true, withdrawn: false },
+    ]);
+    render(<DocumentPane />);
+
+    expect(await screen.findByText("Bereit zum Einlesen")).toBeInTheDocument();
+  });
+
+  it("does not compare against an index list that failed to load", async () => {
+    /** Every file would otherwise look unread. */
+    fetchDocuments.mockRejectedValue(new Error("Dokumente konnten nicht geladen werden"));
+    fetchVolumeFiles.mockResolvedValue([
+      { name: "a.pdf", size_bytes: 1, modified_at: "", indexable: true, withdrawn: false },
+    ]);
+    render(<DocumentPane />);
+
+    expect(await screen.findByText(/kein Abgleich möglich/)).toBeInTheDocument();
+    expect(screen.queryByText("Bereit zum Einlesen")).not.toBeInTheDocument();
   });
 });

@@ -16,7 +16,10 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from sentra_eval.models import CaseVersion
+# The Vorlage's own wording for 4.3a, shared with the Phase-4 sheet so the
+# machine verdict and the human one are directly comparable — which is what the
+# disagreement rate measures.
+from sentra_eval.models import ZITAT_STIMMT, ZITAT_WEICHT_AB, CaseVersion
 
 # Check names, used as stable keys in the database and the trend report.
 QUELLENAUSWAHL = "quellenauswahl"  # 4.3b
@@ -204,6 +207,113 @@ def marker_ausrichtung(response: dict) -> CheckOutcome:
 
 
 # ── 4.4: does it say it does not know? ──────────────────────────────
+
+# ── 4.3a: does the cited page hold the passage? ─────────────────────
+
+SEITENANGABE = "seitenangabe"  # 4.3a
+
+# "Seite 4", "S. 4", "auf den Seiten 4 und 5". Deliberately narrow: a reference
+# this cannot read must not become a finding, because a false "weicht ab" on a
+# correct citation teaches reviewers to ignore the check, and a check nobody
+# believes is worse than no check.
+#
+# **Case-sensitive on the abbreviation, and bounded.** The obvious pattern is
+# `(?:Seiten?|S\.)` under IGNORECASE, and it reads the "s." at the end of
+# "Abs." as a page: "Siehe S. 4, Abs. 3" — the exact shape this project puts in
+# the prompt — came out as pages 3 and 4 and was flagged as a deviation. It
+# would have fired on nearly every correctly cited answer, which is how a check
+# gets switched off.
+#
+# So: `\b` before an uppercase `S.`, since "Abs." offers no word boundary
+# between its "b" and its "s". Lowercase "s." is left alone too, because in
+# German prose it usually abbreviates "siehe" rather than "Seite".
+#
+# "f." and "ff." are not handled — "Seite 4 f." means 4 and the next, and
+# guessing which is a paragraph away from inventing evidence. Such a reference
+# reads as page 4 alone, which is the conservative half of the claim.
+_SEITE_PATTERN = re.compile(r"\b(?:[Ss]eiten?\s*|S\.\s*)(\d{1,4})")
+
+
+def seitenangabe(response: dict, hits: list[dict] | None = None) -> CheckOutcome:
+    """4.3a: every page the answer names is a page it actually drew on.
+
+    The technique asks whether a citation points at the passage supporting the
+    claim. Until the model was shown a page it could not name one and there was
+    nothing to check — which is why marker alignment carried 4.3a as far as the
+    data allowed and no further.
+
+    Reported in the Vorlage's own words, `existiert & stimmt überein` and
+    `weicht ab`, because those are what a reviewer picks from for 4.3a and the
+    comparison between the two is what the disagreement rate measures. A check
+    that invented its own wording could not be compared with the human answer.
+
+    Two things are `nicht prüfbar` rather than a pass:
+
+      the answer names no page       it cannot be wrong about one, and calling
+                                     that correct would make the check read as
+                                     healthy on exactly the answers 4.3a
+                                     cannot vouch for
+      the chunks carry no page       every chunk written before #134, which is
+                                     all of them until the corpus is
+                                     re-ingested
+    """
+    text = response.get("text") or ""
+    chunks = hits or []
+
+    genannt = sorted({int(m) for m in _SEITE_PATTERN.findall(text)})
+    abgedeckt = _pages_drawn_on(chunks)
+
+    belege: dict[str, object] = {
+        "genannte_seiten": genannt,
+        "seiten_der_quellen": sorted(abgedeckt),
+    }
+
+    if not abgedeckt:
+        return CheckOutcome(
+            SEITENANGABE,
+            NICHT_PRUEFBAR,
+            auffaellig=False,
+            belege={
+                **belege,
+                "grund": (
+                    "Die herangezogenen Abschnitte tragen keine Seitenangabe. "
+                    "Betrifft alle Abschnitte, die vor der Neuindexierung geschrieben wurden."
+                ),
+            },
+        )
+
+    if not genannt:
+        return CheckOutcome(
+            SEITENANGABE,
+            NICHT_PRUEFBAR,
+            auffaellig=False,
+            belege={**belege, "grund": "Die Antwort nennt keine Seite."},
+        )
+
+    abweichend = [seite for seite in genannt if seite not in abgedeckt]
+    belege["abweichende_seiten"] = abweichend
+
+    if abweichend:
+        return CheckOutcome(SEITENANGABE, ZITAT_WEICHT_AB, auffaellig=True, belege=belege)
+    return CheckOutcome(SEITENANGABE, ZITAT_STIMMT, auffaellig=False, belege=belege)
+
+
+def _pages_drawn_on(chunks: list[dict]) -> set[int]:
+    """Every page covered by the chunks the answer was given.
+
+    The union across chunks, not per chunk: the answer saw all of them, so a
+    page belonging to any of them is a page it legitimately drew on. Attributing
+    a sentence to one particular chunk would need to know which claim came from
+    where, which is 4.3c's question and a judgement rather than a comparison.
+    """
+    pages: set[int] = set()
+    for chunk in chunks:
+        first = chunk.get("page_from") or 0
+        last = chunk.get("page_to") or first
+        if first:
+            pages.update(range(int(first), int(last) + 1))
+    return pages
+
 
 ABLEHNUNG = "ablehnung"
 KORREKT_ABGELEHNT = "korrekt abgelehnt"

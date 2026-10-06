@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from sentra_eval import cases as case_store
 from sentra_eval.categories import Kategorie
-from sentra_eval.config import get_eval_settings
+from sentra_eval.config import get_eval_settings, sentra_headers
 from sentra_eval.models import Case
 
 logger = logging.getLogger(__name__)
@@ -61,14 +61,7 @@ def fetch(
     client = client or httpx.Client(
         base_url=settings.sentra_base_url,
         timeout=settings.runner_timeout_seconds,
-        # Sent only when configured. SENTRA leaves the endpoint open when it
-        # has no token of its own, and a harness that refused to read in that
-        # case would be enforcing a rule SENTRA is not applying.
-        headers=(
-            {"Authorization": f"Bearer {settings.sentra_admin_token}"}
-            if settings.sentra_admin_token
-            else {}
-        ),
+        headers=sentra_headers(settings),
     )
     try:
         response = client.get(FEEDBACK_ENDPOINT, params={"rating": rating} if rating else None)
