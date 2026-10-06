@@ -42,9 +42,7 @@ vi.mock("@/components/explorer/ExplorerView", () => ({
   ExplorerView: () => <div>Explorer-Inhalt</div>,
 }));
 vi.mock("@/components/DocumentsView", () => ({
-  DocumentsView: ({ canIngest }: { canIngest: boolean }) => (
-    <div>Dokumente-Inhalt{canIngest ? " mit Einlesen" : ""}</div>
-  ),
+  DocumentsView: () => <div>Dokumente-Inhalt</div>,
 }));
 vi.mock("@/components/evaluation/EvaluationView", () => ({
   EvaluationView: () => <div>Auswertung-Inhalt</div>,
@@ -101,13 +99,6 @@ describe("when no login is configured", () => {
     expect(await visibleTabs()).toEqual(["Suche", "Dokumente"]);
   });
 
-  it("keeps the ingest button, because the backend would allow it", async () => {
-    given({ configured: false, session: null });
-
-    await userEvent.click(await screen.findByRole("button", { name: "Dokumente" }));
-    expect(screen.getByText("Dokumente-Inhalt mit Einlesen")).toBeInTheDocument();
-  });
-
   it("offers no way to sign out of a session that does not exist", async () => {
     given({ configured: false, session: null });
 
@@ -134,13 +125,6 @@ describe("when a login is configured but nobody has used it", () => {
     given({ configured: true, session: null });
 
     expect(await visibleTabs()).toEqual(["Suche", "Dokumente"]);
-  });
-
-  it("withholds the ingest button, because the backend would refuse it", async () => {
-    given({ configured: true, session: null });
-
-    await userEvent.click(await screen.findByRole("button", { name: "Dokumente" }));
-    expect(screen.getByText("Dokumente-Inhalt")).toBeInTheDocument();
   });
 
   it("offers a way in, which can be cancelled", async () => {

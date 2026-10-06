@@ -1,0 +1,61 @@
+# The harness's schema, as an ArgoCD sync hook — the same shape as
+# k8s/registry/migrate-job.yaml and for the same reasons.
+#
+# A hook rather than an ordinary resource, because a Job's pod template is
+# immutable and a plain re-apply fails instead of running again;
+# hook-delete-policy removes the previous run just before creating the next,
+# which is what makes a fixed name safe.
+#
+# Sync rather than PreSync, at wave 1: PreSync runs before anything exists and
+# would race the Postgres it needs on a first install.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sentra-eval-migrate
+  labels:
+    app: sentra-eval-migrate
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: sentra-eval-migrate
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          # Kept in step with the harness Deployment by the deploy job in
+          # .github/workflows/docker-publish.yml.
+          image: ghcr.io/aihpi/pilotproject-sentra/evaluation:sha-55e7826
+          # The harness image already ships alembic.ini, so the trap in #200
+          # does not repeat here.
+          command: ["uv", "run", "--no-dev", "alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: sentra-eval-config
+          env:
+            # EvalSettings has no required field with no default, unlike
+            # SENTRA's — so unlike #213 this Job needs only the database. The
+            # judge key is passed anyway, so that a later required field does
+            # not break the migration the way it broke the registry's.
+            - name: EVAL_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: sentra-secret
+                  key: EVAL_DATABASE_URL
+            - name: JUDGE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: sentra-secret
+                  key: AI_HUB_API_KEY
+          resources:
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+            requests:
+              cpu: "100m"
+              memory: "256Mi"

@@ -98,14 +98,7 @@ export default function App() {
         {allowed(activeView) ? (
           <>
             {activeView === "explorer" && <ExplorerView />}
-            {activeView === "documents" && (
-              /* Mirrors `require_role(ADMIN)` on POST /ingest rather than the
-                 tab rule above: the backend is open while no login is
-                 configured, so a compose installation keeps its button. */
-              <DocumentsView
-                canIngest={!loginPossible || atLeast(role, "admin")}
-              />
-            )}
+            {activeView === "documents" && <DocumentsView />}
             {activeView === "evaluation" && (
               <EvaluationView session={session} />
             )}

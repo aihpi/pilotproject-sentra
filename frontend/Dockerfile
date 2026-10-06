@@ -20,6 +20,10 @@ COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 # template's `resolver` directive is substituted with nothing.
 ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
 
+# The evaluation harness, as compose names it. Kubernetes overrides this
+# with a fully qualified name, because nginx's resolver does not search.
+ENV EVAL_HARNESS_HOST=eval-harness
+
 EXPOSE 80
 
 CMD ["nginx", "-g", "daemon off;"]
