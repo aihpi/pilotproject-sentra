@@ -79,7 +79,7 @@ vi.mock("@/lib/evalApi", () => ({
   updateCase: (...a: unknown[]) => updateCase(...a),
   approveCase: (...a: unknown[]) => approveCase(...a),
   withdrawCase: (...a: unknown[]) => withdrawCase(...a),
-  fetchRuns: () => Promise.resolve([RUN]),
+  fetchRuns: () => Promise.resolve([RUN, OLDER_RUN]),
   fetchRun: () => Promise.resolve(RUN),
   importSheet: () => Promise.resolve({}),
   startRun: () => Promise.resolve({}),
@@ -133,6 +133,14 @@ const RUN = {
   failed: 0,
   audit_ok: true,
 };
+
+const OLDER_RUN = { ...RUN, id: "run-0", label: "Runde August" };
+
+// Only so the Dokumente tab can render; nothing here asserts on its contents.
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
+  fetchDocuments: () => Promise.resolve([]),
+}));
 
 const { AdministrationView } =
   await import("@/components/administration/AdministrationView");
@@ -341,5 +349,45 @@ describe("the results are reachable from here too", () => {
     expect(
       screen.getByRole("button", { name: "Neuer Testfall" }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("rounds are started from Testfälle only", () => {
+  it("offers the round controls on Testfälle", async () => {
+    await renderWith([APPROVED]);
+
+    expect(
+      screen.getByRole("button", { name: "Testrunde starten" }),
+    ).toBeInTheDocument();
+  });
+
+  it.each(["Ergebnisse", "Dokumente"])("does not offer them on %s", async (tab) => {
+    await renderWith([APPROVED]);
+
+    await userEvent.click(screen.getByRole("button", { name: tab }));
+
+    expect(
+      screen.queryByRole("button", { name: "Testrunde starten" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Erfassungsvorlage hochladen"),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("Ergebnisse shows the latest round", () => {
+  it("names it and offers no way to pick another", async () => {
+    /** Picking through old rounds is what Auswertung is for. */
+    await renderWith([APPROVED]);
+
+    await userEvent.click(screen.getByRole("button", { name: "Ergebnisse" }));
+
+    expect(
+      await screen.findByText(/Letzte Runde: Runde September/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Runde August/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: "Testrunde" }),
+    ).not.toBeInTheDocument();
   });
 });

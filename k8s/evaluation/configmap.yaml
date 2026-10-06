@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sentra-eval-config
+data:
+  # The judge. A different model from the one under test, deliberately and
+  # enforced: the harness refuses to start when the two resolve to the same
+  # thing, because a round judged by its own subject produces 180 verdicts of
+  # SENTRA agreeing with itself.
+  JUDGE_BASE_URL: "https://api.aisc.hpi.de/"
+  JUDGE_MODEL: "qwen3-8-27b"
+
+  # What the harness is measuring. Must match CHAT_MODEL in
+  # k8s/backend/configmap.yaml — that is the pairing the refusal above checks.
+  CHAT_MODEL_UNDER_TEST: "llama-3-3-70b"
+
+  # Over HTTP, at the backend Service. Never in process: SENTRA's API layer is
+  # part of what is being tested, so the harness reaches it the way any other
+  # client does.
+  SENTRA_BASE_URL: "http://backend:8000"
+
+  # Not set on purpose:
+  #
+  # JUDGE_API_KEY          a secret, and the same value as AI_HUB_API_KEY, so
+  #                        it references that key rather than a new one
+  # EVAL_DATABASE_URL      embeds the database password, so it is sealed
+  # SENTRA_ADMIN_TOKEN     optional, and unset while SENTRA's write path is
+  #                        open. #191 notes the runner should carry it once it
+  #                        exists; nothing here needs it today
+  # CORS_ORIGINS           nginx proxies /api/eval from the origin the page
+  #                        came from, so the browser makes no cross-origin
+  #                        request

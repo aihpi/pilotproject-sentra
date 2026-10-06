@@ -42,6 +42,58 @@ class DocumentInfo(BaseModel):
     source_file: str
 
 
+class VolumeFile(BaseModel):
+    """A file as it exists on the documents volume.
+
+    Deliberately not DocumentInfo. That describes a document the index knows
+    about, with an Aktenzeichen and a title read out of its contents; this
+    describes bytes on a disk, which may be unparsed, unparseable, or a format
+    nothing indexes. Collapsing the two would lose exactly the discrepancy
+    this is here to show.
+    """
+
+    name: str
+    size_bytes: int
+    modified_at: str
+    # Whether ingestion would look at it. Only `.pdf` is indexed —
+    # services/ingest.py globs `*.pdf` — while the registry scan also reads
+    # `.docx`, so a docx is on the volume, known, and not searchable.
+    indexable: bool
+
+
+class UploadedFile(BaseModel):
+    """What happened to one file in an upload. One entry per file sent.
+
+    A partial success is the normal case when somebody drags in a folder, so
+    this reports per file rather than failing the request: a rejected name
+    should not discard the nine that were fine.
+    """
+
+    name: str
+    accepted: bool
+    size_bytes: int = 0
+    reason: str | None = None
+
+
+class UploadResponse(BaseModel):
+    accepted: int
+    rejected: int
+    files: list[UploadedFile]
+
+
+class WithdrawResponse(BaseModel):
+    """What withdrawal did.
+
+    `registered` is false when the points were removed but no registry row
+    knew the filename. The caller got what it asked for either way, and the
+    difference is worth reporting: it means the corpus and the registry
+    disagree, which is what GET /documents/drift exists to surface.
+    """
+
+    name: str
+    registered: bool
+
+
 class FeedbackRequest(BaseModel):
     question: str
     answer: str
