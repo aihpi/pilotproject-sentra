@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import type { DocumentInfo } from "@/types";
-import { fetchDocuments, withdrawDocument } from "@/lib/api";
+import type { DocumentInfo, VolumeFile } from "@/types";
+import { fetchDocuments, fetchVolumeFiles, withdrawDocument } from "@/lib/api";
 import { DocumentUpload } from "@/components/DocumentUpload";
 import { IngestControls } from "@/components/administration/IngestControls";
+import { VolumeComparison } from "@/components/administration/VolumeComparison";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 
@@ -20,6 +21,8 @@ import { Loader2 } from "lucide-react";
  *  archivist and the button should not be ambiguous about which it is. */
 export function DocumentPane() {
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
+  const [files, setFiles] = useState<VolumeFile[] | null>(null);
+  const [filesError, setFilesError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -27,6 +30,14 @@ export function DocumentPane() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    // Separately from the index list: an unreadable volume should cost the
+    // comparison, not the list of what can be withdrawn.
+    fetchVolumeFiles()
+      .then((loaded) => {
+        setFiles(loaded);
+        setFilesError(null);
+      })
+      .catch((e: Error) => setFilesError(e.message));
     try {
       setDocuments(await fetchDocuments());
       setError(null);
@@ -65,6 +76,22 @@ export function DocumentPane() {
       <section className="space-y-2">
         <h3 className="text-sm font-semibold">Dokumente einlesen</h3>
         <IngestControls onFinished={() => void load()} />
+      </section>
+
+      <section className="space-y-2">
+        <h3 className="text-sm font-semibold">Abgleich Volume und Index</h3>
+        {filesError ? (
+          <p className="text-xs text-destructive">{filesError}</p>
+        ) : error ? (
+          // Without the index list every file would look unread.
+          <p className="text-xs text-muted-foreground">
+            Ohne die Liste des Index ist kein Abgleich möglich.
+          </p>
+        ) : files === null || loading ? (
+          <p className="text-xs text-muted-foreground">Wird geladen …</p>
+        ) : (
+          <VolumeComparison files={files} documents={documents} />
+        )}
       </section>
 
       <section className="space-y-2">

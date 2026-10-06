@@ -19,9 +19,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from sentra.api import routes
 from sentra.api.identity import hash_password
 from sentra.api.routes import router
 from sentra.config import Settings, get_settings
+from sentra.db import RegistryDatabaseUnavailable
 from sentra.services import uploads
 from sentra.services.uploads import RejectedUpload
 
@@ -244,6 +246,37 @@ class TestEndpoints:
         people using SENTRA do first.
         """
         assert client_with_login.get("/api/documents/files").status_code == 200
+
+
+class TestWithdrawnOnTheVolume:
+    """A withdrawn PDF keeps its file and loses its points, so on the volume
+    and the index alone it looks like one waiting for ingestion. It is not:
+    ingestion skips it. The listing has to say so."""
+
+    def test_marks_withdrawn_files(self, client, documents_dir, monkeypatch):
+        (documents_dir / "kept.pdf").write_bytes(b"%PDF")
+        (documents_dir / "gone.pdf").write_bytes(b"%PDF")
+        monkeypatch.setattr(routes, "_withdrawn_filenames", lambda: {"gone.pdf"})
+
+        listed = {f["name"]: f["withdrawn"] for f in client.get("/api/documents/files").json()}
+
+        assert listed == {"gone.pdf": True, "kept.pdf": False}
+
+    def test_says_unknown_rather_than_guessing_when_the_registry_is_down(
+        self, client, documents_dir, monkeypatch
+    ):
+        """The disk is still readable, so the list still comes back."""
+        (documents_dir / "a.pdf").write_bytes(b"%PDF")
+
+        def unavailable():
+            raise RegistryDatabaseUnavailable("connection refused")
+
+        monkeypatch.setattr(routes, "session_scope", unavailable)
+
+        response = client.get("/api/documents/files")
+
+        assert response.status_code == 200
+        assert response.json()[0]["withdrawn"] is None
 
 
 def _bytes(payload: bytes):
