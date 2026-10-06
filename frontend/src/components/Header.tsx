@@ -8,10 +8,13 @@ interface HeaderProps {
   /** The views this caller may use. Filtered by App, which owns the session —
    *  the header renders what it is given rather than deciding. */
   views: ViewType[];
-  /** Null when no login is configured, which is a deployment that is open by
-   *  design rather than a signed-out one. Nothing about signing in or out is
-   *  shown in that case, because neither is possible. */
+  /** Null when nobody is signed in — either because this installation has no
+   *  login, or because they have not used it. `loginPossible` is what tells
+   *  the two apart, and offering to sign in where it is impossible would be a
+   *  lie about what this installation is. */
   session: Session | null;
+  loginPossible: boolean;
+  onSignIn: () => void;
   onSignOut: () => void;
 }
 
@@ -23,9 +26,8 @@ const NAV_ITEMS: { key: ViewType; label: string }[] = [
   // normal state outside a test round.
   { key: "evaluation", label: "Auswertung" },
   // Changing the test set is a different job from judging against it, done by
-  // different people at different times. A tab rather than a permission —
-  // there is no authentication anywhere in SENTRA yet, so this separates the
-  // two jobs without restricting who does them.
+  // different people at different times. Offered only to an admin, and since
+  // #209 only to one who has actually signed in as one.
   { key: "administration", label: "Administration" },
 ];
 
@@ -34,6 +36,8 @@ export function Header({
   onViewChange,
   views,
   session,
+  loginPossible,
+  onSignIn,
   onSignOut,
 }: HeaderProps) {
   const visible = NAV_ITEMS.filter((item) => views.includes(item.key));
@@ -68,6 +72,18 @@ export function Header({
               {item.label}
             </button>
           ))}
+
+          {!session && loginPossible && (
+            <span className="ml-3 flex items-center border-l pl-3">
+              <button
+                type="button"
+                onClick={onSignIn}
+                className="rounded-md px-3 py-2 text-sm font-semibold text-muted-foreground hover:bg-secondary hover:text-secondary-foreground"
+              >
+                Anmelden
+              </button>
+            </span>
+          )}
 
           {session && (
             <span className="ml-3 flex items-center gap-2 border-l pl-3 text-xs">

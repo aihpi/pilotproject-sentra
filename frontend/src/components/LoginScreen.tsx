@@ -8,13 +8,19 @@ import { login } from "@/lib/session";
  *  deployment with no users configured is open by design, and a sign-in box in
  *  front of it would be a lie — there would be nothing to sign in as.
  *
+ *  Since #209 it is reached from a button rather than put in front of the
+ *  site, so it can be cancelled: somebody who only wants to search never needs
+ *  an account, and arriving here is a choice they can change their mind about.
+ *
  *  The failure message comes from the server unchanged. It says the same thing
  *  for a wrong password and for a name that does not exist, deliberately, and
  *  improving on that here by guessing which one it was would undo the point. */
 export function LoginScreen({
   onSignedIn,
+  onCancel,
 }: {
   onSignedIn: (session: Session) => void;
+  onCancel: () => void;
 }) {
   const [benutzername, setBenutzername] = useState("");
   const [passwort, setPasswort] = useState("");
@@ -44,8 +50,9 @@ export function LoginScreen({
         <div>
           <h2 className="text-lg font-semibold">Anmeldung</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            SENTRA ist ein Prototyp. Die Anmeldung ordnet Bewertungen einer
-            Person zu und entscheidet, welche Bereiche sichtbar sind.
+            SENTRA ist ein Prototyp. Für die Suche wird keine Anmeldung
+            benötigt. Sie ordnet Bewertungen einer Person zu und gibt die
+            Bereiche Auswertung und Administration frei.
           </p>
         </div>
 
@@ -86,6 +93,14 @@ export function LoginScreen({
           className="w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
         >
           {busy ? "Wird geprüft …" : "Anmelden"}
+        </button>
+
+        <button
+          type="button"
+          onClick={onCancel}
+          className="w-full rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-secondary"
+        >
+          Zurück zur Suche
         </button>
       </form>
     </div>
