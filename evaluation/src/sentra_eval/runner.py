@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 
 from sentra_eval import cases as case_store
 from sentra_eval import checks, judge, ragas_checks, variants
-from sentra_eval.config import get_eval_settings
+from sentra_eval.config import get_eval_settings, sentra_headers
 from sentra_eval.db import session_scope
 from sentra_eval.models import (
     ABGESCHLOSSEN,
@@ -221,7 +221,14 @@ def execute(run_id: UUID, client: httpx.Client | None = None) -> None:
     settings = get_eval_settings()
     owned_client = client is None
     client = client or httpx.Client(
-        base_url=settings.sentra_base_url, timeout=settings.runner_timeout_seconds
+        base_url=settings.sentra_base_url,
+        timeout=settings.runner_timeout_seconds,
+        # The round does not need this today: `/explorer/answer` is open and
+        # the harness sets no `system_prompt`, which is the field #191 closed.
+        # It carries the token so that the next thing SENTRA enforces does not
+        # stop rounds silently — a runner that 401s reports as SENTRA being
+        # unreachable, which is a day of looking in the wrong place.
+        headers=sentra_headers(settings),
     )
 
     try:
