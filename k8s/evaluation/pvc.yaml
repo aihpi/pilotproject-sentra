@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: eval-db-storage
+  labels:
+    app: sentra-eval-db
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      # Rounds, cases, and one row per generation call with its answer text.
+      # Larger than the registry's because the answers are stored, smaller than
+      # the corpus because they are text.
+      storage: 10Gi

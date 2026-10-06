@@ -1,215 +1,308 @@
 # Source management notes
 
-Consumers: SENTRA search and eval cases, the same corpus.
+The corpus is consumed by two things at once: SENTRA's search, and the
+evaluation cases that reference documents by name. Both break in the same ways
+when the corpus cannot be described, so they are treated here as one problem.
 
-## The number
+## Size of the corpus
 
-```
-1919  PDFs under data/,  592 MB  (was 1966 under 03_data at 618 MB; the
-      tree below was flattened into one directory and #55 renamed the folder)
+```text
+1919  PDFs under data/, 592 MB
   17  indexed
 ```
-`glob("*.pdf")` is non-recursive, pointed at `data/Ausarbeitungen`.
-All of `03_data/Extra/ab_2023/` (~1950 files, Fachbereich × year tree) was invisible to it.
-**No longer the case:** the corpus was flattened into one directory by hand, so the
-non-recursive glob now reaches everything. The glob is still non-recursive, so this
-holds only as long as nobody adds a subdirectory.
-→ not "add an upload button", but "1% of a real corpus is indexed and there is no mechanism for the rest".
 
-## What breaks, measured
+The earlier count was 1966 files at 618 MB under `03_data`, before the tree was
+flattened into a single directory and the folder was renamed in #55.
 
-| fact | consequence |
+`glob("*.pdf")` is not recursive and is pointed at `data/Ausarbeitungen`. Under
+the old tree, roughly 1950 files under `Extra/ab_2023/` were invisible to it.
+Flattening the corpus by hand removed that particular gap, but the glob is
+still not recursive, so the gap returns the moment anyone adds a subdirectory.
+
+The problem this states is not that an upload button is missing. It is that one
+percent of a real corpus is indexed and there is no mechanism for the rest.
+
+## Measured failures
+
+| Fact | Consequence |
 |---|---|
-| 30 duplicate filenames across folders | filename is not unique → cannot be identity |
-| 65 joint docs, `WD 1-019-24; WD 7-060-24.pdf` | contain **133 AZ**, `_FILENAME_RE.search()` keeps 65. **68 silently dropped** |
-| 105 / 1966 filenames don't match the AZ regex | `AB 05-24.pdf`, `EU-05-25.pdf` = different naming genre |
-| `Ausarbeitungen/PE 6/` holds `EU 6-*` files | folder ≠ AZ prefix → paths aren't a metadata source either |
-| `WD 8 ab 01.01.2024` / `bis 31.12.2023` | org reorg encoded in a path |
-| `FACHBEREICH_NAMES` = 11 entries, tree = 12 units | PE 6 missing |
-| `list_documents` → `scroll_all_documents()`, dedupe by `aktenzeichen` | AZ-less docs **all collapse into one row**; failed docs invisible |
-| no per-document delete anywhere (`store.py` only has collection nukes) | deleting a PDF leaves chunks searchable + citable forever |
-| `stale_documents` computed in `ingest.py`, only logged | drift already detected, never surfaced |
-| 23 `.docx` alongside the PDFs, both globs are `*.pdf` | silently skipped. Docling accepts docx already, so only the glob stops them |
+| 30 duplicate filenames across folders | A filename is not unique, so it cannot be an identity |
+| 65 joint documents such as `WD 1-019-24; WD 7-060-24.pdf` | They contain 133 Aktenzeichen. `_FILENAME_RE.search()` keeps 65, so 68 are dropped without a trace |
+| 105 of 1966 filenames do not match the Aktenzeichen pattern | `AB 05-24.pdf` and `EU-05-25.pdf` belong to a different naming genre |
+| `Ausarbeitungen/PE 6/` holds `EU 6-*` files | The folder does not agree with the Aktenzeichen prefix, so paths are not a metadata source either |
+| `WD 8 ab 01.01.2024` and `bis 31.12.2023` | An organisational change encoded in a path |
+| `FACHBEREICH_NAMES` has 11 entries, the tree has 12 units | PE 6 is missing |
+| `list_documents` deduplicates by Aktenzeichen | Documents without one collapse into a single row, and failed documents are invisible |
+| No per-document delete exists; `store.py` offers only whole-collection removal | Deleting a PDF leaves its chunks searchable and citable indefinitely |
+| Stale documents are computed during ingestion and only logged | The drift is already detected and never surfaced |
+| 23 `.docx` files sit alongside the PDFs, and both globs are `*.pdf` | They are skipped silently, although Docling accepts the format |
 
-## The docx abstracts, deliberately not ingested
+## The abstracts in .docx, and why they stay out
 
-23 `.docx` files sit next to the PDFs and are skipped, because `parse_pdfs` and
-the pre-filter in `ingest.py` both glob `*.pdf`. `DocumentConverter()` already
-accepts `docx` with no configuration, so the parser is not the obstacle.
+Twenty-three `.docx` files sit next to the PDFs and are skipped, because
+`parse_pdfs` and the pre-filter in `ingest.py` both glob `*.pdf`.
+`DocumentConverter()` accepts docx with no configuration, so the parser is not
+the obstacle.
 
 What they are:
 
 - 22 of 23 are named `*_Abstract.docx` or `* Abstract.docx`
-- **21 of 23 have their parent PDF already in the corpus**, sharing its Aktenzeichen
-- 1 standalone: `AB Europa Franz-Ratspräsidentschaft - RED final.docx`
+- 21 of 23 have their parent PDF already in the corpus, sharing its
+  Aktenzeichen
+- one is standalone, `AB Europa Franz-Ratspräsidentschaft - RED final.docx`
 
-**The storage layer was already prepared for them and the ingestion layer never
-was.** `store.py` names `_Abstract` pairs in three comments, and commit `a913c3f`
-re-keyed Qdrant points by `source_file` precisely because an abstract and its
-parent share an Aktenzeichen. Someone hit this collision, fixed identity, and left
-the glob alone.
+The storage layer was prepared for these and the ingestion layer never was.
+`store.py` names `_Abstract` pairs in three separate comments, and commit
+`a913c3f` re-keyed Qdrant points by `source_file` precisely because an abstract
+and its parent share an Aktenzeichen. Someone met the collision, fixed
+identity, and left the glob alone.
 
-Left out on purpose for now, because widening the glob decides something that has
-not been decided:
+They remain excluded because widening the glob settles a question that has not
+been settled. `/api/documents` deduplicates by source file, so an abstract and
+its parent are two rows. `/explorer/documents` deduplicates by Aktenzeichen, so
+the same pair is one row. The Dokumente tab and the search results would
+disagree about how many documents exist. Retrieval would also put a short
+abstract in competition with the full document it summarises, for the same
+query. `DOCUMENT_TYPES` has no entry for an abstract, so all 22 would be
+extracted as `Sonstiges`.
 
-- `/api/documents` dedupes by **source_file** → an abstract and its parent are two rows
-- `/explorer/documents` dedupes by **aktenzeichen** → the same pair is one row
-
-So the Dokumente tab and the search results would disagree about how many
-documents exist. Retrieval would also surface a short abstract competing with the
-full document it summarises, for the same query.
-
-Also: `DOCUMENT_TYPES` has no `Abstract`, so all 22 would extract as `Sonstiges`.
-
-Deciding this is part of the registry work below, where a document can have a
+The decision belongs with the registry work below, where a document can hold a
 relationship to another document rather than merely colliding with it.
 
-## Core move: document registry
+## Document registry
 
-Postgres (already coming for eval). Qdrant becomes **purely derived**.
+Postgres, with Qdrant reduced to a derived index.
 
-```
+```text
 documents(id uuid pk, content_hash sha256 uniq, storage_key, original_name,
-          status[pending|needs_review|indexed|failed|withdrawn], source[upload|folder_import],
+          status[pending|needs_review|indexed|failed|withdrawn],
+          source[upload|folder_import],
           extracted jsonb, provided jsonb, overrides jsonb,
-          chunk_count, index_version, indexed_at, created_by, created_at, superseded_by)
+          chunk_count, index_version, indexed_at, created_by, created_at,
+          superseded_by)
 
-document_aktenzeichen(document_id, aktenzeichen idx, is_primary)   -- many, joint docs
+document_aktenzeichen(document_id, aktenzeichen idx, is_primary)
 ```
 
-Point ids: `uuid5(az::chunk_idx)` → `uuid5(document_id::chunk_idx)`.
-→ enables delete-by-document before upsert → also fixes the orphan-chunk bug.
+The second table is a separate table rather than a column because joint
+documents carry several Aktenzeichen.
 
-## Metadata: 3 layers, json is transport not storage
+Point identity moves from `uuid5(az::chunk_idx)` to
+`uuid5(document_id::chunk_idx)`, which makes delete-by-document possible before
+an upsert and closes the orphaned-chunk problem at the same time.
 
+### Implementation status
+
+The registry exists. `0001_document_registry` creates `documents`,
+`document_aktenzeichen` and `document_files`, and `documents/registry.py`
+provides `scan`, `register_file`, `hash_file`, `walk` and `drift`. Ingestion
+registers every document before writing its chunks, and point identity is keyed
+by document id rather than filename, which is what #188 changed.
+
+Uploads, the metadata layers, the review queue and the delete paths described
+below are not built.
+
+## Metadata in three layers
+
+JSON is transport here, not storage.
+
+```text
+overrides  entered by a person, in the application
+  beats provided   arrived alongside the file
+  beats extracted  guessed by metadata.py
 ```
-overrides  (human, in app)
-  beats provided   (arrived with the file)
-  beats extracted  (metadata.py guessed)
-```
-Per **field**. No layer destroys the one below.
 
-- per-file sidecar `X.pdf` + `X.json` → one-off adds
-- one jsonl/csv manifest → bulk (1966 rows, one diff, one validation)
-- `yaml.safe_load` reads json (json ⊂ yaml) → accept both for free
+The precedence applies per field, and no layer destroys the one beneath it.
 
-Sidecar fields: `schema_version`, `aktenzeichen` (**list**), title, fachbereich_number,
-document_type, completion_date (ISO), language, + optional `canonical_url`, `supersedes`, `content_sha256`.
-**Not** in sidecar: status, chunk_count, index_version, indexed_at (= registry state).
+Two import shapes cover the realistic cases. A per-file sidecar, `X.pdf`
+accompanied by `X.json`, suits one-off additions. A single JSONL or CSV
+manifest suits bulk, giving 1966 rows one diff and one validation pass.
+`yaml.safe_load` reads JSON, JSON being a subset of YAML, so accepting both
+formats costs nothing.
 
-Failure modes: sidecar w/o pdf → warn. pdf w/o sidecar → extract, maybe `needs_review`.
-re-import → updates `provided` only. pdf changed + sidecar didn't → flag.
-sidecar ≠ extraction → **surface it**, don't silently pick.
+A sidecar carries `schema_version`, `aktenzeichen` as a list, `title`,
+`fachbereich_number`, `document_type`, `completion_date` in ISO form,
+`language`, and optionally `canonical_url`, `supersedes` and `content_sha256`.
+It does not carry `status`, `chunk_count`, `index_version` or `indexed_at`,
+which are registry state rather than properties of the document.
 
-**Payoff:** extraction vs provided = per-field accuracy for `metadata.py`. Today untestable.
-`conftest.py` `GROUND_TRUTH` is this idea, hand-maintained, for 17 files.
+Failure modes worth deciding in advance: a sidecar with no PDF warns; a PDF
+with no sidecar is extracted and may land in `needs_review`; re-importing
+updates the provided layer only; a changed PDF whose sidecar did not change is
+flagged; and a sidecar that disagrees with extraction is surfaced rather than
+silently resolved.
 
-**Hinges on:** can WD export metadata machine-readably?
-- yes → manifest is the main path, extraction becomes a validated fallback
-- no → 1966 hand-written sidecars won't happen. scope = the ~170 files where extraction fails
-  (105 odd names + 65 joint). same mechanism either way, only decides build order.
+The payoff is measurement. Comparing extraction against provided values gives
+per-field accuracy for `metadata.py`, which is untestable today. The
+`GROUND_TRUTH` table in `conftest.py` is this same idea, hand-maintained, for
+17 files.
 
-## Add
+Everything here hinges on one unanswered question: can WD export metadata in
+machine-readable form? If yes, the manifest becomes the main path and
+extraction becomes a validated fallback. If no, 1966 hand-written sidecars will
+not happen, and the scope narrows to the roughly 170 files where extraction
+fails, being the 105 odd names and the 65 joint documents. The mechanism is the
+same either way; only the build order changes.
 
-- upload: sniff magic bytes (not `.pdf`), hash, reject dup hash, content-addressed store, row = `pending`
-- folder import: **recursive**, idempotent by hash
-- extraction fails / multiple AZ / `Unbekannter Titel` → `needs_review`, **not indexed**
-- storage: named volume, opaque `storage_key` → MinIO/S3 later is a config change
-- `data/` becomes read-only seed, `./data:/data` stops being load-bearing
+## Adding documents
 
-## Edit = 2 operations (do not conflate)
+Upload sniffs magic bytes rather than trusting the extension, hashes the
+content, rejects a duplicate hash, writes to a content-addressed store, and
+creates the row as `pending`.
 
-**Metadata correction** → write `overrides` only. Rewrite Qdrant payloads via `set_payload`. **No re-embedding** (none of those fields are in the embedded text).
-> Considered normalising instead: doesn't work. `fachbereich_number`, `document_type`, `language` have payload indexes and drive `store.search` filtering. Move them out → filtering breaks or becomes a big id allowlist. Keep denormalized, payload = projection of registry.
+Folder import is recursive and idempotent by hash.
 
-**File replacement** → keep row, bump `index_version`, delete chunks by doc id, full reparse/rechunk/re-embed. Minutes. Old blob retained (past eval runs cited it).
+A document whose extraction fails, or that carries several Aktenzeichen, or
+that yields `Unbekannter Titel`, becomes `needs_review` and is not indexed.
 
-## Delete = 2 operations
+Storage goes to a named volume behind an opaque `storage_key`, so moving to
+MinIO or S3 later is a configuration change. `data/` becomes a read-only seed
+and `./data:/data` stops being load-bearing.
 
-- **withdraw (default):** status → `withdrawn`, chunks removed from Qdrant, row + blob kept.
-  → can still answer "was this in the corpus when that answer was generated". reversible.
-- **purge (guarded):** row + blob gone. confirmation + role + reference check.
-  eval cases name docs as `referenz_korrekt`/`referenz_falsch` → purging one silently invalidates a case.
+## Editing is two operations
 
-⚠ needs explicit sign-off. "delete" means different things to a developer and an archivist.
+They should not be conflated.
 
-## Versioning — required by eval
+A metadata correction writes the overrides layer and rewrites the Qdrant
+payloads through `set_payload`. Nothing is re-embedded, because none of those
+fields appear in the embedded text.
 
-Vorlage 4.3b deliberately traps: each case has a correct source **and** a topically similar outdated one.
-Only works if the corpus holds both and knows which is which → `superseded_by`. Superseded docs stay indexed on purpose, flagged.
+Normalising instead was considered and does not work. `fachbereich_number`,
+`document_type` and `language` have payload indexes and drive filtering in
+`store.search`. Moving them out of the payload either breaks filtering or turns
+it into a large identifier allowlist. They stay denormalised, and the payload
+remains a projection of the registry.
+
+A file replacement keeps the row, increments `index_version`, deletes the
+chunks by document id, and reparses, rechunks and re-embeds in full. This takes
+minutes. The old blob is retained, because past evaluation runs cited it.
+
+## Deleting is two operations
+
+Withdrawal is the default. Status becomes `withdrawn` and the chunks are
+removed from Qdrant, while the row and the blob are kept. The system can still
+answer whether a document was in the corpus when a given answer was generated,
+and the action is reversible.
+
+Purging removes the row and the blob. It needs a confirmation, a role, and a
+reference check: evaluation cases name documents as `referenz_korrekt` or
+`referenz_falsch`, so purging one silently invalidates a case.
+
+Purging needs explicit sign-off before it is built. Deletion means different
+things to a developer and to an archivist.
+
+## Versioning
+
+The evaluation method requires it. Vorlage 4.3b sets a deliberate trap: each
+case has a correct source and a topically similar outdated one. That only works
+if the corpus holds both and knows which is which, which is what
+`superseded_by` records. Superseded documents stay indexed on purpose, flagged
+as such.
 
 ## Reconciliation
 
-- folder import idempotent by hash, run anytime
-- drift check both directions: indexed w/o points, points w/o registry row. + repair action
-- mutation lock while an eval round is in flight (same shape as the existing 409 on ingest)
+Folder import is idempotent by hash and can be run at any time.
 
-## Scale — estimates, not measurements
+Drift is checked in both directions: documents marked indexed with no points,
+and points with no registry row. Each needs a repair action rather than only a
+report.
 
-| | |
+Mutations are locked while an evaluation round is in flight, in the same shape
+as the existing 409 on ingest.
+
+## Scale
+
+Estimates rather than measurements.
+
+| Area | Estimate |
 |---|---|
-| parsing | Docling 5–20 s/pdf × 1966 → **hours, plausibly overnight**. today = 1 daemon thread + 1 global |
-| embedding | ~25 chunks/doc → ~50k chunks → ~1500 batches at `embedding_batch_size=32` |
-| memory | 50k × 4096 × f32 ≈ **800 MB raw vectors**, + chunk `text` sits in the payload → Qdrant holds the whole corpus. default keeps vectors in RAM → need on-disk / quantization |
-| `scroll_all_documents` | pages at `limit=100` → **500 round trips per page load** at 50k points |
+| Parsing | Docling takes 5 to 20 seconds per PDF. At 1966 documents that is hours, plausibly overnight. Today this is one daemon thread and one global |
+| Embedding | Roughly 25 chunks per document gives about 50,000 chunks, or about 1500 batches at `embedding_batch_size=32` |
+| Memory | 50,000 by 4096 at f32 is about 800 MB of raw vectors, and the chunk text sits in the payload, so Qdrant holds the whole corpus. The default keeps vectors in RAM, so on-disk storage or quantization becomes necessary |
+| `scroll_all_documents` | Pages at `limit=100`, which is 500 round trips per page load at 50,000 points |
 
-→ per-document job rows, real queue, resumable. Same machinery the eval runner needs.
+The conclusion is per-document job rows, a real queue, and resumable runs. This
+is the same machinery the evaluation runner needs.
 
-## API
+## Proposed API
 
-```
+```text
 GET    /api/documents              registry-backed, filtered, paginated
-POST   /api/documents              upload → pending
+POST   /api/documents              upload, creating a pending row
 POST   /api/documents/import       recursive scan, idempotent
-GET    /api/documents/{id}         row: extracted + provided + overrides + status
-GET    /api/documents/{id}/file    inline pdf
-PATCH  /api/documents/{id}         overrides → payload rewrite
-PUT    /api/documents/{id}/file    replace → full reindex
+GET    /api/documents/{id}         extracted, provided, overrides, status
+GET    /api/documents/{id}/file    inline PDF
+PATCH  /api/documents/{id}         overrides, followed by a payload rewrite
+PUT    /api/documents/{id}/file    replacement, followed by a full reindex
 POST   /api/documents/{id}/reindex
 POST   /api/documents/{id}/withdraw
 DELETE /api/documents/{id}         purge, guarded
 GET    /api/documents/drift
 GET    /api/documents/jobs
 ```
-**Breaking:** `GET /api/documents/{filename}` → `{id}/file`. Touches `pdfUrl()` + every source card in `GeneratedAnswer.tsx`. Removes the user-controlled path join `serve_document` currently guards.
+
+This breaks `GET /api/documents/{filename}`, which becomes `{id}/file`. It
+touches `pdfUrl()` and every source card in `GeneratedAnswer.tsx`, and it
+removes the user-controlled path join that `serve_document` currently has to
+guard.
 
 ## Frontend
 
-`DocumentsView` → real management. drag-drop upload · status column · **`needs_review` filter as the primary view** ·
-row actions (edit / replace / reindex / withdraw) · an inline PDF preview for
-preview-before-approve · drift panel.
+`DocumentsView` becomes real management: drag-and-drop upload, a status column,
+the `needs_review` filter as the primary view, row actions for edit, replace,
+reindex and withdraw, an inline PDF preview so a document can be seen before it
+is approved, and a drift panel.
 
-There was a `PdfViewer.tsx` modal, unused since it was written and deleted in
-the dead-code task. It duplicated `pdfUrl()` with its own base URL, and a
-review screen will want a viewer shaped for its own layout rather than a
-modal. `git show 9bb439e:01_frontend/src/components/PdfViewer.tsx` (the pre-#55
-path, which is what that commit holds) if the 39
-lines are worth starting from.
-`DocumentsTable` needs server-side pagination + search at 1966 rows.
+A `PdfViewer.tsx` modal existed, went unused from the day it was written, and
+was removed during the dead-code work. It duplicated `pdfUrl()` with its own
+base URL, and a review screen wants a viewer shaped for its own layout rather
+than a modal. The 39 lines are at
+`git show 9bb439e:01_frontend/src/components/PdfViewer.tsx`, under the pre-#55
+path, if they are worth starting from.
 
-## Open
+`DocumentsTable` needs server-side pagination and search at 1966 rows.
 
-- what does delete mean here (records question, not technical)
-- who may add / withdraw → same unresolved auth question as eval
-- ingest all 1966? staged by Fachbereich, eval round after each stage
-- `PE 6` + 105 odd names + joint docs → all 3 are prerequisites for a clean bulk import
-- `Aktueller Begriff` genre: new `document_type`, different length. same collection?
-- retention: keep every replaced blob?
-- can WD export metadata → decides manifest-first vs review-queue-first
-- sidecar schema ownership → agree `schema_version` before the first import
-- eval cases should reference `document_id`, display AZ. else correcting an AZ breaks a case silently
+## Open questions
 
-## Order
+What deletion means here. This is a records question rather than a technical
+one.
 
-```
-1  registry + recursive folder import, READ ONLY. 1966 rows, index nothing   ← day or two, highest info gain
-2  GET /api/documents from registry; point ids → document_id; delete before upsert
-3  job queue, per-doc status, resumable
-4  sidecar + manifest import → provided layer; extraction-vs-provided diff report
-5  overrides + needs_review queue
+Who may add or withdraw documents, which is the same unresolved authorisation
+question that `SECURITY_NOTES.md` parks.
+
+Whether to ingest all 1966 at once or in stages by Fachbereich, with an
+evaluation round after each stage.
+
+PE 6, the 105 odd names and the joint documents are all prerequisites for a
+clean bulk import.
+
+Whether the `Aktueller Begriff` genre needs its own `document_type`, given its
+different length, and whether it belongs in the same collection.
+
+Retention: whether every replaced blob is kept.
+
+Whether WD can export metadata, which decides manifest-first against
+review-queue-first.
+
+Ownership of the sidecar schema. `schema_version` should be agreed before the
+first import.
+
+Evaluation cases should reference a document id and display the Aktenzeichen.
+Otherwise correcting an Aktenzeichen breaks a case silently.
+
+## Build order
+
+```text
+1  registry and recursive folder import, read only: 1966 rows, nothing indexed
+2  GET /api/documents from the registry; point ids by document id; delete before upsert
+3  job queue, per-document status, resumable
+4  sidecar and manifest import into the provided layer; extraction-vs-provided diff report
+5  overrides and the needs_review queue
 6  upload, replace, withdraw
-7  purge + reference checks
-8  drift panel + repair
-9  staged bulk ingest by Fachbereich (Qdrant memory config first)
+7  purge with reference checks
+8  drift panel and repair
+9  staged bulk ingest by Fachbereich, after configuring Qdrant memory
 ```
-Do 1 before committing to the rest. It tells us more about this corpus than more design will.
+
+Steps 1 and 2 have been built. Step 1 was worth doing before committing to the
+rest, because it tells more about this corpus than further design would.

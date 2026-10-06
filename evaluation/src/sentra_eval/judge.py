@@ -50,8 +50,8 @@ def judge_config() -> JudgeConfig:
     ]
     if missing:
         raise MissingJudgeConfiguration(
-            f"EVAL_ENABLED is set but {', '.join(missing)} "
-            f"{'is' if len(missing) == 1 else 'are'} not. The harness needs a judge model "
+            f"The harness is running but {', '.join(missing)} "
+            f"{'is' if len(missing) == 1 else 'are'} not set. It needs a judge model "
             f"that is not CHAT_MODEL; see backend/.env.example."
         )
     # Narrowed by the check above, which mypy cannot see through.

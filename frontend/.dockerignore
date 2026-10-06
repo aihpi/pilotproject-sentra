@@ -1,0 +1,9 @@
+# The image installs its own dependencies and builds its own bundle. Without
+# this, `COPY . .` drops the host's node_modules on top of what `npm ci` just
+# installed -- host-platform binaries inside a linux/arm64 image -- and ships a
+# stale dist/ into the build context.
+node_modules
+dist
+.env.development
+Dockerfile
+.dockerignore

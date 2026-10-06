@@ -52,9 +52,17 @@ jobs:
   link:
     name: Link a task to its parent feature
     runs-on: ubuntu-latest
-    # Only tasks have a parent. Guarding here rather than inside keeps a bug or
-    # a feature from spending a runner on nothing.
-    if: contains(github.event.issue.labels.*.name, 'task')
+    # Keyed on the body carrying a "Parent feature" section, not on a label.
+    #
+    # It was the `task` label, and that quietly did nothing for every issue
+    # opened from the command line: `gh issue create` does not apply template
+    # metadata, so those arrive labelled whatever was passed and the job was
+    # skipped. The workflow still reported success, because assigning had run —
+    # six tasks went unlinked before anyone noticed.
+    #
+    # The section is the real signal anyway. A task template has one; a bug
+    # template does not.
+    if: contains(github.event.issue.body, 'Parent feature')
 
     steps:
       - name: Find the parent in the body

@@ -40,8 +40,8 @@ class EvalDatabaseUnavailable(RuntimeError):
 
     main hands this class to the API error policy when it mounts the harness,
     so the policy stays in one place without api/ having to import evaluation —
-    which would load the package even with EVAL_ENABLED off and undo the reason
-    its dependencies are an extra.
+    which would load the package in a deployment that never runs the harness
+    and undo the reason its dependencies are an extra.
     """
 
 

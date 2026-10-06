@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sentra-registry-storage
+  labels:
+    app: sentra-registry
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      # Rows describing documents, not the documents themselves. The corpus
+      # lives on sentra-documents and the vectors in qdrant-storage; this holds
+      # one row per document plus its history, so 5Gi is already generous.
+      storage: 5Gi
