@@ -20,6 +20,10 @@ vi.mock("@/lib/api", () => ({
   uploadDocuments: vi.fn(),
 }));
 
+vi.mock("@/components/administration/IngestControls", () => ({
+  IngestControls: () => <button type="button">Dokumente einlesen</button>,
+}));
+
 vi.mock("@/components/DocumentUpload", () => ({
   DocumentUpload: () => <div>Upload-Bereich</div>,
 }));
@@ -54,6 +58,16 @@ describe("the document pane", () => {
 
     expect(await screen.findByText("Upload-Bereich")).toBeInTheDocument();
     expect(screen.getByText("Erstes")).toBeInTheDocument();
+  });
+
+  it("offers ingestion beside the upload", async () => {
+    /** An uploaded file reaches the list only once ingestion has run, so the
+     *  button that runs it has to be on the same screen. */
+    render(<DocumentPane />);
+
+    expect(
+      await screen.findByRole("button", { name: "Dokumente einlesen" }),
+    ).toBeInTheDocument();
   });
 
   it("says what withdrawing does, because delete is ambiguous", async () => {

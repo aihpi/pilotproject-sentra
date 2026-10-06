@@ -6,11 +6,9 @@ import { Loader2, Upload } from "lucide-react";
 
 /** Adding documents to the corpus.
  *
- *  Self-contained on purpose. It lives in Dokumente today, beside the ingest
- *  button, so that upload → einlesen → see it listed is one screen. It is
- *  expected to move to Administration once that tab owns changing the corpus
- *  and Dokumente is left as the list anyone may read (#211), so it takes one
- *  callback and reaches into nothing.
+ *  Lives in Administration → Dokumente, beside the ingest button, so that
+ *  upload → einlesen → see it listed is one screen. Self-contained, taking one
+ *  callback and reaching into nothing.
  *
  *  Uploading is not indexing. A file appears on the volume immediately and in
  *  the document list only after ingestion, which is a much more expensive act

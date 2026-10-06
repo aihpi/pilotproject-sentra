@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { DocumentInfo } from "@/types";
 import { fetchDocuments, withdrawDocument } from "@/lib/api";
 import { DocumentUpload } from "@/components/DocumentUpload";
+import { IngestControls } from "@/components/administration/IngestControls";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 
@@ -9,7 +10,7 @@ import { Loader2 } from "lucide-react";
  *
  *  Separate from the Dokumente tab, which lists what is in the corpus and is
  *  readable by anyone. Checking is not a privileged act and changing is, so
- *  adding and withdrawing live here.
+ *  adding, indexing and withdrawing live here.
  *
  *  Withdrawal rather than deletion. The points go, so the document stops being
  *  searchable and citable; the registry row and the PDF stay, so the decision
@@ -59,6 +60,11 @@ export function DocumentPane() {
       <section className="space-y-2">
         <h3 className="text-sm font-semibold">Dokumente hinzufügen</h3>
         <DocumentUpload onUploaded={load} />
+      </section>
+
+      <section className="space-y-2">
+        <h3 className="text-sm font-semibold">Dokumente einlesen</h3>
+        <IngestControls onFinished={() => void load()} />
       </section>
 
       <section className="space-y-2">
