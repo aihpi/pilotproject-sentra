@@ -51,7 +51,7 @@ from sentra.api.models import (
     date_range_params,
 )
 from sentra.config import Settings, get_settings
-from sentra.db import session_scope
+from sentra.db import RegistryDatabaseUnavailable, session_scope
 from sentra.documents import registry
 from sentra.domain import AnswerResult
 from sentra.ingestion.metadata import DOCUMENT_TYPE_VALUES, FACHBEREICH_NAMES
@@ -206,10 +206,32 @@ def list_volume_files(settings: Settings = Depends(get_settings)) -> list[Volume
     Declared before /documents/{filename} so that "files" is not read as a
     filename. FastAPI matches in declaration order.
     """
+    withdrawn = _withdrawn_filenames()
     return [
-        VolumeFile(name=name, size_bytes=size, modified_at=modified, indexable=indexable)
+        VolumeFile(
+            name=name,
+            size_bytes=size,
+            modified_at=modified,
+            indexable=indexable,
+            withdrawn=None if withdrawn is None else name in withdrawn,
+        )
         for name, size, modified, indexable in uploads.listing(Path(settings.documents_dir))
     ]
+
+
+def _withdrawn_filenames() -> set[str] | None:
+    """Withdrawn filenames, or None when the registry cannot be asked.
+
+    Not a 503: the listing is a read of the disk, and the disk is still there.
+    Losing the whole list because one annotation on it is unavailable would be
+    the worse answer.
+    """
+    try:
+        with session_scope() as session:
+            return registry.withdrawn_filenames(session)
+    except RegistryDatabaseUnavailable:
+        logger.warning("Registry unreachable; volume listing cannot mark withdrawn files")
+        return None
 
 
 @router.post(

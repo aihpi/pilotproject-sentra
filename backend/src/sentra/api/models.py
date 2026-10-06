@@ -59,6 +59,11 @@ class VolumeFile(BaseModel):
     # services/ingest.py globs `*.pdf` — while the registry scan also reads
     # `.docx`, so a docx is on the volume, known, and not searchable.
     indexable: bool
+    # Withdrawn in the registry: the file stays, the points are gone, and
+    # ingestion skips it. Without this a withdrawn PDF is indistinguishable
+    # from one waiting to be read in. None when the registry is unreachable,
+    # because a guess either way would mislabel something.
+    withdrawn: bool | None = None
 
 
 class UploadedFile(BaseModel):
