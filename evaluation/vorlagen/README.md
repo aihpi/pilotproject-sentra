@@ -46,6 +46,26 @@ docker compose exec eval-harness \
 `import` liest `.xlsx` und `.yaml` gleichermaßen. Fehlende Pflichtangaben werden
 mit Zeilennummer gemeldet, und zwar so, wie Excel die Zeilen zählt.
 
+## Die Word-Tabelle der Prüferinnen und Prüfer
+
+`import` liest außerdem die ausgefüllte Tabelle aus dem „Test-Template für die
+Prüferinnen und Prüfer“ (`.docx`). Diese Vorlage stammt nicht aus diesem
+Verzeichnis und hat andere Spalten, deshalb gilt beim Einlesen:
+
+- Jede Frage wird ein eigener Testfall. Steht in der Ausgangsfrage ein
+  „Allgemein:“ und ein „Konkret:“, entstehen zwei Testfälle mit derselben
+  erwarteten Antwort und denselben Quellen.
+- Die Spalte „Referenzquelle(korrekt)“ enthält die Textstelle und wird zur
+  erwarteten Antwort. „Referenzquelle“ ist die Arbeit, aus der sie stammt.
+- Die Kategorie ergibt sich aus dem Fachbereich der korrekten Quelle
+  (WD 4 → FI, WD 5 → WI). Ein anderer Fachbereich wird mit Zeile gemeldet.
+- Die Nummer der Prüferin oder des Prüfers ist keine Test-ID. Sie steht im
+  Feld „Grund für die Aufnahme“, damit sich ein Testfall zurückverfolgen lässt.
+- Ist die ähnliche Quelle dieselbe Arbeit wie die korrekte, bricht der Import
+  mit der Zeile ab. Die Quellenprüfung könnte so nie bestanden werden.
+
+Ausgefüllte Dokumente werden nicht ins Repository übernommen.
+
 ## Diese Dateien werden erzeugt, nicht bearbeitet
 
 ```bash
