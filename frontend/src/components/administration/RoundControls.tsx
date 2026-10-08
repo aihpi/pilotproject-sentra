@@ -102,11 +102,13 @@ export function RoundControls({
         </button>
 
         <div className="ml-auto flex flex-col gap-1 text-xs">
-          <span className="font-medium">Testfälle aus Erfassungsvorlage</span>
+          <span className="font-medium">
+            Testfälle aus Erfassungs- oder Prüfer-Vorlage
+          </span>
           <input
             ref={fileInput}
             type="file"
-            accept=".xlsx"
+            accept=".xlsx,.docx"
             aria-label="Erfassungsvorlage hochladen"
             disabled={busy}
             onChange={(e) => {

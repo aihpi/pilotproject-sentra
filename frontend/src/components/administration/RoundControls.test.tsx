@@ -175,6 +175,26 @@ describe("uploading a collection sheet", () => {
     expect(await screen.findByText(/keine Testfälle/)).toBeInTheDocument();
   });
 
+  it("takes the reviewers' Word table as well", async () => {
+    importSheet.mockResolvedValue({
+      angelegt: ["TF-FI-001"],
+      aktualisiert: [],
+      unveraendert: [],
+      freigegeben: [],
+    });
+    renderControls();
+    const table = new File([new Uint8Array([80, 75, 3, 4])], "Pruefer.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+
+    await userEvent.upload(
+      screen.getByLabelText(/Erfassungsvorlage hochladen/),
+      table,
+    );
+
+    expect(importSheet).toHaveBeenCalledWith(table);
+  });
+
   it("states that nothing uploaded is approved", () => {
     renderControls();
 
