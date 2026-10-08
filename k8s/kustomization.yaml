@@ -3,9 +3,10 @@ kind: Kustomization
 
 namespace: sentra
 
+# sentra-secret is not listed here. The repo is public, so the secret is applied
+# to the cluster by hand (#237); see k8s/secrets/example-secret.yaml.
 resources:
   - namespace.yaml
-  - secrets/sealed-secret.yaml
   - storage/documents-pvc.yaml
   - registry/pvc.yaml
   - registry/deployment.yaml
