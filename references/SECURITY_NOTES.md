@@ -43,7 +43,8 @@ Verified in code and against the deployed instance.
 Worth not breaking: the path-traversal guard in `serve_document` rejects `/`,
 `\`, `..` and anything that is not a PDF, and Starlette percent-decodes before
 it runs, so `%2e%2e` is caught. Backend and Qdrant are ClusterIP rather than
-published. Secrets go through sealed-secrets rather than git.
+published. Secrets are sealed and applied by hand, so the public repo holds
+neither the values nor their ciphertext (#237).
 
 Symlinks under `documents_dir` are followed by `is_file()`. A filename cannot
 contain `/`, so the target must be a direct child, so only an operator can
