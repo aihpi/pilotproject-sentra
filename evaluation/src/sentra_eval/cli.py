@@ -15,6 +15,7 @@ from pathlib import Path
 
 from sentra_eval import yaml_io
 from sentra_eval.db import EvalDatabaseUnavailable, session_scope
+from sentra_eval.vorlagen import VorlageError
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -24,7 +25,11 @@ def main(argv: list[str] | None = None) -> int:
     importer = sub.add_parser(
         "import", help="apply a case file, or a filled-in collection sheet, to the database"
     )
-    importer.add_argument("file", type=Path, help="a .yaml case file or a .xlsx collection sheet")
+    importer.add_argument(
+        "file",
+        type=Path,
+        help="a .yaml case file, a .xlsx collection sheet or a filled reviewer .docx table",
+    )
     importer.add_argument(
         "--allow-new-ids",
         action="store_true",
@@ -63,6 +68,10 @@ def main(argv: list[str] | None = None) -> int:
     except yaml_io.CaseFileError as exc:
         print(f"{args.file}:\n{exc}", file=sys.stderr)
         return 1
+    except VorlageError as exc:
+        # Already names the file and the row.
+        print(exc, file=sys.stderr)
+        return 1
 
 
 def _import(args: argparse.Namespace) -> int:
@@ -87,7 +96,7 @@ def _import(args: argparse.Namespace) -> int:
 
 
 def _read(path: Path) -> list[yaml_io.CaseEntry]:
-    """A case file, or a filled-in collection sheet.
+    """A case file, a filled-in collection sheet, or a reviewer's Word table.
 
     The same command for both on purpose. The people writing cases work in
     Excel and the harness reads YAML; making the operator convert between them
@@ -98,6 +107,10 @@ def _read(path: Path) -> list[yaml_io.CaseEntry]:
         from sentra_eval import vorlagen
 
         return yaml_io.validate(vorlagen.read_workbook(path))
+    if path.suffix.lower() == ".docx":
+        from sentra_eval import pruefer
+
+        return yaml_io.validate(pruefer.read_document(path))
     return yaml_io.parse(path.read_text(encoding="utf-8"))
 
 
