@@ -28,7 +28,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: ghcr.io/aihpi/pilotproject-sentra/backend:sha-2516e1d
+          image: ghcr.io/aihpi/pilotproject-sentra/backend:sha-c427a05
           ports:
             - containerPort: 8000
           envFrom:
