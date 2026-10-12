@@ -8,6 +8,7 @@ ended up importing from the API layer.
 """
 
 import logging
+import zipfile
 from io import BytesIO
 from uuid import UUID
 
@@ -17,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from sentra_eval import cases as case_store
 from sentra_eval import feedback as feedback_store
-from sentra_eval import models, triage, vorlagen, yaml_io
+from sentra_eval import models, pruefer, triage, vorlagen, yaml_io
 from sentra_eval import report as report_store
 from sentra_eval import review as review_store
 from sentra_eval import runner as run_store
@@ -183,7 +184,8 @@ def create_case(body: CreateCaseRequest) -> CaseResponse:
 
 
 # An upload is capped rather than trusted. The sheet handed out has room for
-# 300 rows and weighs about 19 KB; anything approaching this is not that file,
+# 300 rows and weighs about 19 KB, a filled reviewer document about 60 KB;
+# anything approaching this is not one of those,
 # and reading it into memory to find out is how a single request takes the
 # harness down.
 MAX_SHEET_BYTES = 5 * 1024 * 1024
@@ -191,15 +193,15 @@ MAX_SHEET_BYTES = 5 * 1024 * 1024
 
 @router.post("/faelle/import", response_model=ImportResponse)
 async def import_sheet(request: Request) -> ImportResponse:
-    """A filled collection sheet, as drafts.
+    """A filled collection sheet or reviewer document, as drafts.
 
     cli.py calls the case import "something an operator runs against a
     deployment, not something a browser posts", and then says "before there is
     a UI to write them in". This is that UI, and the boundary that makes it
     safe is narrower than the CLI's:
 
-    **only the spreadsheet format, and it can only ever create drafts.** The
-    reader forces `status: entwurf` regardless of what the sheet says, so an
+    **only the collection formats, and they can only ever create drafts.** Both
+    readers force `status: entwurf` regardless of what the file says, so an
     upload cannot approve anything and therefore cannot change what any round
     measures against. A YAML file *can* approve its own cases, which is why
     YAML import stays with the CLI — there the pull request is the review.
@@ -221,7 +223,7 @@ async def import_sheet(request: Request) -> ImportResponse:
         )
 
     try:
-        records = vorlagen.read_workbook(BytesIO(raw), name="Die hochgeladene Datei")
+        records = _read_upload(raw)
         entries = yaml_io.validate(records)
     except vorlagen.VorlageError as exc:
         # The reader's message already names the row the way Excel numbers it,
@@ -233,8 +235,9 @@ async def import_sheet(request: Request) -> ImportResponse:
         raise HTTPException(
             status_code=422,
             detail=(
-                "Die Datei konnte nicht als Excel-Arbeitsmappe gelesen werden. "
-                "Bitte die Vorlage SENTRA-Testfaelle-Erfassung.xlsx verwenden."
+                "Die Datei konnte weder als Excel-Arbeitsmappe noch als Word-Dokument "
+                "gelesen werden. Bitte die Vorlage SENTRA-Testfaelle-Erfassung.xlsx oder "
+                "die ausgefüllte Prüfer-Vorlage (.docx) verwenden."
             ),
         ) from exc
 
@@ -247,6 +250,23 @@ async def import_sheet(request: Request) -> ImportResponse:
         unveraendert=report.unchanged,
         freigegeben=report.approved,
     )
+
+
+def _read_upload(raw: bytes) -> list[dict]:
+    """Tell the two formats apart by content, since a raw body has no file name.
+
+    Both are zip archives; what is inside says which one. Anything that is not
+    a Word document goes to the workbook reader, whose failure on junk is the
+    error the caller already turns into "not the template".
+    """
+    name = "Die hochgeladene Datei"
+    try:
+        entries = set(zipfile.ZipFile(BytesIO(raw)).namelist())
+    except zipfile.BadZipFile:
+        entries = set()
+    if "word/document.xml" in entries:
+        return pruefer.read_document(BytesIO(raw), name=name)
+    return vorlagen.read_workbook(BytesIO(raw), name=name)
 
 
 @router.get("/cases/{test_id}", response_model=CaseResponse)

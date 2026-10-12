@@ -150,7 +150,7 @@ export function importSheet(file: File): Promise<ImportReport> {
     raw: file,
     label: "Die Datei konnte nicht importiert werden",
     statusMessages: {
-      413: "Die Datei ist zu groß. Das ist vermutlich nicht die Erfassungsvorlage.",
+      413: "Die Datei ist zu groß. Das ist vermutlich keine der beiden Vorlagen.",
       502: NOT_RUNNING,
       503: NOT_RUNNING,
     },

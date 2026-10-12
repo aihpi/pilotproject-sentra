@@ -24,6 +24,7 @@ from sentra_eval.db import Base, get_engine
 openpyxl = pytest.importorskip("openpyxl", reason="needs `uv sync --extra vorlagen`")
 
 from sentra_eval import vorlagen  # noqa: E402  - after the skip
+from tests.test_pruefer import ZWEI_FRAGEN, _document  # noqa: E402
 
 
 @pytest.fixture
@@ -150,3 +151,52 @@ class TestABadRow:
         _post(client, _sheet([ORDENTLICH, {**ORDENTLICH, "Kategorie": "XX"}]))
 
         assert client.get("/api/eval/cases").json() == []
+
+
+class TestAReviewerDocument:
+    """The reviewers' Word table (#245). Its own rules are covered in
+    test_pruefer.py; here it only has to be told apart from a workbook."""
+
+    def test_the_questions_become_cases(self, client, tmp_path):
+        response = _post(client, _document(tmp_path, [ZWEI_FRAGEN]).read_bytes())
+
+        assert response.status_code == 200
+        assert response.json()["angelegt"] == ["TF-FI-001", "TF-FI-002"]
+
+    def test_nothing_uploaded_is_approved(self, client, tmp_path):
+        _post(client, _document(tmp_path, [ZWEI_FRAGEN]).read_bytes())
+
+        cases = client.get("/api/eval/cases").json()
+
+        assert {v["status"] for c in cases for v in c["versions"]} == {"entwurf"}
+
+    def test_the_row_survives_the_trip(self, client, tmp_path):
+        row = ("XY09", "Frage?", "Antwort.", "WD 3 - 3000 - 001/25", "")
+
+        response = _post(client, _document(tmp_path, [row]).read_bytes())
+
+        assert response.status_code == 422
+        assert "Zeile 2 (XY09)" in response.json()["detail"]
+
+    def test_a_word_document_without_the_table(self, client):
+        response = _post(client, _plain_docx())
+
+        assert response.status_code == 422
+        assert "Ausgangsfrage" in response.json()["detail"]
+
+
+def _plain_docx() -> bytes:
+    from docx import Document
+
+    buffer = BytesIO()
+    document = Document()
+    document.add_paragraph("Nur Text, keine Tabelle.")
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+def test_the_wrong_file_message_names_both_formats(client):
+    response = _post(client, b"Das ist kein Excel, das ist Text.")
+
+    assert ".xlsx" in response.json()["detail"]
+    assert ".docx" in response.json()["detail"]
