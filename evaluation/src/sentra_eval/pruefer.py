@@ -127,14 +127,19 @@ def _entries_for_row(werte: dict[str, str], row_number: int, label: str) -> list
             )
         )
 
+    # Kept as a check rather than refused (#249): a submission has to load as
+    # it was sent. With the same paper in both fields 4.3b could never pass, so
+    # the wrong one is left out and the case says why, for whoever approves it.
+    hinweis = ""
     if (
         korrekt_az
         and falsch_az
         and normalise_aktenzeichen(korrekt_az) == normalise_aktenzeichen(falsch_az)
     ):
-        raise VorlageError(
-            f"{where}: die thematisch ähnliche Quelle ist dieselbe Arbeit wie die korrekte "
-            f"({korrekt_az}). Die Quellenprüfung könnte so nie bestanden werden."
+        falsch_az = ""
+        hinweis = (
+            "; die thematisch ähnliche Quelle ist dieselbe Arbeit wie die korrekte, "
+            "ihr Aktenzeichen wurde nicht übernommen"
         )
 
     fragen = split_questions(werte["ausgangsfrage"])
@@ -153,7 +158,7 @@ def _entries_for_row(werte: dict[str, str], row_number: int, label: str) -> list
             "referenz_korrekt_az": korrekt_az,
             "referenz_falsch": werte.get("referenz_falsch", ""),
             "referenz_falsch_az": falsch_az,
-            "grund_fuer_aufnahme": f"Prüfer-Vorlage ({herkunft})",
+            "grund_fuer_aufnahme": f"Prüfer-Vorlage ({herkunft}){hinweis}",
             "grenzfall": False,
             "status": "entwurf",
         }

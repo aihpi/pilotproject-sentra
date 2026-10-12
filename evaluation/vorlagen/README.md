@@ -61,8 +61,10 @@ Verzeichnis und hat andere Spalten, deshalb gilt beim Einlesen:
   (WD 4 → FI, WD 5 → WI). Ein anderer Fachbereich wird mit Zeile gemeldet.
 - Die Nummer der Prüferin oder des Prüfers ist keine Test-ID. Sie steht im
   Feld „Grund für die Aufnahme“, damit sich ein Testfall zurückverfolgen lässt.
-- Ist die ähnliche Quelle dieselbe Arbeit wie die korrekte, bricht der Import
-  mit der Zeile ab. Die Quellenprüfung könnte so nie bestanden werden.
+- Ist die ähnliche Quelle dieselbe Arbeit wie die korrekte, wird der Testfall
+  trotzdem angelegt, aber ohne Aktenzeichen der ähnlichen Quelle, sonst könnte
+  die Quellenprüfung nie bestanden werden. Der Grund steht im Feld „Grund für
+  die Aufnahme“, damit er bei der Freigabe auffällt.
 
 Ausgefüllte Dokumente werden nicht ins Repository übernommen.
 
