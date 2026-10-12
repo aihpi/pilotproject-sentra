@@ -101,6 +101,20 @@ class TestReadingARow:
 
         assert len(entries) == 2
 
+    def test_a_wrong_source_that_is_the_correct_one_is_left_out_and_said_so(self, tmp_path):
+        """The 4.3b check could never pass with it. Refusing would mean editing a
+        reviewer's document before it loads (#249), so the case comes in without
+        it and tells whoever approves it why."""
+        row = (*ZWEI_FRAGEN[:4], "WD-4-101-24")
+
+        entries = _read(_document(tmp_path, [row]))
+
+        assert len(entries) == 2
+        for entry in entries:
+            assert entry.referenz_falsch == "WD-4-101-24"
+            assert entry.referenz_falsch_az == ""
+            assert "dieselbe Arbeit" in entry.grund_fuer_aufnahme
+
     def test_the_wrong_source_column_is_optional(self, tmp_path):
         path = _document(tmp_path, [ZWEI_FRAGEN[:4]], header=HEADER[:4])
 
@@ -108,14 +122,6 @@ class TestReadingARow:
 
 
 class TestRefusing:
-    def test_a_wrong_source_that_is_the_correct_one_names_the_row(self, tmp_path):
-        """The 4.3b check could never pass, and nobody would find out why
-        until the round's report."""
-        row = (*ZWEI_FRAGEN[:4], "WD-4-101-24")
-
-        with pytest.raises(VorlageError, match=r"Zeile 2 \(XY01\).*dieselbe Arbeit"):
-            pruefer.read_document(_document(tmp_path, [row]))
-
     def test_a_fachbereich_without_a_category_names_the_row(self, tmp_path):
         row = ("XY03", "Frage?", "Antwort.", "WD 3 - 3000 - 001/25", "")
 
