@@ -109,6 +109,8 @@ export interface EvalRun {
   status: string;
   sentra_base_url: string;
   repeats: number;
+  /** Whether this round asks the approved variants (4.2), chosen at start (#266). */
+  varianten_aktiv?: boolean;
   started_at: string;
   completed_at: string | null;
   fehler: string;
