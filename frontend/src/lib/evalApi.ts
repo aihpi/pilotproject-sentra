@@ -159,10 +159,14 @@ export function importSheet(file: File): Promise<ImportReport> {
 
 /** Start a round. Returns immediately — a round is roughly 180 generation
  *  calls at 20 to 29 seconds each, so the caller polls. */
-export function startRun(label: string, repeats: number): Promise<EvalRun> {
+export function startRun(
+  label: string,
+  repeats: number,
+  variantenAktiv = false,
+): Promise<EvalRun> {
   return request("/eval/runs", {
     method: "POST",
-    body: { label, repeats },
+    body: { label, repeats, varianten_aktiv: variantenAktiv },
     label: "Die Testrunde konnte nicht gestartet werden",
     statusMessages: {
       409: "Es läuft bereits eine Testrunde. Erst abwarten oder abbrechen.",

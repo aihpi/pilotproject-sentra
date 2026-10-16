@@ -211,3 +211,44 @@ def _stub_model(monkeypatch):
         "judge_config",
         lambda: type("C", (), {"base_url": "x", "api_key": "y", "model": "z"})(),
     )
+
+
+# ── Asked in a round only when the round says so (#266) ────────────
+
+
+class TestPerRound:
+    def _all_approved(self, session, version):
+        for variant in _proposed(session, version):
+            variants.approve(session, variant, freigegeben_durch="Hotline")
+        session.commit()
+
+    def _variant_keys(self, session, run):
+        from sentra_eval import runner
+
+        return sorted(c.variant_key for c in runner.plan(session, run))
+
+    def test_a_round_without_variants_asks_only_the_original(self, session, version):
+        from sentra_eval import runner
+
+        self._all_approved(session, version)
+        run = runner.start_run(session, repeats=1)
+
+        assert self._variant_keys(session, run) == [runner.ORIGINAL, runner.ORIGINAL]
+
+    def test_a_round_with_variants_asks_each_approved_one_once(self, session, version):
+        from sentra_eval import runner
+
+        self._all_approved(session, version)
+        run = runner.start_run(session, repeats=1, varianten_aktiv=True)
+
+        assert self._variant_keys(session, run) == sorted(
+            [runner.ORIGINAL, runner.ORIGINAL, "fachsprachlich", "umgangssprachlich", "verkuerzt"]
+        )
+
+    def test_the_choice_is_recorded_on_the_round(self, session, version):
+        from sentra_eval import runner
+
+        self._all_approved(session, version)
+
+        assert runner.start_run(session, repeats=1, varianten_aktiv=True).varianten_aktiv is True
+        assert runner.start_run(session, repeats=1).varianten_aktiv is False
