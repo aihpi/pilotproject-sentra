@@ -61,6 +61,7 @@ def _case(session, run, *, grenzfall=False, flagged=False, judge_flagged=False, 
         ausgangsfrage=f"Frage {n}",
         erwartete_antwort="x",
         referenz_korrekt="y",
+        referenz_korrekt_az="WD 3 - 3000 - 029/23",
         grenzfall=grenzfall,
     )
     case_store.approve(session, version)

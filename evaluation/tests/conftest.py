@@ -50,3 +50,24 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "integration: requires the eval database (skip with -m 'not integration')"
     )
+
+
+import pytest  # noqa: E402
+
+from sentra_eval import bestand  # noqa: E402
+
+
+class _AllesIndexiert(bestand.Bestand):
+    def enthaelt(self, aktenzeichen: str) -> bool:
+        return True
+
+
+@pytest.fixture(autouse=True)
+def _sentra_has_every_document(monkeypatch):
+    """No test reaches a real SENTRA to ask what is indexed (#257).
+
+    Every source counts as indexed unless a test says otherwise, so fixtures
+    that approve cases keep testing what they were written for. The rule
+    itself is tested with an explicit Bestand.
+    """
+    monkeypatch.setattr(bestand, "fetch", lambda *args, **kwargs: _AllesIndexiert())

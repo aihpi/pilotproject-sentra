@@ -44,6 +44,7 @@ def version(session):
         ausgangsfrage="Wie lange darf ein Redner im Plenum sprechen?",
         erwartete_antwort="15 Minuten.",
         referenz_korrekt="GOBT § 35",
+        referenz_korrekt_az="WD 3 - 3000 - 029/23",
     )
     case_store.approve(session, version)
     session.flush()

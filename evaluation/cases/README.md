@@ -24,6 +24,12 @@ approved version can never be edited again; changing its content in the file
 adds a new draft version and leaves the approved one exactly as the round that
 used it measured against.
 
+**Approval needs a measurable case.** Besides the expected answer, an ordinary
+case (not a Grenzfall) needs the correct source and its Aktenzeichen, and that
+document has to be indexed in SENTRA, which the harness asks over HTTP. A file
+that approves a case whose source is not indexed yet is refused; ingest the
+document first. The Testfälle table lists what each draft is still missing.
+
 Per `references/Vorlage_Strukturierte_Testverfahren_KISZ.md`, a round is 15 to 25
 cases, at least five of them with a clear footnote or source reference, and the
 `referenz_falsch` field is what makes 4.3b a real check — without a plausible

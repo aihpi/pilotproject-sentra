@@ -23,6 +23,7 @@ CASE = {
     "abteilung": "Hotline",
     "erwartete_antwort": "Grundsatz 15 Minuten je Fraktion nach § 35 GOBT.",
     "referenz_korrekt": "GOBT § 35",
+    "referenz_korrekt_az": "WD 3 - 3000 - 029/23",
     "referenz_falsch": "GOBT § 35 a. F.",
 }
 
