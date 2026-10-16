@@ -3,6 +3,7 @@ import type {
   EvalVariant,
   LabelValues,
   Agreement,
+  BreakdownRow,
   CaseDraft,
   EvalCase,
   EvalRun,
@@ -288,6 +289,18 @@ export function approveVariant(
   });
 }
 
+/** Results grouped by one or more labels, for one round or for all (#289). */
+export function fetchBreakdown(
+  dimensionen: string[],
+  runId?: string,
+): Promise<BreakdownRow[]> {
+  const params = new URLSearchParams(dimensionen.map((d) => ["dimension", d]));
+  if (runId) params.set("run_id", runId);
+  return request(`/eval/aufschluesselung?${params}`, {
+    label: "Die Aufschlüsselung konnte nicht geladen werden",
+    statusMessages: { 502: NOT_RUNNING, 503: NOT_RUNNING },
+  });
+}
 /** The values to offer per label, for the dropdowns (#286). */
 export function fetchLabels(): Promise<LabelValues> {
   return request("/eval/labels", {

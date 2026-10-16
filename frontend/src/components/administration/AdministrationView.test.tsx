@@ -116,6 +116,7 @@ vi.mock("@/lib/evalApi", () => ({
     }),
   fetchSheets: () => Promise.resolve([]),
   fetchKisz: () => Promise.resolve([]),
+  fetchBreakdown: () => Promise.resolve([]),
   fetchTrend: () =>
     Promise.resolve({
       runden: 1,

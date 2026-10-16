@@ -298,3 +298,19 @@ class TestOfferedValues:
         offered = client.get("/api/eval/labels").json()
 
         assert "Rechenweg" not in offered["testart"]
+
+
+class TestTheBreakdownEndpoint:
+    """GET /aufschluesselung (#289). The grouping itself is tested in test_report.py."""
+
+    def test_it_answers_with_rows_per_label_value(self, client):
+        response = client.get("/api/eval/aufschluesselung?dimension=testart&dimension=kategorie")
+
+        assert response.status_code == 200
+        assert response.json() == []  # no round has run
+
+    def test_an_unknown_dimension_is_a_422(self, client):
+        response = client.get("/api/eval/aufschluesselung?dimension=farbe")
+
+        assert response.status_code == 422
+        assert "Aufschlüsseln" in response.json()["detail"]

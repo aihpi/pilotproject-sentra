@@ -98,6 +98,7 @@ vi.mock("@/lib/evalApi", () => ({
   fetchAgreement: (...a: unknown[]) => fetchAgreement(...a),
   fetchSheets: (...a: unknown[]) => fetchSheets(...a),
   fetchKisz: (...a: unknown[]) => fetchKisz(...a),
+  fetchBreakdown: () => Promise.resolve([]),
   fetchTrend: (...a: unknown[]) => fetchTrend(...a),
 }));
 
