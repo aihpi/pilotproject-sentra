@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Protocol
 
 from openai import OpenAI
@@ -18,8 +19,8 @@ Kontextauszüge.
 Regeln:
 - Gib eine klare, fokussierte Antwort auf die konkrete Frage.
 - Verwende nummerierte Quellenverweise **[1]**, **[2]** usw. im Text.
-- Jede Quellennummer bezieht sich auf das Aktenzeichen der jeweiligen Quelle \
-(in der Reihenfolge ihres ersten Auftretens).
+- Jeder Kontextauszug beginnt mit [Quelle n: Aktenzeichen, ...]. Verwende genau \
+diese Nummer n als Quellenverweis.
 - Wenn der Kontext die Frage nicht ausreichend beantwortet, sage dies ehrlich.
 - Antworte auf Deutsch.
 - Erfinde keine Informationen, die nicht im Kontext enthalten sind.
@@ -37,8 +38,8 @@ Regeln:
 - Gliedere die Antwort mit Markdown-Überschriften (##, ###).
 - Organisiere die Informationen thematisch, nicht nach Quellen.
 - Verwende nummerierte Quellenverweise **[1]**, **[2]** usw. im Text.
-- Jede Quellennummer bezieht sich auf das Aktenzeichen der jeweiligen Quelle \
-(in der Reihenfolge ihres ersten Auftretens).
+- Jeder Kontextauszug beginnt mit [Quelle n: Aktenzeichen, ...]. Verwende genau \
+diese Nummer n als Quellenverweis.
 - Beginne mit einer kurzen Zusammenfassung des aktuellen Stands.
 - Erfinde keine Informationen, die nicht im Kontext enthalten sind.
 - Antworte auf Deutsch.\
@@ -76,6 +77,33 @@ DEFAULT_PROMPTS: dict[str, str] = {
 }
 
 
+def source_numbers(hits: list[Hit]) -> dict[str, int]:
+    """The number each document is cited by: its order of first appearance.
+
+    One definition shared by the context the model reads and the sources the
+    answer returns. It used to be implicit, the model counting distinct
+    Aktenzeichen itself, and a model that miscounted cited the wrong card.
+    Since #268 the number is written into every passage header.
+    """
+    numbers: dict[str, int] = {}
+    for hit in hits:
+        numbers.setdefault(hit.aktenzeichen, len(numbers) + 1)
+    return numbers
+
+
+# "[2]", and the lists a model sometimes writes instead: "[1, 3]", "[1;3]".
+_MARKER_RE = re.compile(r"\[(\d{1,2}(?:\s*[,;]\s*\d{1,2})*)\]")
+
+
+def cited_numbers(text: str) -> set[int]:
+    """The source numbers an answer's markers refer to."""
+    return {
+        int(number)
+        for group in _MARKER_RE.findall(text)
+        for number in re.split(r"\s*[,;]\s*", group)
+    }
+
+
 def format_context(hits: list[Hit]) -> str:
     """Format retrieved chunks into the context string the model sees.
 
@@ -90,9 +118,13 @@ def format_context(hits: list[Hit]) -> str:
     produce a citation that looks checkable and is not — which is worse than a
     section reference that is honest about its precision.
     """
+    numbers = source_numbers(hits)
     parts = []
     for hit in hits:
-        header = f"[Quelle: {hit.aktenzeichen}, Abschnitt: {hit.section_title}"
+        header = (
+            f"[Quelle {numbers[hit.aktenzeichen]}: {hit.aktenzeichen}, "
+            f"Abschnitt: {hit.section_title}"
+        )
         location = format_location(hit)
         if location:
             header += f", {location}"

@@ -349,6 +349,9 @@ class AnswerSourceRef(BaseModel):
     # anything indexed before #134 — see domain.SourceRef.
     page: int = 0
     paragraph: int = 0
+    # The n of the [n] in the answer that cites it (#268). Only cited sources
+    # are returned, so this and the position in the list can differ.
+    nummer: int = 0
 
     @classmethod
     def from_domain(cls, ref: domain.SourceRef) -> "AnswerSourceRef":
@@ -360,6 +363,7 @@ class AnswerSourceRef(BaseModel):
             source_file=ref.source_file,
             page=ref.page,
             paragraph=ref.paragraph,
+            nummer=ref.nummer,
         )
 
 
