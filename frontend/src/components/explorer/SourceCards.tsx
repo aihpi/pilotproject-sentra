@@ -17,9 +17,15 @@ interface SourceCardsProps {
  *
  *  Extracted from GeneratedAnswer so the review screen can show the same cards
  *  without the feedback controls, which belong to someone searching rather
- *  than someone assessing. The numbering is what a [n] marker in the answer
- *  refers to, so it has to match the order the API returned. */
+ *  than someone assessing. The number on a card is the n of the [n] that cites
+ *  it. Since #268 only cited sources arrive, so that is `nummer`, not the
+ *  position; position is the fallback for responses stored before it existed.
+ *
+ *  Nothing at all when there are no sources: an answer that cites nothing
+ *  should not show an empty "Quellen (0)" as if something were missing. */
 export function SourceCards({ sources, onSelect, selected }: SourceCardsProps) {
+  if (sources.length === 0) return null;
+
   return (
     <div className="space-y-2">
       <h4 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -31,7 +37,7 @@ export function SourceCards({ sources, onSelect, selected }: SourceCardsProps) {
           const inner = (
             <>
               <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-primary/10 text-[11px] font-bold text-primary">
-                {i + 1}
+                {source.nummer || i + 1}
               </span>
               <div className="min-w-0 flex-1 space-y-1">
                 <div className="flex items-start justify-between gap-1">

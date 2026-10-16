@@ -56,7 +56,24 @@ describe("where a source was cited from", () => {
 });
 
 describe("the numbering", () => {
-  it("matches the order the API returned, which is what [n] refers to", () => {
+  it("is the number the answer cites it by, not the position (#269)", () => {
+    // [1] and [3] cited, source 2 not returned.
+    const first: SourceRef = { ...PLAIN, nummer: 1 };
+    const third: SourceRef = { ...PLAIN, aktenzeichen: "WD 1 - 3000 - 001/24", nummer: 3 };
+
+    render(<SourceCards sources={[first, third]} />);
+
+    const numbers = screen.getAllByText(/^[123]$/).map((el) => el.textContent);
+    expect(numbers).toEqual(["1", "3"]);
+  });
+
+  it("shows nothing at all for an answer that cites nothing", () => {
+    const { container } = render(<SourceCards sources={[]} />);
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("falls back to the position for a response stored before nummer existed", () => {
     const second: SourceRef = {
       ...PLAIN,
       aktenzeichen: "WD 1 - 3000 - 001/24",
