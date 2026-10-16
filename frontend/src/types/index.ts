@@ -242,6 +242,9 @@ export interface EvalCase {
   kategorie: string;
   created_at: string;
   zurueckgezogen_at: string | null;
+  /** What still stands between the latest draft and approval, worded for the
+   *  screen. Empty when it could be approved now, or is approved or withdrawn. */
+  freigabe_hindernisse?: string[];
   versions: CaseVersion[];
 }
 

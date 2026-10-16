@@ -160,6 +160,7 @@ export function CaseTable({
                 const latest = entry.versions[entry.versions.length - 1];
                 const withdrawn = entry.zurueckgezogen_at !== null;
                 const approved = latest?.status === "freigegeben";
+                const blockers = entry.freigabe_hindernisse ?? [];
 
                 return (
                   <tr key={entry.test_id} className="border-t">
@@ -175,6 +176,16 @@ export function CaseTable({
                         <Badge variant="outline" className="mt-1">
                           Grenzfall
                         </Badge>
+                      )}
+                      {!approved && !withdrawn && blockers.length > 0 && (
+                        <ul
+                          aria-label="Vor der Freigabe fehlt"
+                          className="mt-1 list-inside list-disc text-amber-700 dark:text-amber-400"
+                        >
+                          {blockers.map((blocker) => (
+                            <li key={blocker}>{blocker}</li>
+                          ))}
+                        </ul>
                       )}
                     </td>
                     <td className="px-3 py-2">
@@ -214,8 +225,13 @@ export function CaseTable({
                             <button
                               type="button"
                               onClick={() => onApprove(entry.test_id)}
-                              disabled={busy}
+                              disabled={busy || blockers.length > 0}
                               className="rounded-md border px-2 py-1 disabled:opacity-50"
+                              title={
+                                blockers.length > 0
+                                  ? `Noch nicht freigebbar: ${blockers.join("; ")}`
+                                  : undefined
+                              }
                             >
                               Freigeben
                             </button>

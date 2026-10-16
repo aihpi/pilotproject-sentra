@@ -62,6 +62,10 @@ class CaseResponse(BaseModel):
     kategorie: str
     created_at: datetime
     zurueckgezogen_at: datetime | None
+    # What still stands between the latest draft and approval, in words for the
+    # screen. Empty for an approved or withdrawn case, and for a draft that
+    # could be approved now (#257).
+    freigabe_hindernisse: list[str] = []
     versions: list[CaseVersionResponse]
 
 

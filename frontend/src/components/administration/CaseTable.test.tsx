@@ -114,3 +114,44 @@ describe("sorting the Testfälle", () => {
     expect(shownIds()).toEqual(["TF-WI-002", "TF-WI-009", "TF-WI-010", "TF-FI-001"]);
   });
 });
+
+describe("what a draft still needs before approval", () => {
+  function renderWith(entry: EvalCase) {
+    const onApprove = vi.fn();
+    render(
+      <CaseTable
+        cases={[entry]}
+        busy={false}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onApprove={onApprove}
+        onWithdraw={vi.fn()}
+      />,
+    );
+    return onApprove;
+  }
+
+  it("lists the blockers and offers no working Freigeben", async () => {
+    const onApprove = renderWith({
+      ...testCase("TF-WI-001", "Biomethan?", "entwurf"),
+      freigabe_hindernisse: ["WD 5 - 3000 - 074/26 ist nicht im Bestand, bitte erst einlesen"],
+    });
+
+    expect(screen.getByText(/074\/26 ist nicht im Bestand/)).toBeInTheDocument();
+    const button = screen.getByRole("button", { name: "Freigeben" });
+    expect(button).toBeDisabled();
+    await userEvent.click(button);
+    expect(onApprove).not.toHaveBeenCalled();
+  });
+
+  it("leaves a complete draft as it was", async () => {
+    const onApprove = renderWith({
+      ...testCase("TF-WI-001", "Biomethan?", "entwurf"),
+      freigabe_hindernisse: [],
+    });
+
+    expect(screen.queryByRole("list", { name: "Vor der Freigabe fehlt" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Freigeben" }));
+    expect(onApprove).toHaveBeenCalledWith("TF-WI-001");
+  });
+});

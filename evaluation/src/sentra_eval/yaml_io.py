@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session
 
 from sentra_eval import cases as case_store
+from sentra_eval.bestand import Bestand
 from sentra_eval.categories import Kategorie
 from sentra_eval.models import FREIGEGEBEN, Case, CaseVersion
 
@@ -81,6 +82,7 @@ class ImportReport:
     updated: list[str] = field(default_factory=list)
     unchanged: list[str] = field(default_factory=list)
     approved: list[str] = field(default_factory=list)
+    bestand: Bestand | None = field(default=None, repr=False)
 
     @property
     def wrote_anything(self) -> bool:
@@ -150,14 +152,21 @@ def validate(raw: list[Any]) -> list[CaseEntry]:
 
 
 def apply(
-    session: Session, entries: list[CaseEntry], *, allow_new_ids: bool = False
+    session: Session,
+    entries: list[CaseEntry],
+    *,
+    allow_new_ids: bool = False,
+    bestand: Bestand | None = None,
 ) -> ImportReport:
     """Bring the database in line with the file.
 
     Writes nothing for a case whose content already matches, which is what
     makes running this twice safe.
+
+    `bestand` is what an approval in the file is checked against (#257). The
+    CLI passes one whenever the file approves anything.
     """
-    report = ImportReport()
+    report = ImportReport(bestand=bestand)
     for entry in entries:
         if entry.test_id is None:
             _create(session, entry, report)
@@ -219,7 +228,7 @@ def _approve_if_asked(
 
 def _approve(session: Session, case: Case, version: CaseVersion, report: ImportReport) -> None:
     try:
-        case_store.approve(session, version)
+        case_store.approve(session, version, bestand=report.bestand)
     except case_store.IncompleteCase as exc:
         raise CaseFileError(str(exc)) from exc
     report.approved.append(case.test_id)
