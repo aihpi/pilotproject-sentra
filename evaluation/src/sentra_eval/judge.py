@@ -93,16 +93,65 @@ Antworte ausschließlich mit JSON in genau dieser Form:
 "begruendung": "ein Satz"}\
 """
 
-# Generous, and not a guess. gpt-oss-120b spends completion tokens on reasoning
-# before emitting any content: at 20 tokens it returned finish_reason "length"
-# with an entirely empty message, which would have read as a judge that
-# declined to answer. Any reasoning model configured here has the same
-# appetite, so the budget assumes one.
-JUDGE_MAX_TOKENS = 2000
+# Generous, and not a guess. A reasoning model spends completion tokens
+# thinking before it writes anything, and a call that runs out mid-thought
+# returns an empty message with finish_reason "length". gpt-oss-120b did that
+# at 20 tokens. qwen3-8-27b did it at 2000 (#279): over 26 identical variant
+# requests it used 326 to 1851 tokens, typically about 800, and one went past
+# 2000 still weighing a single word. The answer itself is under 100 tokens.
+# Unused budget costs nothing, so this covers the tail with room to spare.
+JUDGE_MAX_TOKENS = 6000
+
+# A call that still runs out is asked once more with twice the budget, not the
+# same one: the verdicts run at temperature 0, where the same budget would
+# most likely reproduce the same cut-off.
+JUDGE_RETRY_MAX_TOKENS = 2 * JUDGE_MAX_TOKENS
 
 
 class JudgeUnavailable(RuntimeError):
     """The judge could not be reached, or said nothing usable."""
+
+
+def ask_judge(system: str, user: str, *, temperature: float) -> tuple[str, str | None]:
+    """The judge's reply to one prompt, and the model that gave it.
+
+    The one place the judge model is called, so the budget and the retry are
+    the same for every check and for variant proposals.
+
+    Raises rather than returning nothing. An empty reply is not a verdict:
+    reporting "no verdict" as one would quietly mark a case unauffällig.
+    """
+    config = judge_config()
+    client = OpenAI(base_url=config.base_url, api_key=config.api_key, timeout=300)
+
+    for max_tokens in (JUDGE_MAX_TOKENS, JUDGE_RETRY_MAX_TOKENS):
+        try:
+            response = client.chat.completions.create(
+                model=config.model,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        except OpenAIError as exc:
+            raise JudgeUnavailable(f"{type(exc).__name__}: {exc}") from exc
+
+        choice = response.choices[0]
+        content = (choice.message.content or "").strip()
+        if content:
+            return content, response.model
+        if choice.finish_reason != "length":
+            break
+        logger.warning(
+            "The judge ran out of tokens thinking (max_tokens=%d), asking again", max_tokens
+        )
+
+    raise JudgeUnavailable(
+        f"The judge returned no content (finish_reason={choice.finish_reason!r}, "
+        f"max_tokens={max_tokens})."
+    )
 
 
 def compare(answers: list[str], *, frage: str, pruefung: str) -> dict[str, Any]:
@@ -116,38 +165,11 @@ def compare(answers: list[str], *, frage: str, pruefung: str) -> dict[str, Any]:
     if len(answers) < 2:
         raise JudgeUnavailable("Fewer than two answers to compare.")
 
-    config = judge_config()
-    client = OpenAI(base_url=config.base_url, api_key=config.api_key, timeout=180)
-
     body = "\n\n".join(
         [f"Frage: {frage}", *(f"Antwort {i}: {a}" for i, a in enumerate(answers, start=1))]
     )
-
-    try:
-        response = client.chat.completions.create(
-            model=config.model,
-            messages=[
-                {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
-                {"role": "user", "content": body},
-            ],
-            temperature=0,
-            max_tokens=JUDGE_MAX_TOKENS,
-        )
-    except OpenAIError as exc:
-        raise JudgeUnavailable(f"{type(exc).__name__}: {exc}") from exc
-
-    choice = response.choices[0]
-    content = (choice.message.content or "").strip()
-    if not content:
-        # A reasoning model that used its whole budget thinking. Distinguished
-        # from a refusal on purpose: reporting "no verdict" as a verdict would
-        # quietly mark a case unauffällig.
-        raise JudgeUnavailable(
-            f"The judge returned no content (finish_reason={choice.finish_reason!r}). "
-            f"A reasoning model may need more than {JUDGE_MAX_TOKENS} tokens."
-        )
-
-    return parse_verdict(content, pruefung=pruefung, model=response.model)
+    content, model = ask_judge(JUDGE_SYSTEM_PROMPT, body, temperature=0)
+    return parse_verdict(content, pruefung=pruefung, model=model)
 
 
 def parse_verdict(content: str, *, pruefung: str, model: str | None = None) -> dict[str, Any]:
@@ -208,27 +230,9 @@ def beurteile_ablehnung(text: str, *, frage: str) -> tuple[bool, str]:
     that says nothing was wrong, which is the one place this check must not be
     wrong quietly.
     """
-    config = judge_config()
-    client = OpenAI(base_url=config.base_url, api_key=config.api_key, timeout=180)
-
-    try:
-        response = client.chat.completions.create(
-            model=config.model,
-            messages=[
-                {"role": "system", "content": ABLEHNUNG_SYSTEM_PROMPT},
-                {"role": "user", "content": f"Frage: {frage}\n\nAntwort: {text}"},
-            ],
-            temperature=0,
-            max_tokens=JUDGE_MAX_TOKENS,
-        )
-    except OpenAIError as exc:
-        raise JudgeUnavailable(f"{type(exc).__name__}: {exc}") from exc
-
-    content = (response.choices[0].message.content or "").strip()
-    if not content:
-        raise JudgeUnavailable(
-            f"The judge returned no content (finish_reason={response.choices[0].finish_reason!r})."
-        )
+    content, _ = ask_judge(
+        ABLEHNUNG_SYSTEM_PROMPT, f"Frage: {frage}\n\nAntwort: {text}", temperature=0
+    )
 
     match = re.search(r"\{.*\}", content, re.S)
     if match is None:

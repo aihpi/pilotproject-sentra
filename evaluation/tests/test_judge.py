@@ -118,3 +118,59 @@ class TestThePrompt:
         content — at 20 tokens it returned finish_reason "length" with an empty
         message, which would have read as a judge declining to answer."""
         assert judge.JUDGE_MAX_TOKENS >= 1000
+
+
+class TestTheTokenBudget:
+    """A reasoning model thinks before it answers, and a call that runs out
+    mid-thought returns nothing with finish_reason "length" (#279)."""
+
+    def _model(self, monkeypatch, replies):
+        """Answers the calls in order with (content, finish_reason) and records
+        each call's max_tokens."""
+        calls = []
+
+        class Completions:
+            @staticmethod
+            def create(**kwargs):
+                calls.append(kwargs["max_tokens"])
+                content, finish = replies[len(calls) - 1]
+                message = type("M", (), {"content": content})()
+                choice = type("C", (), {"message": message, "finish_reason": finish})()
+                return type("R", (), {"choices": [choice], "model": "judge"})()
+
+        class Client:
+            def __init__(self, **kwargs):
+                self.chat = type("Chat", (), {"completions": Completions})()
+
+        monkeypatch.setattr(judge, "OpenAI", Client)
+        monkeypatch.setattr(
+            judge,
+            "judge_config",
+            lambda: type("C", (), {"base_url": "x", "api_key": "y", "model": "judge"})(),
+        )
+        return calls
+
+    def test_an_answer_on_the_first_try_is_asked_once(self, monkeypatch):
+        calls = self._model(monkeypatch, [('{"ok": 1}', "stop")])
+
+        assert judge.ask_judge("s", "u", temperature=0) == ('{"ok": 1}', "judge")
+        assert calls == [judge.JUDGE_MAX_TOKENS]
+
+    def test_running_out_is_asked_again_with_twice_the_budget(self, monkeypatch):
+        calls = self._model(monkeypatch, [("", "length"), ('{"ok": 1}', "stop")])
+
+        assert judge.ask_judge("s", "u", temperature=0)[0] == '{"ok": 1}'
+        assert calls == [judge.JUDGE_MAX_TOKENS, 2 * judge.JUDGE_MAX_TOKENS]
+
+    def test_running_out_twice_is_an_error_not_a_verdict(self, monkeypatch):
+        self._model(monkeypatch, [("", "length"), ("", "length")])
+
+        with pytest.raises(judge.JudgeUnavailable, match="finish_reason='length'"):
+            judge.ask_judge("s", "u", temperature=0)
+
+    def test_an_empty_reply_for_another_reason_is_not_retried(self, monkeypatch):
+        calls = self._model(monkeypatch, [("", "stop")])
+
+        with pytest.raises(judge.JudgeUnavailable):
+            judge.ask_judge("s", "u", temperature=0)
+        assert len(calls) == 1

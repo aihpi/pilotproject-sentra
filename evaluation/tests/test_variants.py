@@ -15,6 +15,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from sentra_eval import cases as case_store
+from sentra_eval import judge as judge_module
 from sentra_eval import variants
 from sentra_eval.categories import Kategorie
 from sentra_eval.db import Base
@@ -194,6 +195,7 @@ def _stub_model(monkeypatch):
 
     class Completion:
         choices = [Choice()]
+        model = "z"
 
     class Chat:
         class completions:
@@ -205,9 +207,11 @@ def _stub_model(monkeypatch):
         def __init__(self, **kwargs):
             self.chat = Chat()
 
-    monkeypatch.setattr(variants, "OpenAI", Client)
+    # Patched where the call is made: every judge call goes through
+    # judge.ask_judge since #279.
+    monkeypatch.setattr(judge_module, "OpenAI", Client)
     monkeypatch.setattr(
-        variants,
+        judge_module,
         "judge_config",
         lambda: type("C", (), {"base_url": "x", "api_key": "y", "model": "z"})(),
     )
