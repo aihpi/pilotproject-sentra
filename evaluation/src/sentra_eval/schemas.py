@@ -58,7 +58,10 @@ class ImportResponse(BaseModel):
 
 
 class CaseResponse(BaseModel):
-    test_id: str
+    nummer: int
+    tag: str
+    # Set by hand, so label changes leave it alone (#285).
+    tag_manuell: bool = False
     kategorie: str
     created_at: datetime
     zurueckgezogen_at: datetime | None
@@ -67,6 +70,11 @@ class CaseResponse(BaseModel):
     # could be approved now (#257).
     freigabe_hindernisse: list[str] = []
     versions: list[CaseVersionResponse]
+
+
+class SetTagRequest(BaseModel):
+    # Empty hands the tag back to the generator (#285).
+    tag: str = Field(max_length=64)
 
 
 class CreateCaseRequest(BaseModel):
@@ -148,7 +156,8 @@ class RunResponse(BaseModel):
 
 class CallResponse(BaseModel):
     id: UUID
-    test_id: str
+    nummer: int
+    tag: str
     variant_key: str
     repeat_index: int
     status: str
@@ -185,7 +194,8 @@ class QueueCall(BaseModel):
 
 
 class QueueEntryResponse(BaseModel):
-    test_id: str
+    nummer: int
+    tag: str
     kategorie: str
     case_version_id: UUID
     version: int
@@ -291,7 +301,8 @@ class SheetResponse(BaseModel):
     somebody will retype.
     """
 
-    test_id: str
+    nummer: int
+    tag: str
     datum: str
     tester: str
     kategorie: str

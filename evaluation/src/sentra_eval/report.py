@@ -60,7 +60,8 @@ NICHT_BEWERTET = "nicht bewertet"
 class Sheet:
     """One Phase-4 documentation sheet, section 6, field for field."""
 
-    test_id: str
+    nummer: int
+    tag: str
     datum: str
     tester: str
     kategorie: str
@@ -114,7 +115,8 @@ def sheets(session: Session, run: Run) -> list[Sheet]:
 
         out.append(
             Sheet(
-                test_id=case.test_id,
+                nummer=case.nummer,
+                tag=case.tag,
                 datum=run.started_at.date().isoformat(),
                 tester=verdict.tester if verdict else "",
                 kategorie=KATEGORIE_NAMEN.get(case.kategorie, case.kategorie),
@@ -148,7 +150,7 @@ def sheets(session: Session, run: Run) -> list[Sheet]:
                 freitext_anmerkung=verdict.anmerkung if verdict else "",
             )
         )
-    return sorted(out, key=lambda s: s.test_id)
+    return sorted(out, key=lambda s: s.nummer)
 
 
 def _calls_for(session: Session, run: Run, case_version_id: UUID) -> list[Call]:

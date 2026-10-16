@@ -99,7 +99,7 @@ export function ResultsView({ runId }: { runId: string }) {
         {sheets.length === 0 ? (
           <p className="text-sm text-muted-foreground">Keine Testfälle in dieser Runde.</p>
         ) : (
-          sheets.map((sheet) => <SheetCard key={sheet.test_id} sheet={sheet} />)
+          sheets.map((sheet) => <SheetCard key={sheet.nummer} sheet={sheet} />)
         )}
       </section>
 

@@ -138,9 +138,9 @@ describe("a round in flight", () => {
 });
 
 describe("uploading a collection sheet", () => {
-  it("reports the Test-IDs rather than a count", async () => {
+  it("reports the tags rather than a count", async () => {
     importSheet.mockResolvedValue({
-      angelegt: ["TF-GO-001", "TF-GO-002"],
+      angelegt: ["GO-001", "GO-002"],
       aktualisiert: [],
       unveraendert: [],
       freigegeben: [],
@@ -152,7 +152,7 @@ describe("uploading a collection sheet", () => {
       sheet(),
     );
 
-    expect(await screen.findByText(/TF-GO-001, TF-GO-002/)).toBeInTheDocument();
+    expect(await screen.findByText(/GO-001, GO-002/)).toBeInTheDocument();
     expect(onImported).toHaveBeenCalled();
   });
 
@@ -189,7 +189,7 @@ describe("uploading a collection sheet", () => {
 
   it("takes the reviewers' Word table as well", async () => {
     importSheet.mockResolvedValue({
-      angelegt: ["TF-FI-001"],
+      angelegt: ["FI-001"],
       aktualisiert: [],
       unveraendert: [],
       freigegeben: [],

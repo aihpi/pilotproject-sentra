@@ -48,11 +48,13 @@ def client(monkeypatch, tmp_path):
 
 
 class TestCreating:
-    def test_a_case_comes_back_with_an_allocated_test_id(self, client):
+    def test_a_case_comes_back_with_a_number_and_a_generated_tag(self, client):
         response = client.post("/api/eval/cases", json=CASE)
 
         assert response.status_code == 201
-        assert response.json()["test_id"] == "TF-GO-001"
+        assert response.json()["nummer"] == 1
+        assert response.json()["tag"] == "GO-001"
+        assert response.json()["tag_manuell"] is False
 
     def test_it_starts_as_one_draft_version(self, client):
         body = client.post("/api/eval/cases", json=CASE).json()
@@ -80,7 +82,7 @@ class TestReading:
         assert len(client.get("/api/eval/cases").json()) == 2
 
     def test_an_unknown_test_id_is_a_404(self, client):
-        response = client.get("/api/eval/cases/TF-GO-999")
+        response = client.get("/api/eval/cases/999")
 
         assert response.status_code == 404
         assert "nicht gefunden" in response.json()["detail"]
@@ -95,31 +97,25 @@ class TestEditing:
     def test_a_draft_is_edited_in_place(self, client):
         client.post("/api/eval/cases", json=CASE)
 
-        body = client.patch(
-            "/api/eval/cases/TF-GO-001", json={"erwartete_antwort": "Anders"}
-        ).json()
+        body = client.patch("/api/eval/cases/1", json={"erwartete_antwort": "Anders"}).json()
 
         assert len(body["versions"]) == 1
         assert body["versions"][0]["erwartete_antwort"] == "Anders"
 
     def test_editing_an_approved_case_adds_a_version(self, client):
         client.post("/api/eval/cases", json=CASE)
-        client.post("/api/eval/cases/TF-GO-001/freigeben")
+        client.post("/api/eval/cases/1/freigeben")
 
-        body = client.patch(
-            "/api/eval/cases/TF-GO-001", json={"erwartete_antwort": "Überarbeitet"}
-        ).json()
+        body = client.patch("/api/eval/cases/1", json={"erwartete_antwort": "Überarbeitet"}).json()
 
         assert [v["version"] for v in body["versions"]] == [1, 2]
         assert body["versions"][1]["status"] == "entwurf"
 
     def test_the_approved_version_keeps_what_it_had(self, client):
         client.post("/api/eval/cases", json=CASE)
-        client.post("/api/eval/cases/TF-GO-001/freigeben")
+        client.post("/api/eval/cases/1/freigeben")
 
-        body = client.patch(
-            "/api/eval/cases/TF-GO-001", json={"erwartete_antwort": "Überarbeitet"}
-        ).json()
+        body = client.patch("/api/eval/cases/1", json={"erwartete_antwort": "Überarbeitet"}).json()
 
         assert body["versions"][0]["erwartete_antwort"] == CASE["erwartete_antwort"]
 
@@ -128,7 +124,7 @@ class TestApproving:
     def test_approving_stamps_the_timestamp(self, client):
         client.post("/api/eval/cases", json=CASE)
 
-        body = client.post("/api/eval/cases/TF-GO-001/freigeben").json()
+        body = client.post("/api/eval/cases/1/freigeben").json()
 
         assert body["versions"][0]["status"] == "freigegeben"
         assert body["versions"][0]["freigegeben_at"] is not None
@@ -136,7 +132,7 @@ class TestApproving:
     def test_an_incomplete_case_is_refused_with_a_reason(self, client):
         client.post("/api/eval/cases", json={**CASE, "erwartete_antwort": ""})
 
-        response = client.post("/api/eval/cases/TF-GO-001/freigeben")
+        response = client.post("/api/eval/cases/1/freigeben")
 
         assert response.status_code == 422
         assert "erwartete Antwort" in response.json()["detail"]
@@ -145,14 +141,54 @@ class TestApproving:
 class TestWithdrawing:
     def test_a_withdrawn_case_leaves_the_list(self, client):
         client.post("/api/eval/cases", json=CASE)
-        client.post("/api/eval/cases/TF-GO-001/zurueckziehen")
+        client.post("/api/eval/cases/1/zurueckziehen")
 
         assert client.get("/api/eval/cases").json() == []
 
     def test_and_its_number_stays_spent(self, client):
         client.post("/api/eval/cases", json=CASE)
-        client.post("/api/eval/cases/TF-GO-001/zurueckziehen")
+        client.post("/api/eval/cases/1/zurueckziehen")
 
         body = client.post("/api/eval/cases", json=CASE).json()
 
-        assert body["test_id"] == "TF-GO-002"
+        assert body["nummer"] == 2
+
+
+class TestTheTag:
+    """A tag is a label, not an identity (#285): it can be corrected by hand,
+    must stay unique, and an empty one hands it back to the generator."""
+
+    def test_a_tag_set_by_hand_is_kept_and_marked(self, client):
+        client.post("/api/eval/cases", json=CASE)
+
+        body = client.put("/api/eval/cases/1/tag", json={"tag": "GO-Redezeit"}).json()
+
+        assert body["tag"] == "GO-Redezeit"
+        assert body["tag_manuell"] is True
+        assert body["nummer"] == 1
+
+    def test_a_tag_already_taken_is_refused(self, client):
+        client.post("/api/eval/cases", json=CASE)
+        client.post("/api/eval/cases", json=CASE)
+
+        response = client.put("/api/eval/cases/2/tag", json={"tag": "GO-001"})
+
+        assert response.status_code == 409
+        assert "schon vergeben" in response.json()["detail"]
+
+    def test_an_empty_tag_is_generated_again(self, client):
+        client.post("/api/eval/cases", json=CASE)
+        client.put("/api/eval/cases/1/tag", json={"tag": "von Hand"})
+
+        body = client.put("/api/eval/cases/1/tag", json={"tag": ""}).json()
+
+        assert body["tag_manuell"] is False
+        assert body["tag"].startswith("GO-")
+
+    def test_the_generator_skips_a_tag_somebody_took_by_hand(self, client):
+        client.post("/api/eval/cases", json=CASE)
+        client.put("/api/eval/cases/1/tag", json={"tag": "GO-002"})
+
+        body = client.post("/api/eval/cases", json=CASE).json()
+
+        assert body["tag"] == "GO-003"

@@ -235,7 +235,7 @@ class TestSheets:
 
         sheet = report.sheets(session, run)[0]
 
-        assert sheet.test_id
+        assert sheet.tag
         assert sheet.quellenbewertung_4_3b == ""
         assert sheet.manuell_geprueft_durch == "entfällt"
 

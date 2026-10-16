@@ -25,10 +25,10 @@ const STIL_LABEL: Record<string, string> = {
  *  The approver is whoever is signed in. An approval needs an owner, and
  *  asking somebody to type their own name is asking for a different one. */
 export function VariantPanel({
-  testId,
+  nummer,
   approver,
 }: {
-  testId: string;
+  nummer: number;
   approver: string;
 }) {
   const [variants, setVariants] = useState<EvalVariant[]>([]);
@@ -37,8 +37,8 @@ export function VariantPanel({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchVariants(testId).then(setVariants, (e: Error) => setError(e.message));
-  }, [testId]);
+    fetchVariants(nummer).then(setVariants, (e: Error) => setError(e.message));
+  }, [nummer]);
 
   async function act(work: () => Promise<void>) {
     setBusy(true);
@@ -76,7 +76,7 @@ export function VariantPanel({
             disabled={busy}
             onClick={() =>
               void act(async () => {
-                setVariants(await proposeVariants(testId));
+                setVariants(await proposeVariants(nummer));
                 setDrafts({});
               })
             }
@@ -139,7 +139,7 @@ export function VariantPanel({
                       disabled={busy || !draft.trim()}
                       onClick={() =>
                         void act(async () =>
-                          replace(await editVariant(testId, variant.stil, draft)),
+                          replace(await editVariant(nummer, variant.stil, draft)),
                         )
                       }
                       className="rounded-md border px-2 py-1 disabled:opacity-50"
@@ -152,7 +152,7 @@ export function VariantPanel({
                       disabled={busy}
                       onClick={() =>
                         void act(async () =>
-                          replace(await approveVariant(testId, variant.stil, approver)),
+                          replace(await approveVariant(nummer, variant.stil, approver)),
                         )
                       }
                       className="rounded-md border px-2 py-1 disabled:opacity-50"

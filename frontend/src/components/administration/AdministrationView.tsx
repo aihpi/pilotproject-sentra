@@ -56,7 +56,7 @@ export function AdministrationView({ session }: { session: Session | null }) {
   >(
     "testfaelle",
   );
-  const [editing, setEditing] = useState<string | null>(null);
+  const [editing, setEditing] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -111,7 +111,7 @@ export function AdministrationView({ session }: { session: Session | null }) {
     }
   }
 
-  const open = cases.find((c) => c.test_id === editing) ?? null;
+  const open = cases.find((c) => c.nummer === editing) ?? null;
   const latest = open?.versions[open.versions.length - 1] ?? null;
 
   if (loadError) {
@@ -207,7 +207,7 @@ export function AdministrationView({ session }: { session: Session | null }) {
 
           {open && latest && (
             <CaseForm
-              key={open.test_id}
+              key={open.nummer}
               initial={{
                 kategorie: open.kategorie,
                 ausgangsfrage: latest.ausgangsfrage,
@@ -231,7 +231,7 @@ export function AdministrationView({ session }: { session: Session | null }) {
                 // kategorie field for exactly that reason.
                 const { kategorie, ...fields } = draft;
                 void kategorie;
-                void act(() => updateCase(open.test_id, fields));
+                void act(() => updateCase(open.nummer, fields));
               }}
             />
           )}
@@ -243,12 +243,12 @@ export function AdministrationView({ session }: { session: Session | null }) {
               setCreating(true);
               setEditing(null);
             }}
-            onEdit={(testId) => {
-              setEditing(testId);
+            onEdit={(nummer) => {
+              setEditing(nummer);
               setCreating(false);
             }}
-            onApprove={(testId) => void act(() => approveCase(testId))}
-            onWithdraw={(testId) => void act(() => withdrawCase(testId))}
+            onApprove={(nummer) => void act(() => approveCase(nummer))}
+            onWithdraw={(nummer) => void act(() => withdrawCase(nummer))}
             approver={session?.benutzername ?? "Administration"}
           />
         </>

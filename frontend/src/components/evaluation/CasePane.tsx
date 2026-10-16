@@ -14,8 +14,9 @@ export function CasePane({ entry }: { entry: QueueEntry }) {
     <aside className="space-y-4 rounded-lg border bg-muted/30 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="outline" className="font-mono">
-          {entry.test_id}
+          {entry.tag}
         </Badge>
+        <span className="text-xs text-muted-foreground">Nr. {entry.nummer}</span>
         <Badge variant="secondary">{entry.kategorie}</Badge>
         {entry.grenzfall && (
           <Badge variant="destructive" title="Wird nie automatisch vorgefiltert (4.4)">

@@ -106,13 +106,13 @@ class TestDrafting:
     def test_the_question_comes_across(self, session):
         case, _ = feedback.draft_case(session, _entry(), kategorie=Kategorie.GO)
 
-        version = case_store.get_case(session, case.test_id).versions[-1]
+        version = case_store.get_case(session, case.nummer).versions[-1]
         assert version.ausgangsfrage == "Wie lange darf ein Redner im Plenum sprechen?"
 
     def test_the_complaint_becomes_the_reason_for_inclusion(self, session):
         case, _ = feedback.draft_case(session, _entry(), kategorie=Kategorie.GO)
 
-        version = case_store.get_case(session, case.test_id).versions[-1]
+        version = case_store.get_case(session, case.nummer).versions[-1]
         assert "Die Zahl stimmt nicht." in version.grund_fuer_aufnahme
         assert "2026-09-01" in version.grund_fuer_aufnahme
 
@@ -122,7 +122,7 @@ class TestDrafting:
         correct."""
         case, _ = feedback.draft_case(session, _entry(), kategorie=Kategorie.GO)
 
-        version = case_store.get_case(session, case.test_id).versions[-1]
+        version = case_store.get_case(session, case.nummer).versions[-1]
         assert version.erwartete_antwort == ""
         assert "45 Minuten" not in version.erwartete_antwort
         assert "45 Minuten" not in version.grund_fuer_aufnahme
@@ -139,7 +139,7 @@ class TestDrafting:
         The rule is the case store's and is inherited rather than restated."""
         case, _ = feedback.draft_case(session, _entry(), kategorie=Kategorie.GO)
 
-        version = case_store.get_case(session, case.test_id).versions[-1]
+        version = case_store.get_case(session, case.nummer).versions[-1]
         with pytest.raises(case_store.IncompleteCase):
             case_store.approve(session, version)
 
@@ -154,7 +154,7 @@ class TestImportingTwice:
         round."""
         feedback.draft_case(session, _entry(), kategorie=Kategorie.GO)
 
-        with pytest.raises(feedback.AlreadyImported, match="TF-GO-001"):
+        with pytest.raises(feedback.AlreadyImported, match="Nr. 1"):
             feedback.draft_case(session, _entry(), kategorie=Kategorie.GO)
 
     def test_a_different_complaint_still_can(self, session):
@@ -164,10 +164,10 @@ class TestImportingTwice:
             session, _entry(id="fb-9", question="Etwas anderes?"), kategorie=Kategorie.GO
         )
 
-        assert case.test_id == "TF-GO-002"
+        assert case.tag == "GO-002"
 
     def test_the_origin_is_recorded_on_the_case(self, session):
         case, _ = feedback.draft_case(session, _entry(), kategorie=Kategorie.GO)
 
-        version = case_store.get_case(session, case.test_id).versions[-1]
+        version = case_store.get_case(session, case.nummer).versions[-1]
         assert version.feedback_id == "fb-1"

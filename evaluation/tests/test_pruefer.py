@@ -86,7 +86,7 @@ class TestReadingARow:
     def test_the_reviewers_id_is_kept_for_tracing_but_is_not_the_test_id(self, tmp_path):
         allgemein, konkret = _read(_document(tmp_path, [ZWEI_FRAGEN]))
 
-        assert allgemein.test_id is None
+        assert allgemein.nummer is None
         assert allgemein.grund_fuer_aufnahme == "Prüfer-Vorlage (XY01, Allgemein)"
         assert konkret.grund_fuer_aufnahme == "Prüfer-Vorlage (XY01, Konkret)"
 

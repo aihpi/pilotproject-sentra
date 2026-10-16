@@ -29,11 +29,11 @@ def test_fields_match_the_importer():
     """Every collected field is one the importer accepts, and every field the
     importer needs is collected.
 
-    `test_id` and `status` are excluded deliberately, not forgotten: the
-    backend allocates the one and never reuses it, and approval is a review
-    decision rather than the author's.
+    `nummer`, `tag` and `status` are excluded deliberately, not forgotten: the
+    backend allocates the number and never reuses it, the tag is generated from
+    the labels, and approval is a review decision rather than the author's.
     """
-    importable = set(CaseEntry.model_fields) - {"test_id", "status"}
+    importable = set(CaseEntry.model_fields) - {"nummer", "tag", "status"}
 
     assert set(vorlagen.FIELD_NAMES) == importable
 
@@ -184,7 +184,7 @@ class TestReadingAFilledSheet:
         explicit that they are never reused."""
         entries = yaml_io.validate(vorlagen.read_workbook(_filled(tmp_path, [ORDENTLICH])))
 
-        assert entries[0].test_id is None
+        assert entries[0].nummer is None
 
     def test_a_missing_expected_answer_names_the_row(self, tmp_path):
         path = _filled(tmp_path, [{**ORDENTLICH, "Erwartete Antwort": None}])

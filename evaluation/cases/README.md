@@ -12,11 +12,15 @@ Import is idempotent: running it twice changes nothing the second time. That is
 what lets the file be the thing under review — a case arrives as a diff in a
 pull request rather than as a row somebody typed into a database.
 
-**Test-IDs are allocated by the backend.** A new case is written without one and
-the next export adds it. That asymmetry is deliberate: the Vorlage requires a
-number never be reused, including for withdrawn cases, and a hand-written ID is
-how one gets reused. `--allow-new-ids` exists only for restoring an exported
-file into an empty database.
+**Numbers are allocated by the backend.** A new case is written without a
+`nummer` and the next export adds it. That asymmetry is deliberate: the Vorlage
+requires a number never be reused, including for withdrawn cases, and a
+hand-written number is how one gets reused. `--allow-new-ids` exists only for
+restoring an exported file into an empty database.
+
+**`tag` is a readable label, not the identity.** The export writes each case's
+tag. Changing it in the file applies it on the next import and keeps it from
+being regenerated; it only has to stay unique.
 
 **`status: freigegeben` approves the case.** The pull request that changed the
 file is the review, which is the same act the approve button performs. An

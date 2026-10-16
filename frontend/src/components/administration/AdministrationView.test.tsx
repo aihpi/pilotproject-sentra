@@ -16,11 +16,12 @@ import type { EvalCase } from "@/types";
  *    one. That was #130 from the other end, and it made technique 4.4
  *    unreachable
  *
- *    withdrawal is not deletion. The Test-ID stays spent
+ *    withdrawal is not deletion. The number stays spent
  */
 
 const APPROVED: EvalCase = {
-  test_id: "TF-GO-001",
+  nummer: 1,
+  tag: "GO-001",
   kategorie: "GO",
   created_at: "2026-09-18T10:00:00Z",
   zurueckgezogen_at: null,
@@ -45,7 +46,8 @@ const APPROVED: EvalCase = {
 
 const DRAFT: EvalCase = {
   ...APPROVED,
-  test_id: "TF-AR-001",
+  nummer: 2,
+  tag: "AR-001",
   kategorie: "AR",
   versions: [
     {
@@ -63,7 +65,8 @@ const DRAFT: EvalCase = {
 
 const WITHDRAWN: EvalCase = {
   ...APPROVED,
-  test_id: "TF-GV-001",
+  nummer: 3,
+  tag: "GV-001",
   zurueckgezogen_at: "2026-09-18T11:00:00Z",
 };
 
@@ -161,7 +164,7 @@ async function renderWith(cases: EvalCase[]) {
   // row failed to find the row. A marker that is true of the empty state is
   // not a marker that the list has loaded.
   if (cases.length > 0) {
-    await screen.findByText(cases[0].test_id);
+    await screen.findByText(cases[0].tag);
   } else {
     await screen.findByText(/Noch keine Testfälle/);
   }
@@ -181,7 +184,7 @@ describe("the case list", () => {
   it("shows what state each case is in", async () => {
     await renderWith([APPROVED, DRAFT]);
 
-    expect(screen.getByText("TF-GO-001")).toBeInTheDocument();
+    expect(screen.getByText("GO-001")).toBeInTheDocument();
     expect(screen.getByText("freigegeben")).toBeInTheDocument();
     expect(screen.getByText("entwurf")).toBeInTheDocument();
   });
@@ -304,7 +307,7 @@ describe("failures", () => {
   it("shows the server's reason for refusing approval", async () => {
     approveCase.mockRejectedValue(
       new Error(
-        "TF-AR-001 version 1 cannot be approved: erwartete Antwort is missing.",
+        "AR-001 version 1 cannot be approved: erwartete Antwort is missing.",
       ),
     );
     await renderWith([DRAFT]);

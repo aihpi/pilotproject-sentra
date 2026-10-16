@@ -59,18 +59,18 @@ class TestTestIdAllocation:
     def test_the_first_case_in_a_category_is_001(self, session):
         case, _ = _complete_case(session)
 
-        assert case.test_id == "TF-GO-001"
+        assert case.tag == "GO-001"
 
     def test_numbers_run_consecutively_within_a_category(self, session):
-        ids = [_complete_case(session)[0].test_id for _ in range(3)]
+        ids = [_complete_case(session)[0].tag for _ in range(3)]
 
-        assert ids == ["TF-GO-001", "TF-GO-002", "TF-GO-003"]
+        assert ids == ["GO-001", "GO-002", "GO-003"]
 
     def test_categories_count_separately(self, session):
         _complete_case(session, Kategorie.GO)
         case, _ = _complete_case(session, Kategorie.GV)
 
-        assert case.test_id == "TF-GV-001"
+        assert case.tag == "GV-001"
 
     def test_a_withdrawn_case_does_not_free_its_number(self, session):
         """The Vorlage's "auch bei zurückgezogenen Testfällen nicht".
@@ -83,8 +83,8 @@ class TestTestIdAllocation:
 
         next_case, _ = _complete_case(session)
 
-        assert next_case.test_id == "TF-GO-002"
-        assert first.test_id == "TF-GO-001"
+        assert next_case.tag == "GO-002"
+        assert first.tag == "GO-001"
 
     def test_the_caller_cannot_choose_one(self, session):
         """create_case takes no test_id argument at all — the guarantee is that
@@ -247,15 +247,15 @@ class TestReading:
         _complete_case(session)
         case_store.withdraw(session, first)
 
-        assert [c.test_id for c in case_store.list_cases(session)] == ["TF-GO-002"]
+        assert [c.tag for c in case_store.list_cases(session)] == ["GO-002"]
 
     def test_withdrawn_cases_can_still_be_read(self, session):
         """A round that referenced one has to stay explicable afterwards."""
         first, _ = _complete_case(session)
         case_store.withdraw(session, first)
 
-        assert case_store.get_case(session, first.test_id).zurueckgezogen_at is not None
+        assert case_store.get_case(session, first.nummer).zurueckgezogen_at is not None
 
-    def test_an_unknown_test_id_is_its_own_error(self, session):
-        with pytest.raises(case_store.UnknownCase, match="TF-GO-999"):
-            case_store.get_case(session, "TF-GO-999")
+    def test_an_unknown_number_is_its_own_error(self, session):
+        with pytest.raises(case_store.UnknownCase, match="Nr. 999"):
+            case_store.get_case(session, 999)
