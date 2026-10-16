@@ -107,3 +107,20 @@ describe("variants of a case", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Judge nicht konfiguriert");
   });
 });
+
+describe("the order", () => {
+  it("is the Vorlage's, not the alphabet's (#282)", async () => {
+    // As the backend returns them: ORDER BY stil.
+    fetchVariants.mockResolvedValue([PROPOSED[1], PROPOSED[0], PROPOSED[2]]);
+    render(<VariantPanel nummer={1} approver="mario" />);
+
+    await screen.findByLabelText("Variante Verkürzt");
+    const labels = screen.getAllByRole("textbox").map((box) => box.getAttribute("aria-label"));
+
+    expect(labels).toEqual([
+      "Variante Umgangssprachlich",
+      "Variante Fachsprachlich",
+      "Variante Verkürzt",
+    ]);
+  });
+});

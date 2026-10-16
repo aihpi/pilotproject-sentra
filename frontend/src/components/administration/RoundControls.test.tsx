@@ -207,6 +207,12 @@ describe("uploading a collection sheet", () => {
     expect(importSheet).toHaveBeenCalledWith(table);
   });
 
+  it("offers the upload with a German button, not the browser's own (#282)", () => {
+    renderControls();
+
+    expect(screen.getByRole("button", { name: "Datei auswählen" })).toBeInTheDocument();
+  });
+
   it("states that nothing uploaded is approved", () => {
     renderControls();
 

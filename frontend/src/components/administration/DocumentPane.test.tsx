@@ -56,6 +56,17 @@ beforeEach(() => {
 });
 
 describe("the document pane", () => {
+  it("does not claim an empty index while the list is still loading (#282)", async () => {
+    let finish: (docs: unknown[]) => void = () => {};
+    fetchDocuments.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    render(<DocumentPane />);
+
+    expect(screen.queryByText(/0 Dokumente/)).toBeNull();
+
+    finish([doc("a.pdf", "Erstes")]);
+    expect(await screen.findByText("1 Dokument")).toBeInTheDocument();
+  });
+
   it("offers the upload alongside the list", async () => {
     render(<DocumentPane />);
 
