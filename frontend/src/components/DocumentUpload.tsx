@@ -68,6 +68,14 @@ export function DocumentUpload({ onUploaded }: { onUploaded: () => void }) {
         <p className="mt-2 text-sm text-muted-foreground">
           PDF- oder DOCX-Dateien hierher ziehen
         </p>
+        {/* Empirical, not a limit the code enforces (#254): larger sets have
+            failed during ingestion, batches of 100 to 120 have not. */}
+        <p className="mt-1 text-xs text-muted-foreground">
+          Bitte höchstens etwa 100 Dokumente auf einmal hochladen und danach
+          „Dokumente einlesen“ starten, bevor die nächsten folgen. Bricht das
+          Einlesen ab, einfach erneut starten: bereits eingelesene Dokumente
+          werden übersprungen.
+        </p>
         <input
           ref={input}
           type="file"
