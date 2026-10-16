@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { EvalCase } from "@/types";
 
@@ -76,12 +76,24 @@ const updateCase = vi.fn();
 const approveCase = vi.fn();
 const withdrawCase = vi.fn();
 
+const setLabels = vi.fn();
+const setTag = vi.fn();
+
 vi.mock("@/lib/evalApi", () => ({
   fetchCases: (...a: unknown[]) => fetchCases(...a),
   createCase: (...a: unknown[]) => createCase(...a),
   updateCase: (...a: unknown[]) => updateCase(...a),
   approveCase: (...a: unknown[]) => approveCase(...a),
   withdrawCase: (...a: unknown[]) => withdrawCase(...a),
+  fetchLabels: () =>
+    Promise.resolve({
+      kategorie: ["GO", "GV", "AR", "FI", "WI"],
+      testart: ["Regelfall", "Präzision"],
+      frageform: ["allgemein", "konkret"],
+      herkunft: ["manuell"],
+    }),
+  setLabels: (...a: unknown[]) => setLabels(...a),
+  setTag: (...a: unknown[]) => setTag(...a),
   fetchRuns: () => Promise.resolve([RUN, OLDER_RUN]),
   fetchRun: () => Promise.resolve(RUN),
   importSheet: () => Promise.resolve({}),
@@ -184,9 +196,11 @@ describe("the case list", () => {
   it("shows what state each case is in", async () => {
     await renderWith([APPROVED, DRAFT]);
 
-    expect(screen.getByText("GO-001")).toBeInTheDocument();
-    expect(screen.getByText("freigegeben")).toBeInTheDocument();
-    expect(screen.getByText("entwurf")).toBeInTheDocument();
+    // Within the table: the Status filter above it offers the same words.
+    const table = within(screen.getByRole("table"));
+    expect(table.getByText("GO-001")).toBeInTheDocument();
+    expect(table.getByText("freigegeben")).toBeInTheDocument();
+    expect(table.getByText("entwurf")).toBeInTheDocument();
   });
 
   it("offers approval only where there is a draft to approve", async () => {
@@ -200,7 +214,7 @@ describe("the case list", () => {
   it("offers nothing on a withdrawn case", async () => {
     await renderWith([WITHDRAWN]);
 
-    expect(screen.getByText("zurückgezogen")).toBeInTheDocument();
+    expect(within(screen.getByRole("table")).getByText("zurückgezogen")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /Zurückziehen/ }),
     ).not.toBeInTheDocument();

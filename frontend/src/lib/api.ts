@@ -33,7 +33,7 @@ interface RequestOptions {
   /** PATCH is here for the case store, where changing a case is deliberately
    *  not a full replacement: omitted fields are carried over, and the harness
    *  decides whether that edits the draft or adds a version. */
-  method?: "GET" | "POST" | "PATCH" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   /** Sent as JSON. Its presence is what adds the Content-Type header. */
   body?: unknown;
   /** Sent as-is, for an endpoint that takes bytes rather than JSON — the

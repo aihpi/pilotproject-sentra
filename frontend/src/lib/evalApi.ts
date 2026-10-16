@@ -1,5 +1,7 @@
 import type {
+  CaseLabels,
   EvalVariant,
+  LabelValues,
   Agreement,
   CaseDraft,
   EvalCase,
@@ -282,6 +284,34 @@ export function approveVariant(
     method: "POST",
     body: { freigegeben_durch: freigegebenDurch },
     label: "Die Variante konnte nicht freigegeben werden",
+    statusMessages: { 502: NOT_RUNNING },
+  });
+}
+
+/** The values to offer per label, for the dropdowns (#286). */
+export function fetchLabels(): Promise<LabelValues> {
+  return request("/eval/labels", {
+    label: "Die Auswahllisten konnten nicht geladen werden",
+    statusMessages: { 502: NOT_RUNNING, 503: NOT_RUNNING },
+  });
+}
+
+/** Correct a case's labels. Creates no new version. */
+export function setLabels(nummer: number, body: CaseLabels): Promise<EvalCase> {
+  return request(`/eval/cases/${nummer}/labels`, {
+    method: "PATCH",
+    body,
+    label: "Die Labels konnten nicht gespeichert werden",
+    statusMessages: { 502: NOT_RUNNING },
+  });
+}
+
+/** Set a case's tag by hand; an empty one has it generated again. */
+export function setTag(nummer: number, tag: string): Promise<EvalCase> {
+  return request(`/eval/cases/${nummer}/tag`, {
+    method: "PUT",
+    body: { tag },
+    label: "Der Tag konnte nicht gespeichert werden",
     statusMessages: { 502: NOT_RUNNING },
   });
 }

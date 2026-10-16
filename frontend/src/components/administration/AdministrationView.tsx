@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import type { CaseDraft, EvalCase, EvalRun, Session } from "@/types";
+import type { CaseDraft, EvalCase, EvalRun, LabelValues, Session } from "@/types";
 import {
   approveCase,
   createCase,
   fetchCases,
+  fetchLabels,
   fetchRun,
   fetchRuns,
   updateCase,
@@ -62,10 +63,24 @@ export function AdministrationView({ session }: { session: Session | null }) {
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const [offered, setOffered] = useState<LabelValues>({
+    kategorie: [],
+    testart: [],
+    frageform: [],
+    herkunft: [],
+  });
+
   const load = useCallback(() => {
     fetchCases()
       .then(setCases)
       .catch((e: Error) => setLoadError(e.message));
+    // Reloaded with the cases: a value typed in on one case is suggested for
+    // the next, and one nobody uses any more drops out.
+    fetchLabels()
+      .then(setOffered)
+      .catch(() => {
+        /* Suggestions only. Editing still works without them. */
+      });
   }, []);
 
   useEffect(() => {
@@ -197,7 +212,8 @@ export function AdministrationView({ session }: { session: Session | null }) {
           {creating && (
             <CaseForm
               initial={EMPTY}
-              categories={["GO", "GV", "AR"]}
+              categories={offered.kategorie}
+              testarten={offered.testart}
               editingApproved={false}
               submitting={busy}
               onCancel={() => setCreating(false)}
@@ -220,17 +236,17 @@ export function AdministrationView({ session }: { session: Session | null }) {
                 grund_fuer_aufnahme: latest.grund_fuer_aufnahme,
                 grenzfall: latest.grenzfall,
               }}
-              categories={["GO", "GV", "AR"]}
+              categories={offered.kategorie}
               editingApproved={latest.status === "freigegeben"}
               submitting={busy}
               onCancel={() => setEditing(null)}
               onSubmit={(draft) => {
-                // Never the category: it is baked into the Test-ID, which is
-                // allocated once and never reused, so changing it would leave the
-                // number saying one thing and the case another. PATCH has no
-                // kategorie field for exactly that reason.
-                const { kategorie, ...fields } = draft;
+                // Never the labels: they change through the Labels panel, which
+                // creates no version, and PATCH on the content has no fields
+                // for them.
+                const { kategorie, testart, ...fields } = draft;
                 void kategorie;
+                void testart;
                 void act(() => updateCase(open.nummer, fields));
               }}
             />
@@ -250,6 +266,8 @@ export function AdministrationView({ session }: { session: Session | null }) {
             onApprove={(nummer) => void act(() => approveCase(nummer))}
             onWithdraw={(nummer) => void act(() => withdrawCase(nummer))}
             approver={session?.benutzername ?? "Administration"}
+            offered={offered}
+            onLabelsChanged={load}
           />
         </>
       )}

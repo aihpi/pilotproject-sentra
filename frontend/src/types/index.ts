@@ -251,6 +251,22 @@ export interface EvalVariant {
   freigegeben_at: string | null;
 }
 
+/** The values to offer per label (#286): built-in ones first, then those in
+ *  use. A value typed in by hand is listed while a case uses it. */
+export interface LabelValues {
+  kategorie: string[];
+  testart: string[];
+  frageform: string[];
+  herkunft: string[];
+}
+
+export interface CaseLabels {
+  kategorie?: string;
+  testart?: string;
+  frageform?: string;
+  herkunft?: string;
+}
+
 /** A test case and every version of it.
  *
  *  `versions` is ordered, oldest first. The last one is what a new round would
@@ -289,6 +305,8 @@ export interface CaseDraft {
   referenz_falsch_az: string;
   grund_fuer_aufnahme: string;
   grenzfall: boolean;
+  /** Only when creating; afterwards labels change through the Labels panel. */
+  testart?: string;
 }
 
 /** What an uploaded collection sheet did, by tag.
