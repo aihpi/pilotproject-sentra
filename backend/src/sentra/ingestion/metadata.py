@@ -76,6 +76,22 @@ _DOKUMENTENTYP_RE = re.compile(r"Dokumententyp:\s*(.+?)(?:\s{2,}|\n|$)")
 # Titel label: "Titel: Ausnahmen von der..."
 _TITEL_RE = re.compile(r"Titel:\s*(.+?)(?:\s{2,}|\n|$)")
 
+# Word's message for a broken StyleRef field, printed into the PDF in place of
+# the text the field should have shown (#281). In German and English, since the
+# authors' Word may be either. It sits in front of the real title in 11 of the
+# indexed documents, and is the whole title in one.
+_WORD_FIELD_ERROR_RE = re.compile(
+    r"(?:Fehler!\s*Kein Text mit angegebener Formatvorlage im Dokument\.?"
+    r"|Error!\s*No text of specified style in document\.?)\s*",
+    re.IGNORECASE,
+)
+
+# A document type left at the start once the error is gone: "Aktueller Begriff
+# Abgeordnetenentschädigung …", "Kurzinformation Fortdauernde …".
+_LEADING_TYPE_RE = re.compile(
+    r"^(?:" + "|".join([*DOCUMENT_TYPES, "Aktueller Begriff"]) + r")\s+", re.IGNORECASE
+)
+
 # Filename extraction: "WD 9-100-21" from "WD 9-100-21.pdf"
 _FILENAME_RE = re.compile(r"((?:WD|EU)\s*\d+)-(\d+)-(\d+)")
 
@@ -198,12 +214,26 @@ def _extract_document_type(markdown: str) -> str:
     return FALLBACK_DOCUMENT_TYPE
 
 
+def _clean_title(title: str) -> str:
+    """The title without Word's field error and a document type in front of it."""
+    cleaned = _WORD_FIELD_ERROR_RE.sub("", title).strip()
+    if cleaned != title.strip():
+        # Only after an error was removed: elsewhere a title may legitimately
+        # start with one of these words.
+        cleaned = _LEADING_TYPE_RE.sub("", cleaned).strip()
+    return cleaned
+
+
 def _extract_title(markdown: str) -> str:
     """Extract the document title."""
     # Labeled: "Titel: Ausnahmen von der Visumspflicht..."
     match = _TITEL_RE.search(markdown)
     if match:
-        return _deduplicate_title(match.group(1).strip())
+        labelled = _clean_title(_deduplicate_title(match.group(1).strip()))
+        # A labelled title that was nothing but Word's error falls through to
+        # the headings, like a document with no label at all.
+        if labelled:
+            return labelled
 
     # Find first meaningful Markdown heading
     skip_lower = {
@@ -217,17 +247,20 @@ def _extract_title(markdown: str) -> str:
         line = line.strip()
         if not line.startswith("#"):
             continue
-        heading = line.lstrip("#").strip()
+        heading = _deduplicate_title(line.lstrip("#").strip())
         if not heading or len(heading) < 5:
             continue
         heading_lower = heading.lower()
-        if heading_lower in skip_lower:
+        if heading_lower in skip_lower or _undoubled(heading_lower) in skip_lower:
             continue
         if any(dt.lower() in heading_lower for dt in DOCUMENT_TYPES):
             continue
-        if heading_lower.startswith("aktenzeichen:"):
+        if heading_lower.startswith(("aktenzeichen:", "dokumententyp:")):
             continue
-        return _deduplicate_title(heading)
+        cleaned = _clean_title(heading)
+        if len(cleaned) < 5:
+            continue
+        return cleaned
 
     return "Unbekannter Titel"
 
@@ -363,6 +396,19 @@ def _normalize_az(raw: str) -> str:
     if match:
         return _format_az(match.group(1), match.group(2))
     return raw.strip()
+
+
+def _undoubled(text: str) -> str:
+    """ "wissenschaftliche dienste wissenschaftliche dienste" → "wissenschaftliche dienste".
+
+    Docling doubles headings. _deduplicate_title leaves two-word phrases alone
+    on purpose, so the boilerplate check undoes the doubling for itself.
+    """
+    words = text.split()
+    half = len(words) // 2
+    if half and len(words) % 2 == 0 and words[:half] == words[half:]:
+        return " ".join(words[:half])
+    return text
 
 
 def _deduplicate_title(title: str) -> str:
