@@ -32,8 +32,17 @@ def test_fields_match_the_importer():
     `nummer`, `tag` and `status` are excluded deliberately, not forgotten: the
     backend allocates the number and never reuses it, the tag is generated from
     the labels, and approval is a review decision rather than the author's.
+    `frageform` and `herkunft` are not asked either: the reviewers' Word table
+    is where a question comes as allgemein or konkret, and the sheet sets its
+    own Herkunft.
     """
-    importable = set(CaseEntry.model_fields) - {"nummer", "tag", "status"}
+    importable = set(CaseEntry.model_fields) - {
+        "nummer",
+        "tag",
+        "status",
+        "frageform",
+        "herkunft",
+    }
 
     assert set(vorlagen.FIELD_NAMES) == importable
 
@@ -200,11 +209,24 @@ class TestReadingAFilledSheet:
         with pytest.raises(vorlagen.VorlageError, match="Grenzfall"):
             vorlagen.read_workbook(path)
 
-    def test_an_unknown_category_says_which_are_allowed(self, tmp_path):
-        path = _filled(tmp_path, [{**ORDENTLICH, "Kategorie": "XX"}])
+    def test_a_new_category_is_accepted(self, tmp_path):
+        """An open list since #286."""
+        path = _filled(tmp_path, [{**ORDENTLICH, "Kategorie": "wd3"}])
 
-        with pytest.raises(vorlagen.VorlageError, match="GO"):
+        assert vorlagen.read_workbook(path)[0]["kategorie"] == "WD3"
+
+    def test_a_malformed_category_says_what_is_allowed(self, tmp_path):
+        path = _filled(tmp_path, [{**ORDENTLICH, "Kategorie": "X-X!"}])
+
+        with pytest.raises(vorlagen.VorlageError, match="Buchstaben oder Ziffern"):
             vorlagen.read_workbook(path)
+
+    def test_the_testart_and_the_herkunft_come_across(self, tmp_path):
+        path = _filled(tmp_path, [{**ORDENTLICH, "Testart": "Präzision"}])
+
+        entry = yaml_io.validate(vorlagen.read_workbook(path))[0]
+
+        assert (entry.testart, entry.herkunft) == ("Präzision", vorlagen.HERKUNFT)
 
     def test_columns_are_matched_by_header_not_position(self, tmp_path):
         """People add a working column, or reorder. Neither should break the
@@ -225,7 +247,8 @@ class TestReadingAFilledSheet:
         path = _filled(tmp_path, [ORDENTLICH])
         book = openpyxl.load_workbook(path)
         sheet = book["Testfälle"]
-        sheet.delete_cols(2)  # Ausgangsfrage
+        header = [str(c.value).replace(" *", "") for c in sheet[1]]
+        sheet.delete_cols(header.index("Ausgangsfrage") + 1)
         book.save(path)
 
         with pytest.raises(vorlagen.VorlageError, match="Ausgangsfrage"):

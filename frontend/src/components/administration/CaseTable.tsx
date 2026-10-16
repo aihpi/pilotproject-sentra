@@ -1,9 +1,22 @@
 import { Fragment, useState } from "react";
-import type { EvalCase } from "@/types";
+import type { EvalCase, LabelValues } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { VariantPanel } from "@/components/administration/VariantPanel";
+import { LabelPanel } from "@/components/administration/LabelPanel";
 
-type SortKey = "nummer" | "kategorie" | "ausgangsfrage" | "status";
+type SortKey = "nummer" | "tag" | "kategorie" | "testart" | "ausgangsfrage" | "status";
+
+const FILTERS = [
+  { key: "kategorie", label: "Bereich" },
+  { key: "testart", label: "Testart" },
+  { key: "frageform", label: "Frageform" },
+  { key: "herkunft", label: "Herkunft" },
+  { key: "status", label: "Status" },
+] as const;
+
+type FilterKey = (typeof FILTERS)[number]["key"];
+
+const NO_LABELS: LabelValues = { kategorie: [], testart: [], frageform: [], herkunft: [] };
 type Direction = "asc" | "desc";
 
 const COLLATOR = new Intl.Collator("de", { numeric: true, sensitivity: "base" });
@@ -32,6 +45,8 @@ function compare(a: EvalCase, b: EvalCase, key: SortKey): number {
       );
     case "nummer":
       return a.nummer - b.nummer;
+    case "testart":
+      return COLLATOR.compare(a.testart ?? "", b.testart ?? "");
     default:
       return COLLATOR.compare(a[key], b[key]);
   }
@@ -43,6 +58,11 @@ function sortCases(cases: EvalCase[], key: SortKey, direction: Direction): EvalC
   return [...cases].sort(
     (a, b) => sign * (compare(a, b, key) || compare(a, b, "nummer")),
   );
+}
+
+/** The value a filter compares, empty where the case has none. */
+function filterValue(entry: EvalCase, key: FilterKey): string {
+  return key === "status" ? statusOf(entry) : (entry[key] ?? "");
 }
 
 function SortHeader({
@@ -96,8 +116,14 @@ export function CaseTable({
   onApprove,
   onWithdraw,
   approver = "",
+  offered = NO_LABELS,
+  onLabelsChanged = () => {},
 }: {
   cases: EvalCase[];
+  /** The values to suggest when editing labels (#288). */
+  offered?: LabelValues;
+  /** A case's labels or tag were saved, so the list is stale. */
+  onLabelsChanged?: () => void;
   /** Who approves a variant, recorded with it. The signed-in user. */
   approver?: string;
   busy: boolean;
@@ -119,16 +145,32 @@ export function CaseTable({
     );
   }
 
-  const sorted = sortCases(cases, sort.key, sort.direction);
-  // One open at a time: each panel talks to the judge model, and a table full
-  // of open editors is hard to read.
-  const [variantsOpen, setVariantsOpen] = useState<number | null>(null);
+  // "" means no filter on that dimension.
+  const [filters, setFilters] = useState<Record<FilterKey, string>>({
+    kategorie: "",
+    testart: "",
+    frageform: "",
+    herkunft: "",
+    status: "",
+  });
+  const shown = cases.filter((entry) =>
+    FILTERS.every(({ key }) => !filters[key] || filterValue(entry, key) === filters[key]),
+  );
+  const sorted = sortCases(shown, sort.key, sort.direction);
+  // One panel open at a time: a table full of open editors is hard to read.
+  const [panel, setPanel] = useState<{ nummer: number; what: "varianten" | "labels" } | null>(
+    null,
+  );
+  const toggle = (nummer: number, what: "varianten" | "labels") =>
+    setPanel((open) =>
+      open?.nummer === nummer && open.what === what ? null : { nummer, what },
+    );
 
   return (
     <section className="space-y-2">
       <div className="flex items-center gap-3">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Testfälle ({cases.length})
+          Testfälle ({shown.length === cases.length ? cases.length : `${shown.length} von ${cases.length}`})
         </h3>
         <button
           type="button"
@@ -139,6 +181,32 @@ export function CaseTable({
           Neuer Testfall
         </button>
       </div>
+
+      {cases.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {FILTERS.map(({ key, label }) => {
+            const values = [...new Set(cases.map((c) => filterValue(c, key)))]
+              .filter(Boolean)
+              .sort((a, b) => COLLATOR.compare(a, b));
+            return (
+              <select
+                key={key}
+                aria-label={`Filter ${label}`}
+                value={filters[key]}
+                onChange={(e) => setFilters((f) => ({ ...f, [key]: e.target.value }))}
+                className="rounded-md border bg-background px-2 py-1"
+              >
+                <option value="">{label}: alle</option>
+                {values.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            );
+          })}
+        </div>
+      )}
 
       {cases.length === 0 ? (
         <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
@@ -151,7 +219,9 @@ export function CaseTable({
             <thead className="bg-muted/40 text-left">
               <tr>
                 <SortHeader label="Nr." column="nummer" sort={sort} onSort={onSort} />
-                <SortHeader label="Kategorie" column="kategorie" sort={sort} onSort={onSort} />
+                <SortHeader label="Tag" column="tag" sort={sort} onSort={onSort} />
+                <SortHeader label="Bereich" column="kategorie" sort={sort} onSort={onSort} />
+                <SortHeader label="Testart" column="testart" sort={sort} onSort={onSort} />
                 <SortHeader
                   label="Ausgangsfrage"
                   column="ausgangsfrage"
@@ -175,15 +245,21 @@ export function CaseTable({
                     <tr className="border-t">
                       <td className="whitespace-nowrap px-3 py-2 font-medium">
                         {entry.nummer}
-                        <span className="ml-2 font-mono font-normal text-muted-foreground">
-                          {entry.tag}
-                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 font-mono">
+                        {entry.tag}
                       </td>
                       <td className="px-3 py-2">{entry.kategorie}</td>
+                      <td className="px-3 py-2">{entry.testart || "—"}</td>
                       <td className="max-w-md px-3 py-2">
                         <span className="line-clamp-2">
                           {latest?.ausgangsfrage}
                         </span>
+                        {(entry.frageform || entry.herkunft) && (
+                          <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                            {[entry.frageform, entry.herkunft].filter(Boolean).join(" · ")}
+                          </span>
+                        )}
                         {latest?.grenzfall && (
                           <Badge variant="outline" className="mt-1">
                             Grenzfall
@@ -251,17 +327,26 @@ export function CaseTable({
                             {approved && (
                               <button
                                 type="button"
-                                onClick={() =>
-                                  setVariantsOpen((open) =>
-                                    open === entry.nummer ? null : entry.nummer,
-                                  )
+                                onClick={() => toggle(entry.nummer, "varianten")}
+                                aria-expanded={
+                                  panel?.nummer === entry.nummer && panel.what === "varianten"
                                 }
-                                aria-expanded={variantsOpen === entry.nummer}
                                 className="rounded-md border px-2 py-1"
                               >
                                 Varianten
                               </button>
                             )}
+                            <button
+                              type="button"
+                              onClick={() => toggle(entry.nummer, "labels")}
+                              aria-expanded={
+                                panel?.nummer === entry.nummer && panel.what === "labels"
+                              }
+                              className="rounded-md border px-2 py-1"
+                              title="Tag und Labels ändern. Legt keine neue Version an."
+                            >
+                              Labels
+                            </button>
                             <button
                               type="button"
                               onClick={() => onWithdraw(entry.nummer)}
@@ -275,10 +360,19 @@ export function CaseTable({
                         )}
                       </td>
                     </tr>
-                    {variantsOpen === entry.nummer && (
+                    {panel?.nummer === entry.nummer && (
                       <tr>
-                        <td colSpan={6} className="px-3 pb-3">
-                          <VariantPanel nummer={entry.nummer} approver={approver} />
+                        <td colSpan={8} className="px-3 pb-3">
+                          {panel.what === "varianten" ? (
+                            <VariantPanel nummer={entry.nummer} approver={approver} />
+                          ) : (
+                            <LabelPanel
+                              key={`${entry.nummer}-${entry.tag}`}
+                              entry={entry}
+                              offered={offered}
+                              onSaved={onLabelsChanged}
+                            />
+                          )}
                         </td>
                       </tr>
                     )}

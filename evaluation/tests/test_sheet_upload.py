@@ -148,7 +148,7 @@ class TestABadRow:
     def test_a_bad_row_writes_nothing_at_all(self, client):
         """All or nothing. A sheet half-imported leaves somebody reconciling
         which rows landed, which is worse than importing none of them."""
-        _post(client, _sheet([ORDENTLICH, {**ORDENTLICH, "Kategorie": "XX"}]))
+        _post(client, _sheet([ORDENTLICH, {**ORDENTLICH, "Kategorie": "X-X!"}]))
 
         assert client.get("/api/eval/cases").json() == []
 
@@ -171,7 +171,7 @@ class TestAReviewerDocument:
         assert {v["status"] for c in cases for v in c["versions"]} == {"entwurf"}
 
     def test_the_row_survives_the_trip(self, client, tmp_path):
-        row = ("XY09", "Frage?", "Antwort.", "WD 3 - 3000 - 001/25", "")
+        row = ("XY09", "Frage?", "Antwort.", "Ein Gutachten ohne Aktenzeichen", "")
 
         response = _post(client, _document(tmp_path, [row]).read_bytes())
 

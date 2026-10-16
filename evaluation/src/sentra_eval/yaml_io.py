@@ -26,12 +26,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy.orm import Session
 
 from sentra_eval import cases as case_store
 from sentra_eval.bestand import Bestand
-from sentra_eval.categories import Kategorie
+from sentra_eval.labels import LabelError, normalise_kategorie
 from sentra_eval.models import FREIGEGEBEN, Case, CaseVersion
 
 # The fields that make up a case's content. Identity (nummer, tag) and bookkeeping
@@ -61,7 +61,14 @@ class CaseEntry(BaseModel):
     # it. Writing one by hand is how a number gets reused.
     nummer: int | None = None
     tag: str = ""
-    kategorie: Kategorie
+    # An open list (#286): a built-in category or any short code.
+    kategorie: str
+    # Labels (#286). None means the file does not say, and leaves the case's
+    # label alone: re-importing an older file must not wipe labels set on
+    # screen since.
+    testart: str | None = None
+    frageform: str | None = None
+    herkunft: str | None = None
     ausgangsfrage: str = Field(min_length=1)
     abteilung: str = ""
     erwartete_antwort: str = ""
@@ -76,8 +83,24 @@ class CaseEntry(BaseModel):
     # approve button performs.
     status: str = "entwurf"
 
+    @field_validator("kategorie")
+    @classmethod
+    def _kategorie(cls, value: str) -> str:
+        try:
+            return normalise_kategorie(value)
+        except LabelError as exc:
+            raise ValueError(str(exc)) from exc
+
     def content(self) -> dict[str, Any]:
         return {name: getattr(self, name) for name in CONTENT_FIELDS}
+
+    def labels(self) -> dict[str, str]:
+        """The labels the file gives, and only those."""
+        return {
+            name: value
+            for name in ("testart", "frageform", "herkunft")
+            if (value := getattr(self, name)) is not None
+        }
 
 
 @dataclass
@@ -180,7 +203,15 @@ def apply(
 
 
 def _create(session: Session, entry: CaseEntry, report: ImportReport) -> None:
-    case, version = case_store.create_case(session, kategorie=entry.kategorie, **entry.content())
+    given = entry.labels()
+    case, version = case_store.create_case(
+        session,
+        kategorie=entry.kategorie,
+        testart=given.get("testart", ""),
+        frageform=given.get("frageform", ""),
+        herkunft=given.get("herkunft", "manuell"),
+        **entry.content(),
+    )
     _tag_if_given(session, entry, case)
     report.created.append(case.tag)
     _approve_if_asked(session, entry, case, version, report)
@@ -205,6 +236,7 @@ def _update(
                 nummer=entry.nummer,
                 tag=entry.tag,
                 kategorie=entry.kategorie,
+                **entry.labels(),
                 **entry.content(),
             )
         except case_store.CaseError as seed_exc:
@@ -213,7 +245,8 @@ def _update(
         _approve_if_asked(session, entry, case, version, report)
         return
 
-    retagged = _tag_if_given(session, entry, case)
+    relabelled = _labels_if_changed(session, entry, case)
+    retagged = _tag_if_given(session, entry, case) or relabelled
     latest = case.versions[-1]
     if _content_of(latest) == entry.content():
         # Identical content. The only thing left that could differ is approval,
@@ -249,6 +282,19 @@ def _approve(session: Session, case: Case, version: CaseVersion, report: ImportR
     report.approved.append(case.tag)
 
 
+def _labels_if_changed(session: Session, entry: CaseEntry, case: Case) -> bool:
+    """Apply the file's category and labels where they differ. Whether any did."""
+    changes: dict[str, str] = {
+        name: value for name, value in entry.labels().items() if getattr(case, name) != value
+    }
+    if entry.kategorie != case.kategorie:
+        changes["kategorie"] = entry.kategorie
+    if not changes:
+        return False
+    case_store.set_labels(session, case, **changes)
+    return True
+
+
 def _tag_if_given(session: Session, entry: CaseEntry, case: Case) -> bool:
     """Apply the file's tag if it has one that differs. Whether it did."""
     tag = entry.tag.strip()
@@ -278,6 +324,9 @@ def dump(session: Session, *, include_withdrawn: bool = False) -> str:
                 "nummer": case.nummer,
                 "tag": case.tag,
                 "kategorie": case.kategorie,
+                "testart": case.testart,
+                "frageform": case.frageform,
+                "herkunft": case.herkunft,
                 **_content_of(latest),
                 "status": latest.status,
             }

@@ -67,9 +67,7 @@ function renderTable() {
 /** The tag in each row, in the order shown. */
 function shownIds(): string[] {
   const rows = screen.getAllByRole("row").slice(1);
-  return rows.map(
-    (row) => within(row).getAllByRole("cell")[0].querySelector("span")?.textContent ?? "",
-  );
+  return rows.map((row) => within(row).getAllByRole("cell")[1].textContent ?? "");
 }
 
 function header(name: string) {
@@ -95,10 +93,10 @@ describe("sorting the Testfälle", () => {
     );
   });
 
-  it("sorts by Kategorie, with the number deciding within one", async () => {
+  it("sorts by Bereich, with the number deciding within one", async () => {
     renderTable();
 
-    await userEvent.click(header("Kategorie"));
+    await userEvent.click(header("Bereich"));
 
     expect(shownIds()).toEqual(["FI-001", "WI-002", "WI-009", "WI-010"]);
   });
@@ -179,5 +177,52 @@ describe("variants", () => {
     );
 
     expect(screen.getAllByRole("button", { name: "Varianten" })).toHaveLength(1);
+  });
+});
+
+describe("filtering and labels", () => {
+  const labelled = [
+    { ...testCase("FI-001", "Eins?", "entwurf"), testart: "Präzision", frageform: "konkret" },
+    { ...testCase("FI-002", "Zwei?", "freigegeben"), testart: "Regelfall", frageform: "allgemein" },
+    { ...testCase("WI-003", "Drei?", "entwurf"), testart: "Präzision", frageform: "allgemein" },
+  ];
+
+  function renderLabelled() {
+    render(
+      <CaseTable
+        cases={labelled}
+        busy={false}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onApprove={vi.fn()}
+        onWithdraw={vi.fn()}
+      />,
+    );
+  }
+
+  it("narrows the table to one value of a label (#288)", async () => {
+    renderLabelled();
+
+    await userEvent.selectOptions(screen.getByLabelText("Filter Testart"), "Präzision");
+
+    expect(shownIds()).toEqual(["FI-001", "WI-003"]);
+    expect(screen.getByText(/Testfälle \(2 von 3\)/)).toBeInTheDocument();
+  });
+
+  it("combines filters", async () => {
+    renderLabelled();
+
+    await userEvent.selectOptions(screen.getByLabelText("Filter Testart"), "Präzision");
+    await userEvent.selectOptions(screen.getByLabelText("Filter Bereich"), "WI");
+
+    expect(shownIds()).toEqual(["WI-003"]);
+  });
+
+  it("opens a case's labels for editing", async () => {
+    renderLabelled();
+
+    await userEvent.click(screen.getAllByRole("button", { name: "Labels" })[0]);
+
+    expect(screen.getByLabelText("Tag")).toHaveValue("FI-001");
   });
 });

@@ -20,13 +20,18 @@ import type { CaseDraft } from "@/types";
 export function CaseForm({
   initial,
   categories,
+  testarten,
   editingApproved,
   onSubmit,
   onCancel,
   submitting,
 }: {
   initial: CaseDraft;
+  /** Suggestions for Bereich, an open list (#286). */
   categories: string[];
+  /** Suggestions for Testart. Given only when creating: an existing case's
+   *  labels change through the Labels panel, without a new version. */
+  testarten?: string[];
   /** The latest version is approved, so this will add a new version rather
    *  than change what any past round measured against. Said plainly, because
    *  an "edit" that silently forks would be surprising the other way. */
@@ -63,19 +68,42 @@ export function CaseForm({
       )}
 
       <div className="grid gap-3 sm:grid-cols-[10rem_1fr]">
-        <Field label="Kategorie">
-          <select
+        <Field label="Bereich">
+          <input
+            list="case-form-kategorien"
             value={draft.kategorie}
             onChange={(e) => set("kategorie", e.target.value)}
-            className="w-full rounded-md border bg-background px-2 py-1 text-xs"
-          >
-            {categories.map((k) => (
-              <option key={k} value={k}>
-                {k}
-              </option>
-            ))}
-          </select>
+            disabled={testarten === undefined}
+            title={
+              testarten === undefined ? "Bereich ändern über „Labels“ in der Tabelle." : undefined
+            }
+            className="w-full rounded-md border bg-background px-2 py-1 text-xs disabled:opacity-60"
+          />
         </Field>
+        <datalist id="case-form-kategorien">
+          {categories.map((k) => (
+            <option key={k} value={k} />
+          ))}
+        </datalist>
+
+        {testarten !== undefined && (
+          <Field label="Testart">
+            <input
+              list="case-form-testarten"
+              value={draft.testart ?? ""}
+              onChange={(e) => set("testart", e.target.value)}
+              placeholder="z. B. Regelfall"
+              className="w-full rounded-md border bg-background px-2 py-1 text-xs"
+            />
+          </Field>
+        )}
+        {testarten !== undefined && (
+          <datalist id="case-form-testarten">
+            {testarten.map((t) => (
+              <option key={t} value={t} />
+            ))}
+          </datalist>
+        )}
 
         <Field label="Abteilung / Fachbereich">
           <input

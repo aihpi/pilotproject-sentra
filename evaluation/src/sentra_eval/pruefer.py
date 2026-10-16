@@ -49,6 +49,8 @@ _PRUEFER_ID = "pruefer_id"
 _FALSCH_PREFIX = "referenzquelle(thematisch"
 _COLUMNS = {
     "test-id": _PRUEFER_ID,
+    # Not in the template the reviewers were sent; read when someone adds it.
+    "testart": "testart",
     "ausgangsfrage": "ausgangsfrage",
     "referenzquelle(korrekt)": "erwartete_antwort",
     "referenzquelle": "referenz_korrekt",
@@ -116,16 +118,14 @@ def _entries_for_row(werte: dict[str, str], row_number: int, label: str) -> list
     korrekt_az = first_aktenzeichen(werte["referenz_korrekt"])
     falsch_az = first_aktenzeichen(werte.get("referenz_falsch", ""))
 
-    kategorie = category_for_fachbereich(korrekt_az)
-    if kategorie is None:
+    if not korrekt_az:
         raise VorlageError(
-            f"{where}: aus der Referenzquelle lässt sich keine Kategorie ableiten"
-            + (
-                f" (Fachbereich von {korrekt_az} hat keine)."
-                if korrekt_az
-                else ", weil sie kein Aktenzeichen enthält."
-            )
+            f"{where}: aus der Referenzquelle lässt sich kein Bereich ableiten, "
+            "weil sie kein Aktenzeichen enthält."
         )
+    # A Fachbereich without a category of its own becomes one: categories are
+    # an open list since #286, so WD 3 is "WD3" rather than an error.
+    kategorie = category_for_fachbereich(korrekt_az) or _fachbereich_code(korrekt_az)
 
     # Kept as a check rather than refused (#249): a submission has to load as
     # it was sent. With the same paper in both fields 4.3b could never pass, so
@@ -150,7 +150,7 @@ def _entries_for_row(werte: dict[str, str], row_number: int, label: str) -> list
     for art, frage in fragen:
         herkunft = ", ".join(part for part in (pruefer_id or f"Zeile {row_number}", art) if part)
         entry: dict[str, Any] = {
-            "kategorie": kategorie.value,
+            "kategorie": kategorie,
             "ausgangsfrage": frage,
             "abteilung": "",
             "erwartete_antwort": werte["erwartete_antwort"],
@@ -159,6 +159,9 @@ def _entries_for_row(werte: dict[str, str], row_number: int, label: str) -> list
             "referenz_falsch": werte.get("referenz_falsch", ""),
             "referenz_falsch_az": falsch_az,
             "grund_fuer_aufnahme": f"Prüfer-Vorlage ({herkunft}){hinweis}",
+            "testart": werte.get("testart", ""),
+            "frageform": art.lower(),
+            "herkunft": HERKUNFT,
             "grenzfall": False,
             "status": "entwurf",
         }
@@ -184,6 +187,14 @@ def split_questions(text: str) -> list[tuple[str, str]]:
         if frage:
             fragen.append((marker.capitalize(), frage))
     return fragen
+
+
+HERKUNFT = "Prüfer-Vorlage"
+
+
+def _fachbereich_code(aktenzeichen: str) -> str:
+    """ "WD 3 - 3000 - 058/25" → "WD3"."""
+    return aktenzeichen.split(" - ", 1)[0].replace(" ", "")
 
 
 def first_aktenzeichen(text: str) -> str:
