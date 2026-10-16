@@ -44,7 +44,11 @@ export function Header({
 
   return (
     <header className="border-b bg-white">
-      <div className="relative mx-auto flex h-16 max-w-7xl items-center px-6">
+      {/* Three columns rather than an absolutely centered title (#262). The
+          title stays centered while there is room; when the tabs need more,
+          the 1fr column grows past its share and pushes the title aside
+          instead of the tabs being drawn over it. */}
+      <div className="mx-auto grid h-16 max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-4 px-6">
         <div className="flex items-center gap-3">
           <img
             src="/logo_aisc_bmftr.jpg"
@@ -53,11 +57,11 @@ export function Header({
           />
         </div>
 
-        <h1 className="absolute left-1/2 -translate-x-1/2 text-2xl font-bold text-primary">
+        <h1 className="text-2xl font-bold text-primary">
           SENTRA
         </h1>
 
-        <nav className="ml-auto flex items-center gap-1">
+        <nav className="flex items-center justify-end gap-1">
           {visible.map((item) => (
             <button
               key={item.key}
