@@ -192,12 +192,17 @@ def _retrieved_numbers(hits: list) -> list[int]:
     for hit in hits:
         if not isinstance(hit, dict):
             continue
-        # Keyed as SENTRA keys them: by Aktenzeichen, or by file for the
-        # documents without one (#280). Older payloads carry no file and fall
-        # back to the Aktenzeichen alone, as before.
-        key = hit.get("aktenzeichen") or hit.get("source_file")
-        if key:
-            seen.setdefault(key, len(seen) + 1)
+        # Keyed as SENTRA keyed them when it answered. Since #280 that is the
+        # Aktenzeichen, or the file for a document without one. A payload from
+        # before carries no file, and SENTRA then numbered every document
+        # without an Aktenzeichen as one source, so "" is a key there (#300).
+        if "source_file" in hit:
+            key = hit.get("aktenzeichen") or hit.get("source_file")
+            if not key:
+                continue
+        else:
+            key = hit.get("aktenzeichen") or ""
+        seen.setdefault(key, len(seen) + 1)
     return list(seen.values())
 
 

@@ -85,3 +85,17 @@ describe("the numbering", () => {
     expect(numbers).toEqual(["1", "2"]);
   });
 });
+
+describe("documents without an Aktenzeichen", () => {
+  it("are told apart by file, so selecting one highlights only that one (#300)", () => {
+    const first: SourceRef = { ...PLAIN, aktenzeichen: "", source_file: "AB 04-24.pdf", nummer: 1 };
+    const second: SourceRef = { ...PLAIN, aktenzeichen: "", source_file: "AB 10-23.pdf", nummer: 2 };
+
+    render(<SourceCards sources={[first, second]} onSelect={() => {}} selected="AB 10-23.pdf" />);
+
+    const cards = screen.getAllByRole("button");
+    expect(cards).toHaveLength(2);
+    expect(cards[0].className).not.toContain("ring-1");
+    expect(cards[1].className).toContain("ring-1");
+  });
+});

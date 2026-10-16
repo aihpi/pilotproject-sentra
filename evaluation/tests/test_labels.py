@@ -34,3 +34,9 @@ def test_a_category_is_normalised(value, expected):
 def test_a_malformed_category_is_refused(value):
     with pytest.raises(labels.LabelError):
         labels.normalise_kategorie(value)
+
+
+def test_every_herkunft_an_importer_writes_is_offered():
+    from sentra_eval import pruefer, vorlagen
+
+    assert {pruefer.HERKUNFT, vorlagen.HERKUNFT, "Feedback", "manuell"} <= set(labels.HERKUENFTE)

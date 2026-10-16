@@ -109,6 +109,12 @@ class TestDrafting:
         version = case_store.get_case(session, case.nummer).versions[-1]
         assert version.ausgangsfrage == "Wie lange darf ein Redner im Plenum sprechen?"
 
+    def test_its_herkunft_is_feedback(self, session):
+        """As migration 0014 labels the older ones (#300)."""
+        case, _ = feedback.draft_case(session, _entry(), kategorie=Kategorie.GO)
+
+        assert case.herkunft == "Feedback"
+
     def test_the_complaint_becomes_the_reason_for_inclusion(self, session):
         case, _ = feedback.draft_case(session, _entry(), kategorie=Kategorie.GO)
 

@@ -5,7 +5,9 @@ pointed at, and a label carrying the category. A label must be correctable and
 an identity must not change, so they are split (#285):
 
   nummer   a global running number, never changed and never reused
-  tag      the old Test-ID for existing cases; generated or set by hand later
+  tag      the old Test-ID for existing cases, kept as if set by hand so a
+           later label change does not replace it (#300); clearing it hands
+           the case to the generator
 
 Existing cases are numbered in the order they were created, and keep their
 Test-ID as their tag. The per-category counters become generic counters, so a
@@ -49,7 +51,8 @@ def upgrade() -> None:
     ids = bind.execute(sa.text("SELECT id FROM cases ORDER BY created_at, tag")).scalars().all()
     for number, case_id in enumerate(ids, start=1):
         bind.execute(
-            sa.text("UPDATE cases SET nummer = :n WHERE id = :id"), {"n": number, "id": case_id}
+            sa.text("UPDATE cases SET nummer = :n, tag_manuell = :manuell WHERE id = :id"),
+            {"n": number, "manuell": True, "id": case_id},
         )
     bind.execute(
         sa.text("INSERT INTO counters (name, next_number) VALUES (:name, :n)"),
