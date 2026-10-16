@@ -62,7 +62,7 @@ class TestParsing:
     def test_a_problem_names_the_case_and_the_field(self):
         """Whoever wrote the file wrote YAML, so they are told which case and
         which key — not about `loc` and `input_value`."""
-        text = "- nummer: 7\n  kategorie: ZZ\n  ausgangsfrage: x\n"
+        text = "- nummer: 7\n  kategorie: Z-Z!\n  ausgangsfrage: x\n"
 
         with pytest.raises(yaml_io.CaseFileError) as caught:
             yaml_io.parse(text)
@@ -263,7 +263,7 @@ class TestTheCli:
 
     def test_a_bad_file_exits_nonzero_and_says_why(self, cli, tmp_path, capsys):
         source = tmp_path / "cases.yaml"
-        source.write_text("- kategorie: ZZ\n  ausgangsfrage: x\n", encoding="utf-8")
+        source.write_text("- kategorie: Z-Z!\n  ausgangsfrage: x\n", encoding="utf-8")
 
         assert cli(["import", str(source)]) == 1
         assert "kategorie" in capsys.readouterr().err
@@ -275,3 +275,43 @@ class TestTheCli:
         example = Path(__file__).resolve().parents[1] / "cases" / "beispiel.yaml"
 
         assert cli(["import", str(example)]) == 0
+
+
+class TestLabels:
+    """Labels in the file (#287). Absent means "the file does not say"."""
+
+    def test_labels_in_the_file_are_applied(self, session):
+        text = ONE_CASE.replace("- kategorie: GO", "- testart: Präzision\n  kategorie: GO")
+
+        _apply(session, text)
+
+        case = case_store.get_case(session, 1)
+        assert case.testart == "Präzision"
+        assert case.tag == "GO-PRZ-001"
+
+    def test_they_survive_the_round_trip(self, session):
+        _apply(session, ONE_CASE.replace("- kategorie: GO", "- testart: Synthese\n  kategorie: GO"))
+        before = yaml_io.dump(session)
+
+        report = _apply(session, before)
+
+        assert report.unchanged == [case_store.get_case(session, 1).tag]
+        assert yaml_io.dump(session) == before
+
+    def test_a_file_without_labels_leaves_them_alone(self, session):
+        """An older file re-imported must not wipe labels set on screen since."""
+        _apply(session, ONE_CASE)
+        case_store.set_labels(session, case_store.get_case(session, 1), testart="Synthese")
+
+        _apply(session, ONE_CASE.replace("- kategorie: GO", "- nummer: 1\n  kategorie: GO"))
+
+        assert case_store.get_case(session, 1).testart == "Synthese"
+
+    def test_a_changed_label_counts_as_an_update(self, session):
+        _apply(session, ONE_CASE)
+        text = yaml_io.dump(session).replace("testart: ''", "testart: Quellenwahl")
+
+        report = _apply(session, text)
+
+        assert len(report.updated) == 1
+        assert case_store.get_case(session, 1).testart == "Quellenwahl"
