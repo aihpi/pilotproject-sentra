@@ -356,6 +356,7 @@ def _run_response(session: Session, run: Run) -> RunResponse:
         stichprobe_seed=run.stichprobe_seed,
         stichprobe_anteil=run.stichprobe_anteil,
         ragas_aktiv=run.ragas_aktiv,
+        varianten_aktiv=run.varianten_aktiv,
         total=state.total,
         done=state.done,
         failed=state.failed,
@@ -379,6 +380,7 @@ def start_run(body: StartRunRequest, background: BackgroundTasks) -> RunResponse
                 stichprobe_anteil=body.stichprobe_anteil,
                 stichprobe_seed=body.stichprobe_seed,
                 ragas_aktiv=body.ragas_aktiv,
+                varianten_aktiv=body.varianten_aktiv,
             )
         except run_store.RunnerError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
