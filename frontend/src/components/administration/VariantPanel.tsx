@@ -8,11 +8,22 @@ import {
 } from "@/lib/evalApi";
 import { Badge } from "@/components/ui/badge";
 
+// In the Vorlage's order, which is also the order they are shown in. The
+// backend returns them alphabetically (#282).
 const STIL_LABEL: Record<string, string> = {
   umgangssprachlich: "Umgangssprachlich",
   fachsprachlich: "Fachsprachlich",
   verkuerzt: "Verkürzt",
 };
+const STIL_ORDER = Object.keys(STIL_LABEL);
+
+function inVorlageOrder(variants: EvalVariant[]): EvalVariant[] {
+  const rank = (stil: string) => {
+    const index = STIL_ORDER.indexOf(stil);
+    return index === -1 ? STIL_ORDER.length : index;
+  };
+  return [...variants].sort((a, b) => rank(a.stil) - rank(b.stil));
+}
 
 /** The three rewordings of one case's question (4.2, #265).
  *
@@ -102,7 +113,7 @@ export function VariantPanel({
       )}
 
       <ul className="space-y-2">
-        {variants.map((variant) => {
+        {inVorlageOrder(variants).map((variant) => {
           const approved = variant.status === "freigegeben";
           const draft = drafts[variant.stil];
           const changed = draft !== undefined && draft !== variant.wortlaut;

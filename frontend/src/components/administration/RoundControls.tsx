@@ -128,8 +128,18 @@ export function RoundControls({
               const file = e.target.files?.[0];
               if (file) void upload(file);
             }}
-            className="text-xs file:mr-2 file:rounded-md file:border file:bg-background file:px-2 file:py-1 file:text-xs"
+            // Hidden behind the button below: the browser's own control says
+            // "Choose File / No file chosen" in a German screen (#282).
+            className="hidden"
           />
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => fileInput.current?.click()}
+            className="self-start rounded-md border bg-background px-2 py-1 text-xs disabled:opacity-50"
+          >
+            {busy ? "Wird hochgeladen …" : "Datei auswählen"}
+          </button>
         </div>
       </div>
 

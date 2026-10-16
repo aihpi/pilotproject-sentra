@@ -97,9 +97,13 @@ export function DocumentPane() {
       <section className="space-y-2">
         <div className="flex items-baseline gap-3">
           <h3 className="text-sm font-semibold">Dokumente im Index</h3>
-          <span className="text-xs text-muted-foreground">
-            {documents.length} Dokumente
-          </span>
+          {/* Not while loading: the list takes seconds, and "0 Dokumente" in
+              the meantime claims the index is empty (#282). */}
+          {!loading && (
+            <span className="text-xs text-muted-foreground">
+              {documents.length} {documents.length === 1 ? "Dokument" : "Dokumente"}
+            </span>
+          )}
         </div>
 
         <p className="text-xs text-muted-foreground">
