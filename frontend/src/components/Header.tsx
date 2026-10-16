@@ -44,24 +44,23 @@ export function Header({
 
   return (
     <header className="border-b bg-white">
-      {/* Three columns rather than an absolutely centered title (#262). The
-          title stays centered while there is room; when the tabs need more,
-          the 1fr column grows past its share and pushes the title aside
-          instead of the tabs being drawn over it. */}
-      <div className="mx-auto grid h-16 max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-4 px-6">
-        <div className="flex items-center gap-3">
+      {/* Brand on the left, navigation on the right (#262). The title used to
+          be centered between them, where a signed-in admin's tabs first ran
+          over it and then sat right beside it, reading as one more tab. Next
+          to the logo, set apart by a rule, it can only be the title. */}
+      <div className="mx-auto flex h-16 max-w-7xl items-center gap-6 px-6">
+        <div className="flex shrink-0 items-center gap-4">
           <img
             src="/logo_aisc_bmftr.jpg"
             alt="KI Service Zentrum"
             className="h-10"
           />
+          <h1 className="border-l pl-4 text-2xl font-bold tracking-wide text-primary">
+            SENTRA
+          </h1>
         </div>
 
-        <h1 className="text-2xl font-bold text-primary">
-          SENTRA
-        </h1>
-
-        <nav className="flex items-center justify-end gap-1">
+        <nav className="ml-auto flex items-center gap-1">
           {visible.map((item) => (
             <button
               key={item.key}
