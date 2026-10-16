@@ -37,6 +37,13 @@ beforeEach(() => {
 });
 
 describe("uploading", () => {
+  it("asks for batches of about 100 and says a stopped ingest can be restarted", () => {
+    render(<DocumentUpload onUploaded={vi.fn()} />);
+
+    expect(screen.getByText(/höchstens etwa 100 Dokumente/)).toBeInTheDocument();
+    expect(screen.getByText(/einfach erneut starten/)).toBeInTheDocument();
+  });
+
   it("sends the chosen files", async () => {
     uploadDocuments.mockResolvedValue(
       answer({ accepted: 1, files: [{ name: "a.pdf", accepted: true, size_bytes: 4, reason: null }] }),
@@ -65,7 +72,7 @@ describe("uploading", () => {
     );
 
     expect(await screen.findByText(/2 Dateien hochgeladen/)).toBeInTheDocument();
-    expect(screen.getByText(/Dokumente einlesen/)).toBeInTheDocument();
+    expect(screen.getByText(/sobald „Dokumente einlesen“ gelaufen ist/)).toBeInTheDocument();
   });
 
   it("reports the rejected files individually, keeping the accepted ones", async () => {
