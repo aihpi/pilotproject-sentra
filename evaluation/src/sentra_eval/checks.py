@@ -152,18 +152,60 @@ AUSGERICHTET = "Marker und Quellen stimmen überein"
 NICHT_AUSGERICHTET = "Marker und Quellen weichen ab"
 
 # "[1]", "[12]". Markdown bold around it ("**[1]**") is what the prompts ask
-# for, and the brackets are what the model actually emits either way.
-MARKER_PATTERN = re.compile(r"\[(\d{1,2})\]")
+# for, and the brackets are what the model actually emits either way. Also the
+# lists a model sometimes writes, "[1, 3]", read the same way SENTRA reads them
+# when it decides which sources to return (#268).
+MARKER_PATTERN = re.compile(r"\[(\d{1,2}(?:\s*[,;]\s*\d{1,2})*)\]")
+
+
+def _marker_numbers(text: str) -> list[int]:
+    return sorted(
+        {
+            int(number)
+            for group in MARKER_PATTERN.findall(text)
+            for number in re.split(r"\s*[,;]\s*", group)
+        }
+    )
+
+
+def _source_numbers(sources: list) -> list[int]:
+    """The number each source is cited by.
+
+    Its `nummer` since #268, when SENTRA started returning only cited sources
+    and position stopped meaning anything. A response stored by an earlier
+    round has none, and there position is what the number was.
+    """
+    numbers = [s.get("nummer") for s in sources if isinstance(s, dict)]
+    numbered = [n for n in numbers if isinstance(n, int) and n > 0]
+    if numbered and len(numbered) == len(sources):
+        return sorted(numbered)
+    return list(range(1, len(sources) + 1))
+
+
+def _retrieved_numbers(hits: list) -> list[int]:
+    """The numbers of every retrieved document, cited or not.
+
+    From the debug payload's passages, numbered as SENTRA numbers them: by
+    order of first appearance of the Aktenzeichen. Empty without a payload.
+    """
+    seen: dict[str, int] = {}
+    for hit in hits:
+        az = hit.get("aktenzeichen") if isinstance(hit, dict) else None
+        if az:
+            seen.setdefault(az, len(seen) + 1)
+    return list(seen.values())
 
 
 def marker_ausrichtung(response: dict) -> CheckOutcome:
     """Whether every [n] has an nth source, and every source is cited.
 
-    Both prompts state that a source number refers to the nth source in order
-    of first appearance. Nothing enforces it: the model counts for itself, and
-    _build_source_refs numbers independently. A [4] against three sources is
-    the visible half; a source nobody cited is the quieter half, and it means
-    the answer drew on less than it was given.
+    Since #268 every passage the model reads is headed with its source number,
+    and SENTRA returns only the sources whose number the answer uses, each with
+    that `nummer`. A marker with no source behind it, [7] against six retrieved
+    documents, is still possible: the model can invent a number. A source
+    nobody cited no longer reaches a new response at all; for one stored
+    before #268 it is the quieter half, an answer drawing on less than it was
+    given.
 
     This is 4.3a as far as the data allows and no further. format_context gives
     the model an Aktenzeichen, a section title and the chunk text — no page, no
@@ -174,20 +216,26 @@ def marker_ausrichtung(response: dict) -> CheckOutcome:
     text = response.get("text") or ""
     sources = response.get("sources") or []
 
-    used = sorted({int(m) for m in MARKER_PATTERN.findall(text)})
-    available = list(range(1, len(sources) + 1))
+    used = _marker_numbers(text)
+    available = _source_numbers(sources)
 
     dangling = [n for n in used if n not in available]
-    uncited = [n for n in available if n not in used]
+    # What the answer left unused out of what it was given. Since #268 the
+    # sources hold only cited documents, so this counts against everything
+    # retrieved, from the debug payload; a response without one falls back to
+    # its sources, which before #268 were everything retrieved anyway.
+    retrieved = _retrieved_numbers(response.get("hits") or []) or available
+    uncited = [n for n in retrieved if n not in used]
 
     belege = {
         "verwendete_marker": used,
         "anzahl_quellen": len(sources),
+        "anzahl_abgerufen": len(retrieved),
         # A marker pointing at a source that is not there. The model invented a
         # number, and a reviewer following it finds nothing.
         "marker_ohne_quelle": dangling,
-        # A source the answer never referred to. Evidence, not a finding — see
-        # below.
+        # A retrieved document the answer never referred to. Evidence, not a
+        # finding — see below.
         "quellen_ohne_marker": uncited,
     }
 
