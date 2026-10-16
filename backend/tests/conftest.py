@@ -60,6 +60,15 @@ def _placeholder_credentials_if_absent(env_file: Path) -> None:
 
 _placeholder_credentials_if_absent(ENV_FILE)
 
+# A login configured in the developer's .env is not one the suite should run
+# under (#272). With SENTRA_USERS set, the role guards close, and tests written
+# for an installation without a login get 401 on endpoints that are open there,
+# on this machine only, never in CI. Environment variables outrank the dotenv
+# file, so blanking them here wins; tests about the login pass their own users
+# and secret to Settings directly, which outranks both.
+os.environ["SENTRA_USERS"] = ""
+os.environ["SESSION_SECRET"] = ""
+
 
 # ── Constants ───────────────────────────────────────────────────────
 
