@@ -402,6 +402,10 @@ class TestChecksDuringARun:
         assert {r.pruefung for r in results} == {
             "quellenauswahl",
             "marker_ausrichtung",
+            # 4.3a since #189: the pages an answer names against the pages it
+            # drew on. "nicht prüfbar" here, since these fixtures carry no
+            # page — which is every chunk until the corpus is re-ingested.
+            "seitenangabe",
             "ablehnung",
             "abschneidung",
             "retrieval_recall",
@@ -462,8 +466,8 @@ class TestChecksDuringARun:
 
         # Three calls rescored: two answers and the recall probe.
         assert scored == 3
-        # Four checks on each answer, one on the probe.
-        assert len(session.execute(select(CheckResult)).scalars().all()) == 9
+        # Five checks on each answer since #189 added 4.3a, one on the probe.
+        assert len(session.execute(select(CheckResult)).scalars().all()) == 11
 
 
 # ── Group checks ────────────────────────────────────────────────────

@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { fetchConfig } from "@/lib/api";
-import type { AppConfig } from "@/types";
+import { atLeast } from "@/lib/session";
+import type { AppConfig, Session } from "@/types";
 import {
   ArrowRight,
   FolderSearch,
@@ -29,11 +30,16 @@ import { useExplorerSearch } from "./useExplorerSearch";
  * that can be described on their own moved out: the suggestion input, the
  * filter bar, the prompt editor, the result panel, and the decision about
  * which endpoint each sub-mode calls.
+ *
+ * It takes the session only to decide whether to offer the prompt editor. The
+ * backend refuses the field either way — see `api/auth.py::PromptRights` — and
+ * this spares a reader a button that would answer 403.
  */
-export function ExplorerView() {
+export function ExplorerView({ session }: { session?: Session | null }) {
   const [activeTab, setActiveTab] = useState<Tab>("dokumente");
   const [docSubMode, setDocSubMode] = useState<DocSubMode>("thema");
-  const [fragenSubMode, setFragenSubMode] = useState<FragenSubMode>("fachfrage");
+  const [fragenSubMode, setFragenSubMode] =
+    useState<FragenSubMode>("fachfrage");
   const [query, setQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -41,11 +47,22 @@ export function ExplorerView() {
   const [documentType, setDocumentType] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
 
-  const { isLoading, result, error, search, clear, setError } = useExplorerSearch();
+  const { isLoading, result, error, search, clear, setError } =
+    useExplorerSearch();
+
+  // Replacing the prompt is an experiment rather than a question, so it is the
+  // reviewer's to run. No session means no login is configured and everything
+  // is on offer, which is what the backend does in that case too.
+  const mayEditPrompt =
+    session === undefined ||
+    session === null ||
+    atLeast(session.rolle, "pruefer");
 
   // Prompt customisation, only for the fragen modes. Null means "use the
   // server's default" rather than "empty prompt".
-  const [customPrompts, setCustomPrompts] = useState<Record<string, string | null>>({
+  const [customPrompts, setCustomPrompts] = useState<
+    Record<string, string | null>
+  >({
     fachfrage: null,
     ueberblick: null,
   });
@@ -97,7 +114,10 @@ export function ExplorerView() {
       : undefined;
 
   const activeFilterCount =
-    (dateFrom ? 1 : 0) + (dateTo ? 1 : 0) + (fachbereich ? 1 : 0) + (documentType ? 1 : 0);
+    (dateFrom ? 1 : 0) +
+    (dateTo ? 1 : 0) +
+    (fachbereich ? 1 : 0) +
+    (documentType ? 1 : 0);
 
   const handleTabChange = (tab: Tab) => {
     setActiveTab(tab);
@@ -199,7 +219,11 @@ export function ExplorerView() {
       <div className="mb-3 rounded-xl border bg-card p-4 shadow-sm">
         <div className="flex gap-2">
           {currentSubMode === "aehnliche" ? (
-            <DocumentAutocomplete value={query} onChange={setQuery} onKeyDown={handleKeyDown} />
+            <DocumentAutocomplete
+              value={query}
+              onChange={setQuery}
+              onKeyDown={handleKeyDown}
+            />
           ) : (
             <Input
               value={query}
@@ -209,7 +233,7 @@ export function ExplorerView() {
               className="h-11 flex-1 text-sm"
             />
           )}
-          {activeTab === "fragen" && (
+          {activeTab === "fragen" && mayEditPrompt && (
             <Button
               variant="outline"
               size="icon"

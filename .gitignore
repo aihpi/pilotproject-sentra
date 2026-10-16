@@ -214,18 +214,16 @@ references/To do.md
 # that you had the spreadsheet open.
 .~lock.*#
 
-# The unsealed Secret that k8s/secrets/example-secret.yaml tells you to make.
-# That file has always said "secret.yaml is gitignored -- never commit real
-# secrets", and until now nothing here made that true. The sealed secret beside
-# it is the one that belongs in git; this is its plaintext input, and it holds
-# the AI Hub key and the registry database password.
+# The cluster's Secret, sealed or not. k8s/secrets/example-secret.yaml tells you
+# to make secret.yaml, which holds the AI Hub key and the database passwords in
+# plain text. The sealed copy used to be committed, as sealed-secrets intends,
+# but the repo is public and even the ciphertext should not be in it (#237).
+# Both are applied to the cluster by hand.
 #
 # Ignored rather than merely untracked, for the reason the note above already
 # gives: `git add -A` sweeps up untracked files.
-k8s/secrets/secret.yaml
-k8s/secrets/*-secret.yaml
+k8s/secrets/*.yaml
 !k8s/secrets/example-secret.yaml
-!k8s/secrets/sealed-secret.yaml
 
 # The sealed-secrets public certificate, if someone fetches it to seal with.
 # A public key — harmless if committed — but it is a local working file, and

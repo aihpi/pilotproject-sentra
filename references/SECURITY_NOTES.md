@@ -43,7 +43,8 @@ Verified in code and against the deployed instance.
 Worth not breaking: the path-traversal guard in `serve_document` rejects `/`,
 `\`, `..` and anything that is not a PDF, and Starlette percent-decodes before
 it runs, so `%2e%2e` is caught. Backend and Qdrant are ClusterIP rather than
-published. Secrets go through sealed-secrets rather than git.
+published. Secrets are sealed and applied by hand, so the public repo holds
+neither the values nor their ciphertext (#237).
 
 Symlinks under `documents_dir` are followed by `is_file()`. A filename cannot
 contain `/`, so the target must be a direct child, so only an operator can
@@ -130,3 +131,34 @@ use it.
 
 Step 0 is not on the path to step 1. It is a pilot affordance that steps 1 and
 2 replace.
+
+## What the `system_prompt` fix taught
+
+Gate the field, not the endpoint. The obvious implementation puts
+`require_role` on `/explorer/answer`, and it is wrong. The evaluation harness
+posts there with no credential at all, since `runner.py` builds its client with
+a base URL and a timeout and nothing else, so every round would get a 401 the
+moment a login was configured. The harness would report that as SENTRA being
+unreachable, which is a day spent looking in the wrong place. So the endpoint
+stays open and one field is closed. Everything that does not set
+`system_prompt` is untouched, which is every reader and every call a round
+makes, and that is what most of the tests pin.
+
+The harness never needed it. These notes used to say that the harness needs a
+custom system prompt and end users do not. The first half was wrong: nothing in
+`sentra_eval` sets one, it only reads the one SENTRA echoes back, for
+provenance. The assumption was plausible and made the fix look far more
+expensive than it was, which is an argument for checking a claim like that
+before planning around it.
+
+The second harm is specific to this project. A caller-supplied prompt is the
+ordinary prompt-injection concern, but it also makes the system unmeasurable. A
+round measures the answers SENTRA gives, and an answer produced under somebody
+else's instructions is not one. No check in the harness could have noticed: the
+prompt is echoed back, so it was recorded faithfully, and nothing refused it.
+
+Blank is not an override, whitespace is. `explorer._generate` computes
+`system_prompt or default`, so `""` changes nothing, while `"   "` reaches the
+model as the system prompt. That is an empty instruction, the one worth sending
+if the goal were to strip the guardrails. The guard follows what the service
+does rather than what the field looks like.

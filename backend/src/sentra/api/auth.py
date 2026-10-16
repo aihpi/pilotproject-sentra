@@ -33,10 +33,11 @@ protection is worse than no control.
 import logging
 import secrets
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from fastapi import Depends, Header, HTTPException
 
-from sentra.api.identity import Subject, current_subject, login_configured
+from sentra.api.identity import PRUEFER, Subject, current_subject, login_configured
 from sentra.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
@@ -170,3 +171,93 @@ def require_role(minimum: str) -> Callable[..., Subject | None]:
         )
 
     return guard
+
+
+# ── The system prompt ───────────────────────────────────────────────
+
+#: Replacing the system prompt is an experiment, not a question. A reader asks
+#: SENTRA things; somebody changing the instructions it answers under is
+#: testing it, which is what the Prüfer role is for.
+PROMPT_OVERRIDE_ROLE = PRUEFER
+
+
+@dataclass(frozen=True)
+class PromptRights:
+    """Whether this caller may replace the system prompt, decided once.
+
+    **The gate is on the field, not on the endpoint, and that is the whole
+    design.** `/explorer/answer` has to stay reachable exactly as it is: the
+    evaluation harness posts to it with no credential at all — `runner.py`
+    builds its client with a base URL and a timeout and nothing else — so an
+    endpoint-level guard would answer 401 to every round the moment a login is
+    configured, and would do it without the harness having changed.
+
+    So the caller gets in, and one field does not.
+    """
+
+    subject: Subject | None
+    refusal: HTTPException | None
+
+    def check(self, system_prompt: str | None) -> None:
+        """Refuse a caller-supplied prompt when this caller may not set one.
+
+        **Omitting the field is always allowed.** That is the ordinary path —
+        every reader, and every call the harness makes — and it is the case
+        that must not break.
+
+        Blank counts as omitted, because that is what the service itself does
+        with it: `explorer._generate` computes `system_prompt or default`, so
+        an empty string is not an override. Whitespace is, and is refused, for
+        the same reason — `"   "` is truthy, so it would reach the model as the
+        system prompt and would be the one worth sending.
+        """
+        if not system_prompt or self.refusal is None:
+            return
+        raise self.refusal
+
+
+def prompt_rights(
+    subject: Subject | None = Depends(current_subject),
+    authorization: str | None = Header(default=None),
+    x_admin_token: str | None = Header(default=None),
+    settings: Settings = Depends(get_settings),
+) -> PromptRights:
+    """Resolve, once per request, whether the prompt may be replaced.
+
+    The same four ways through as `require_role`, for the same reasons, and
+    with the same distinction between 401 and 403: 401 means "say who you are",
+    which a browser can act on; 403 means "I know, and the answer is no".
+
+    Reaching this at all means a session, the machine token, or a deployment
+    with nothing configured to check against — the endpoint itself is open. So
+    `subject is None` covers only the last two, and both are allowed.
+    """
+    if has_token(authorization, x_admin_token, settings):
+        return PromptRights(subject, None)
+
+    if subject is not None:
+        if subject.at_least(PROMPT_OVERRIDE_ROLE):
+            return PromptRights(subject, None)
+        return PromptRights(
+            subject,
+            HTTPException(
+                status_code=403,
+                detail=(
+                    "Das Ersetzen des System-Prompts erfordert mindestens die "
+                    f"Rolle \u201e{PROMPT_OVERRIDE_ROLE}\u201c."
+                ),
+            ),
+        )
+
+    # Open, as it was before any of this, and reported by /api/health.
+    if not settings.admin_token and not login_configured(settings):
+        return PromptRights(None, None)
+
+    return PromptRights(
+        None,
+        HTTPException(
+            status_code=401,
+            detail="Das Ersetzen des System-Prompts erfordert eine Anmeldung.",
+            headers={"WWW-Authenticate": "Bearer"},
+        ),
+    )

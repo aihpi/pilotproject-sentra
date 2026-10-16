@@ -16,6 +16,13 @@ echo "=== Deploying Sentra to Kubernetes ==="
 echo "[1/5] Creating namespace..."
 kubectl apply -f namespace.yaml
 
+# The secret is not in the repo (#237), so nothing below creates it, and every
+# pod that reads it would sit in CreateContainerConfigError naming a key.
+if ! kubectl get secret sentra-secret -n sentra >/dev/null 2>&1; then
+  echo "  sentra-secret is missing. Create it first, see k8s/secrets/example-secret.yaml."
+  exit 1
+fi
+
 # 2. Apply all resources via Kustomize
 #
 # First deploy after the Qdrant version pin: if the qdrant pod fails to start,

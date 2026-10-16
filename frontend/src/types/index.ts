@@ -351,6 +351,9 @@ export interface VolumeFile {
   modified_at: string;
   /** Only PDFs are indexed. A .docx is on the volume and never searchable. */
   indexable: boolean;
+  /** Withdrawn in the registry, so ingestion skips it. Null when the registry
+   *  could not be asked. */
+  withdrawn: boolean | null;
 }
 
 export interface UploadedFile {

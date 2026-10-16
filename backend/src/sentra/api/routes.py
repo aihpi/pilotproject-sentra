@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from sentra.api import users as user_store
-from sentra.api.auth import require_role, write_paths_state
+from sentra.api.auth import PromptRights, prompt_rights, require_role, write_paths_state
 from sentra.api.identity import (
     ADMIN,
     PRUEFER,
@@ -51,7 +51,7 @@ from sentra.api.models import (
     date_range_params,
 )
 from sentra.config import Settings, get_settings
-from sentra.db import session_scope
+from sentra.db import RegistryDatabaseUnavailable, session_scope
 from sentra.documents import registry
 from sentra.domain import AnswerResult
 from sentra.ingestion.metadata import DOCUMENT_TYPE_VALUES, FACHBEREICH_NAMES
@@ -206,10 +206,32 @@ def list_volume_files(settings: Settings = Depends(get_settings)) -> list[Volume
     Declared before /documents/{filename} so that "files" is not read as a
     filename. FastAPI matches in declaration order.
     """
+    withdrawn = _withdrawn_filenames()
     return [
-        VolumeFile(name=name, size_bytes=size, modified_at=modified, indexable=indexable)
+        VolumeFile(
+            name=name,
+            size_bytes=size,
+            modified_at=modified,
+            indexable=indexable,
+            withdrawn=None if withdrawn is None else name in withdrawn,
+        )
         for name, size, modified, indexable in uploads.listing(Path(settings.documents_dir))
     ]
+
+
+def _withdrawn_filenames() -> set[str] | None:
+    """Withdrawn filenames, or None when the registry cannot be asked.
+
+    Not a 503: the listing is a read of the disk, and the disk is still there.
+    Losing the whole list because one annotation on it is unavailable would be
+    the worse answer.
+    """
+    try:
+        with session_scope() as session:
+            return registry.withdrawn_filenames(session)
+    except RegistryDatabaseUnavailable:
+        logger.warning("Registry unreachable; volume listing cannot mark withdrawn files")
+        return None
 
 
 @router.post(
@@ -718,8 +740,12 @@ def explorer_answer(
     embedder: EmbeddingClient = Depends(get_embedder),
     generator: AnswerGenerator = Depends(get_generator),
     settings: Settings = Depends(get_settings),
+    rights: PromptRights = Depends(prompt_rights),
 ) -> GeneratedAnswerResponse:
     """UC#10: Answer a specific Fachfrage."""
+    # The endpoint stays open; replacing the prompt does not. See PromptRights.
+    rights.check(body.system_prompt)
+
     date_from, date_to = date_range_params(body.date_range)
     result = explorer.answer_question(
         query=body.query,
@@ -748,8 +774,12 @@ def explorer_overview(
     embedder: EmbeddingClient = Depends(get_embedder),
     generator: AnswerGenerator = Depends(get_generator),
     settings: Settings = Depends(get_settings),
+    rights: PromptRights = Depends(prompt_rights),
 ) -> GeneratedAnswerResponse:
     """UC#2: Generate a structured topic overview."""
+    # The endpoint stays open; replacing the prompt does not. See PromptRights.
+    rights.check(body.system_prompt)
+
     date_from, date_to = date_range_params(body.date_range)
     result = explorer.generate_overview(
         query=body.query,

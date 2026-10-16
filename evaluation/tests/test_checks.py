@@ -454,3 +454,166 @@ class TestWiederholbarkeit:
         outcome = checks.wiederholbarkeit(["Nur eine."])
 
         assert outcome.ergebnis == checks.NICHT_PRUEFBAR
+
+
+# ── 4.3a: does the cited page hold the passage? ─────────────────────
+
+
+class TestSeitenangabe:
+    """The last of the four techniques to get an automated check.
+
+    4.3a asks whether a citation points at the passage supporting the claim.
+    Until the model was shown a page it could not name one and there was
+    nothing to check, which is why marker alignment carried 4.3a as far as the
+    data allowed and no further.
+
+    Reported in the Vorlage's own words, because a reviewer picks from those
+    for 4.3a and the comparison between the two answers is what the
+    disagreement rate measures. A check with its own vocabulary agrees with
+    nothing and therefore measures nothing.
+    """
+
+    def _hit(self, page_from: int, page_to: int | None = None) -> dict:
+        return {"page_from": page_from, "page_to": page_to or page_from}
+
+    def test_a_page_the_answer_drew_on_is_correct(self):
+        outcome = checks.seitenangabe(
+            {"text": "Nach § 35 GOBT gilt eine Redezeit von 15 Minuten (Seite 4)."},
+            [self._hit(4)],
+        )
+
+        assert outcome.ergebnis == "existiert & stimmt überein"
+        assert outcome.auffaellig is False
+
+    def test_a_page_it_did_not_is_a_finding(self):
+        outcome = checks.seitenangabe(
+            {"text": "Die Redezeit ist auf Seite 9 geregelt."}, [self._hit(4)]
+        )
+
+        assert outcome.ergebnis == "weicht ab"
+        assert outcome.auffaellig is True
+        assert outcome.belege["abweichende_seiten"] == [9]
+
+    def test_a_page_inside_a_chunk_that_spans_several(self):
+        """A chunk crossing a page break covers every page between its ends."""
+        outcome = checks.seitenangabe({"text": "Siehe Seite 5."}, [self._hit(4, 6)])
+
+        assert outcome.ergebnis == "existiert & stimmt überein"
+
+    def test_the_union_across_chunks_counts(self):
+        """The answer saw all of them, so a page belonging to any is one it
+        legitimately drew on. Attributing a sentence to one chunk would need to
+        know which claim came from where — that is 4.3c's question."""
+        outcome = checks.seitenangabe(
+            {"text": "Seite 4 und Seite 11."}, [self._hit(4), self._hit(11)]
+        )
+
+        assert outcome.ergebnis == "existiert & stimmt überein"
+
+    def test_short_form_is_read(self):
+        outcome = checks.seitenangabe({"text": "Vgl. S. 4."}, [self._hit(4)])
+
+        assert outcome.ergebnis == "existiert & stimmt überein"
+
+
+class TestSeitenangabeStaysQuiet:
+    """The failure mode that would matter most. A false "weicht ab" on a
+    correct citation teaches reviewers to ignore the check, and a check nobody
+    believes is worse than no check at all."""
+
+    def _hit(self, page: int) -> dict:
+        return {"page_from": page, "page_to": page}
+
+    def test_an_answer_naming_no_page_is_not_prueftbar(self):
+        """It cannot be wrong about a page it did not name. Calling that
+        correct would make the check read as healthy on exactly the answers
+        4.3a cannot vouch for."""
+        outcome = checks.seitenangabe(
+            {"text": "Nach § 35 GOBT gilt eine Redezeit von 15 Minuten [1]."}, [self._hit(4)]
+        )
+
+        assert outcome.ergebnis == checks.NICHT_PRUEFBAR
+        assert outcome.auffaellig is False
+
+    def test_chunks_without_a_page_are_not_prueftbar_either(self):
+        """Every chunk written before the provenance work, which is all of them
+        until the corpus is re-ingested. Flagging the whole corpus would be the
+        check's first act."""
+        outcome = checks.seitenangabe({"text": "Siehe Seite 4."}, [{"page_from": 0, "page_to": 0}])
+
+        assert outcome.ergebnis == checks.NICHT_PRUEFBAR
+        assert "Neuindexierung" in outcome.belege["grund"]
+
+    def test_and_so_is_an_answer_with_no_sources_at_all(self):
+        outcome = checks.seitenangabe({"text": "Siehe Seite 4."}, [])
+
+        assert outcome.ergebnis == checks.NICHT_PRUEFBAR
+
+    def test_a_paragraph_number_is_not_mistaken_for_a_page(self):
+        """ "Absatz 3" is not a page, and reading it as one would flag a correct
+        citation on every answer that mentions a paragraph."""
+        outcome = checks.seitenangabe(
+            {"text": "Nach Absatz 3 der Vorschrift, Seite 4."}, [self._hit(4)]
+        )
+
+        assert outcome.ergebnis == "existiert & stimmt überein"
+
+    def test_a_paragraph_symbol_is_not_a_page(self):
+        """§ 35 is a provision. German legal prose is full of them, and every
+        one would be a false finding."""
+        outcome = checks.seitenangabe({"text": "Nach § 35 GOBT."}, [self._hit(4)])
+
+        assert outcome.ergebnis == checks.NICHT_PRUEFBAR
+
+    def test_an_aktenzeichen_is_not_a_page(self):
+        """ "WD 3 - 3000 - 029/23" carries numbers that are not pages."""
+        outcome = checks.seitenangabe({"text": "Vgl. WD 3 - 3000 - 029/23."}, [self._hit(4)])
+
+        assert outcome.ergebnis == checks.NICHT_PRUEFBAR
+
+    def test_abs_is_not_read_as_a_page(self):
+        """The one that was actually broken, and the worst one to get wrong.
+
+        `(?:Seiten?|S\\.)` under IGNORECASE matches the "s." ending "Abs.", so
+        "Abs. 3" came out as page 3 and the answer was flagged. German legal
+        prose abbreviates Absatz on nearly every page, so this was not an edge
+        case — it was most answers.
+        """
+        outcome = checks.seitenangabe(
+            {"text": "Nach Abs. 3 der Vorschrift, Seite 4."}, [self._hit(4)]
+        )
+
+        assert outcome.belege["genannte_seiten"] == [4]
+        assert outcome.ergebnis == "existiert & stimmt überein"
+
+    def test_the_projects_own_citation_format_passes(self):
+        """ "S. 4, Abs. 3" is the shape #134 put into the prompt and the shape
+        `format_location()` emits. A check that flags the format the system
+        under test was told to use measures the check, not the system."""
+        outcome = checks.seitenangabe({"text": "Siehe S. 4, Abs. 3."}, [self._hit(4)])
+
+        assert outcome.belege["genannte_seiten"] == [4]
+        assert outcome.ergebnis == "existiert & stimmt überein"
+
+    def test_an_absatz_alone_is_not_prueftbar(self):
+        """No page named at all, so there is nothing to compare — not a pass
+        and not a finding."""
+        outcome = checks.seitenangabe({"text": "Gemäß Abs. 9."}, [self._hit(4)])
+
+        assert outcome.belege["genannte_seiten"] == []
+        assert outcome.ergebnis == checks.NICHT_PRUEFBAR
+
+    def test_lowercase_s_is_left_alone(self):
+        """In German prose "s. dazu" abbreviates *siehe*, not Seite. Reading it
+        as a page would invent a citation the answer never made."""
+        outcome = checks.seitenangabe({"text": "s. dazu 9 weitere Fälle."}, [self._hit(4)])
+
+        assert outcome.ergebnis == checks.NICHT_PRUEFBAR
+
+    def test_the_evidence_says_what_was_compared(self):
+        """A reviewer disagreeing with this needs to see what it looked at —
+        the disagreement is the measurement, so it has to be arguable."""
+        outcome = checks.seitenangabe({"text": "Seite 9."}, [self._hit(4)])
+
+        assert outcome.belege["genannte_seiten"] == [9]
+        assert outcome.belege["seiten_der_quellen"] == [4]
