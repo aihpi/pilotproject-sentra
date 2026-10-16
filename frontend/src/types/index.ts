@@ -44,6 +44,10 @@ export interface SourceRef {
    *  in that state, which is all of them until the corpus is re-ingested. */
   page?: number;
   paragraph?: number;
+  /** The n of the [n] in the answer that cites it (#268). Only cited sources
+   *  are returned, so it can differ from the position in the list. Absent in
+   *  responses stored by rounds before it existed. */
+  nummer?: number;
 }
 
 export interface GeneratedAnswerResult {

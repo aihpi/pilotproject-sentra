@@ -131,12 +131,12 @@ class TestFormatContext:
 
     def test_header_names_the_source_and_section(self):
         out = format_context([hit(AZ_A, 0.9, section="2.1 Grundlagen", text="Inhalt")])
-        assert f"[Quelle: {AZ_A}, Abschnitt: 2.1 Grundlagen]" in out
+        assert f"[Quelle 1: {AZ_A}, Abschnitt: 2.1 Grundlagen]" in out
         assert "Inhalt" in out
 
     def test_hits_are_separated(self):
         out = format_context([hit(AZ_A, 0.9, text="eins"), hit(AZ_B, 0.8, text="zwei")])
-        assert out.count("[Quelle:") == 2
+        assert out.count("[Quelle ") == 2
         assert "---" in out
 
     def test_a_chunk_with_no_page_gets_no_location(self):
@@ -153,7 +153,7 @@ class TestFormatContext:
         out = format_context([hit(AZ_A, 0.9, section="2.1", text="Inhalt")])
 
         assert "Seite" not in out
-        assert f"[Quelle: {AZ_A}, Abschnitt: 2.1]" in out
+        assert f"[Quelle 1: {AZ_A}, Abschnitt: 2.1]" in out
 
     def test_a_chunk_with_a_page_is_cited_with_it(self):
         out = format_context(
