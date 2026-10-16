@@ -90,16 +90,13 @@ export function Header({
           )}
 
           {session && (
-            <span className="ml-3 flex items-center gap-2 border-l pl-3 text-xs">
-              <span className="text-muted-foreground">
-                {session.benutzername}
-                <span className="ml-1 rounded bg-secondary px-1.5 py-0.5">
-                  {session.rolle}
-                </span>
-              </span>
+            <span className="ml-3 flex items-center border-l pl-3 text-xs">
+              {/* Name and role only on hover: the tabs already show what the
+                  role allows, and the header has no width to spare (#262). */}
               <button
                 type="button"
                 onClick={onSignOut}
+                title={`Angemeldet als ${session.benutzername} (${session.rolle})`}
                 className="rounded-md px-2 py-1 text-muted-foreground hover:bg-secondary"
               >
                 Abmelden

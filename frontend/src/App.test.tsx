@@ -185,11 +185,14 @@ describe("what each role is offered", () => {
 });
 
 describe("who is signed in", () => {
-  it("is shown, with the role", async () => {
+  it("is only offered Abmelden, with name and role on hover rather than on screen", async () => {
     given({ session: PRUEFER });
 
-    expect(await screen.findByText("wd")).toBeInTheDocument();
-    expect(screen.getByText("pruefer")).toBeInTheDocument();
+    const signOut = await screen.findByRole("button", { name: "Abmelden" });
+
+    expect(signOut).toHaveAttribute("title", "Angemeldet als wd (pruefer)");
+    expect(screen.queryByText("wd")).toBeNull();
+    expect(screen.queryByText("pruefer")).toBeNull();
   });
 
   it("can sign out, and lands back as a reader rather than at a login", async () => {
