@@ -155,3 +155,23 @@ describe("what a draft still needs before approval", () => {
     expect(onApprove).toHaveBeenCalledWith("TF-WI-001");
   });
 });
+
+describe("variants", () => {
+  it("are offered for an approved case only (#265)", () => {
+    render(
+      <CaseTable
+        cases={[
+          testCase("TF-WI-001", "Biomethan?", "freigegeben"),
+          testCase("TF-WI-002", "Strom?", "entwurf"),
+        ]}
+        busy={false}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onApprove={vi.fn()}
+        onWithdraw={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByRole("button", { name: "Varianten" })).toHaveLength(1);
+  });
+});

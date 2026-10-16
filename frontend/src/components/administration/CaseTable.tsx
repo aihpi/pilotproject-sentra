@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import type { EvalCase } from "@/types";
 import { Badge } from "@/components/ui/badge";
+import { VariantPanel } from "@/components/administration/VariantPanel";
 
 type SortKey = "test_id" | "kategorie" | "ausgangsfrage" | "status";
 type Direction = "asc" | "desc";
@@ -93,8 +94,11 @@ export function CaseTable({
   onEdit,
   onApprove,
   onWithdraw,
+  approver = "",
 }: {
   cases: EvalCase[];
+  /** Who approves a variant, recorded with it. The signed-in user. */
+  approver?: string;
   busy: boolean;
   onCreate: () => void;
   onEdit: (testId: string) => void;
@@ -115,6 +119,9 @@ export function CaseTable({
   }
 
   const sorted = sortCases(cases, sort.key, sort.direction);
+  // One open at a time: each panel talks to the judge model, and a table full
+  // of open editors is hard to read.
+  const [variantsOpen, setVariantsOpen] = useState<string | null>(null);
 
   return (
     <section className="space-y-2">
@@ -163,92 +170,115 @@ export function CaseTable({
                 const blockers = entry.freigabe_hindernisse ?? [];
 
                 return (
-                  <tr key={entry.test_id} className="border-t">
-                    <td className="whitespace-nowrap px-3 py-2 font-medium">
-                      {entry.test_id}
-                    </td>
-                    <td className="px-3 py-2">{entry.kategorie}</td>
-                    <td className="max-w-md px-3 py-2">
-                      <span className="line-clamp-2">
-                        {latest?.ausgangsfrage}
-                      </span>
-                      {latest?.grenzfall && (
-                        <Badge variant="outline" className="mt-1">
-                          Grenzfall
-                        </Badge>
-                      )}
-                      {!approved && !withdrawn && blockers.length > 0 && (
-                        <ul
-                          aria-label="Vor der Freigabe fehlt"
-                          className="mt-1 list-inside list-disc text-amber-700 dark:text-amber-400"
-                        >
-                          {blockers.map((blocker) => (
-                            <li key={blocker}>{blocker}</li>
-                          ))}
-                        </ul>
-                      )}
-                    </td>
-                    <td className="px-3 py-2">
-                      {withdrawn ? (
-                        <Badge
-                          variant="outline"
-                          title="Die Test-ID bleibt vergeben."
-                        >
-                          zurückgezogen
-                        </Badge>
-                      ) : (
-                        <Badge variant={approved ? "secondary" : "outline"}>
-                          {latest?.status}
-                        </Badge>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 tabular-nums">
-                      {latest?.version}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right">
-                      {!withdrawn && (
-                        <span className="flex justify-end gap-1">
-                          <button
-                            type="button"
-                            onClick={() => onEdit(entry.test_id)}
-                            disabled={busy}
-                            className="rounded-md border px-2 py-1 disabled:opacity-50"
-                            title={
-                              approved
-                                ? "Legt eine neue Version an; die freigegebene bleibt unverändert."
-                                : undefined
-                            }
+                  <Fragment key={entry.test_id}>
+                    <tr className="border-t">
+                      <td className="whitespace-nowrap px-3 py-2 font-medium">
+                        {entry.test_id}
+                      </td>
+                      <td className="px-3 py-2">{entry.kategorie}</td>
+                      <td className="max-w-md px-3 py-2">
+                        <span className="line-clamp-2">
+                          {latest?.ausgangsfrage}
+                        </span>
+                        {latest?.grenzfall && (
+                          <Badge variant="outline" className="mt-1">
+                            Grenzfall
+                          </Badge>
+                        )}
+                        {!approved && !withdrawn && blockers.length > 0 && (
+                          <ul
+                            aria-label="Vor der Freigabe fehlt"
+                            className="mt-1 list-inside list-disc text-amber-700 dark:text-amber-400"
                           >
-                            {approved ? "Neue Version" : "Bearbeiten"}
-                          </button>
-                          {!approved && (
+                            {blockers.map((blocker) => (
+                              <li key={blocker}>{blocker}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        {withdrawn ? (
+                          <Badge
+                            variant="outline"
+                            title="Die Test-ID bleibt vergeben."
+                          >
+                            zurückgezogen
+                          </Badge>
+                        ) : (
+                          <Badge variant={approved ? "secondary" : "outline"}>
+                            {latest?.status}
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 tabular-nums">
+                        {latest?.version}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right">
+                        {!withdrawn && (
+                          <span className="flex justify-end gap-1">
                             <button
                               type="button"
-                              onClick={() => onApprove(entry.test_id)}
-                              disabled={busy || blockers.length > 0}
+                              onClick={() => onEdit(entry.test_id)}
+                              disabled={busy}
                               className="rounded-md border px-2 py-1 disabled:opacity-50"
                               title={
-                                blockers.length > 0
-                                  ? `Noch nicht freigebbar: ${blockers.join("; ")}`
+                                approved
+                                  ? "Legt eine neue Version an; die freigegebene bleibt unverändert."
                                   : undefined
                               }
                             >
-                              Freigeben
+                              {approved ? "Neue Version" : "Bearbeiten"}
                             </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => onWithdraw(entry.test_id)}
-                            disabled={busy}
-                            className="rounded-md border px-2 py-1 text-destructive disabled:opacity-50"
-                            title="Nimmt den Testfall aus künftigen Runden. Die Test-ID bleibt vergeben und wird nie erneut verwendet."
-                          >
-                            Zurückziehen
-                          </button>
-                        </span>
-                      )}
-                    </td>
-                  </tr>
+                            {!approved && (
+                              <button
+                                type="button"
+                                onClick={() => onApprove(entry.test_id)}
+                                disabled={busy || blockers.length > 0}
+                                className="rounded-md border px-2 py-1 disabled:opacity-50"
+                                title={
+                                  blockers.length > 0
+                                    ? `Noch nicht freigebbar: ${blockers.join("; ")}`
+                                    : undefined
+                                }
+                              >
+                                Freigeben
+                              </button>
+                            )}
+                            {approved && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setVariantsOpen((open) =>
+                                    open === entry.test_id ? null : entry.test_id,
+                                  )
+                                }
+                                aria-expanded={variantsOpen === entry.test_id}
+                                className="rounded-md border px-2 py-1"
+                              >
+                                Varianten
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => onWithdraw(entry.test_id)}
+                              disabled={busy}
+                              className="rounded-md border px-2 py-1 text-destructive disabled:opacity-50"
+                              title="Nimmt den Testfall aus künftigen Runden. Die Test-ID bleibt vergeben und wird nie erneut verwendet."
+                            >
+                              Zurückziehen
+                            </button>
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                    {variantsOpen === entry.test_id && (
+                      <tr>
+                        <td colSpan={6} className="px-3 pb-3">
+                          <VariantPanel testId={entry.test_id} approver={approver} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
             </tbody>

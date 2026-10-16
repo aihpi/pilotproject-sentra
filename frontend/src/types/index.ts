@@ -233,6 +233,17 @@ export interface CaseVersion {
   freigegeben_at: string | null;
 }
 
+/** A rewording of a case's question (4.2), proposed by the judge model and
+ *  approved by a person. Approved variants are frozen. */
+export interface EvalVariant {
+  stil: string;
+  wortlaut: string;
+  status: string;
+  erstellt_durch: string;
+  freigegeben_durch: string;
+  freigegeben_at: string | null;
+}
+
 /** A test case and every version of it.
  *
  *  `versions` is ordered, oldest first. The last one is what a new round would
