@@ -149,6 +149,8 @@ class TestTheDebugPayload:
 
         assert set(body["hits"][0]) == {
             "aktenzeichen",
+            # Since #280: tells documents without an Aktenzeichen apart.
+            "source_file",
             "section_title",
             "chunk_index",
             "score",

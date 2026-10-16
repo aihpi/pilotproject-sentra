@@ -199,3 +199,13 @@ class TestFormatContext:
 
         assert "page" not in out.lower()
         assert "Seite 2" in out
+
+
+def test_documents_without_an_aktenzeichen_are_not_merged_in_the_document_list():
+    """The same grouping as the sources of an answer (#280)."""
+    first, second = hit("", 0.9), hit("", 0.8)
+    first.source_file, second.source_file = "AB 04-24.pdf", "AB 10-23.pdf"
+
+    docs = _aggregate_docs([first, second], top_k=10)
+
+    assert [d.source_file for d in docs] == ["AB 04-24.pdf", "AB 10-23.pdf"]

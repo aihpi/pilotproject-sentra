@@ -102,3 +102,50 @@ class TestTheReturnedSources:
         _, generator = _answer("[1]")
 
         assert f"[Quelle 1: {AZ_A}" in generator.context
+
+
+class TestDocumentsWithoutAnAktenzeichen:
+    """88 indexed documents have none, and keyed on the empty string they all
+    became one source (#280). They are told apart by their file now."""
+
+    def _ab(self, name, score):
+        h = hit("", score)
+        h.source_file = name
+        h.title = f"Aktueller Begriff {name}"
+        return h
+
+    def test_two_of_them_are_two_sources(self):
+        hits = [self._ab("AB 04-24.pdf", 0.9), hit(AZ_A, 0.8), self._ab("AB 10-23.pdf", 0.7)]
+
+        assert source_numbers(hits) == {"AB 04-24.pdf": 1, AZ_A: 2, "AB 10-23.pdf": 3}
+
+    def test_the_model_reads_the_file_name_in_their_header(self):
+        out = format_context([self._ab("AB 04-24.pdf", 0.9)])
+
+        assert "[Quelle 1: AB 04-24.pdf" in out
+
+    def test_an_answer_citing_the_second_gets_the_second(self):
+        generator = _Generator("Laut [3] gilt das.")
+        hits = [self._ab("AB 04-24.pdf", 0.9), hit(AZ_A, 0.8), self._ab("AB 10-23.pdf", 0.7)]
+
+        class Store:
+            def search(self, **kwargs):
+                return hits
+
+        result = answer_question(
+            query="Frage?",
+            date_from=None,
+            date_to=None,
+            top_k=10,
+            store=Store(),
+            embedder=_Embedder(),
+            generator=generator,
+        )
+
+        assert [(s.source_file, s.nummer) for s in result.sources] == [("AB 10-23.pdf", 3)]
+
+    def test_two_files_of_one_paper_are_still_one_source(self):
+        first, second = hit(AZ_A, 0.9), hit(AZ_A, 0.8)
+        second.source_file = "WD 3-029-23 Anlage.pdf"
+
+        assert source_numbers([first, second]) == {AZ_A: 1}

@@ -24,6 +24,7 @@ from sentra.rag.generator import (
     AnswerGenerator,
     AnswerMethod,
     cited_numbers,
+    document_key,
     format_context,
     source_numbers,
 )
@@ -39,9 +40,9 @@ def _aggregate_docs(hits: list[Hit], top_k: int) -> list[ScoredDocument]:
     """Aggregate chunk-level hits into unique documents (best score wins)."""
     best: dict[str, Hit] = {}
     for hit in hits:
-        current = best.get(hit.aktenzeichen)
+        current = best.get(document_key(hit))
         if current is None or hit.score > current.score:
-            best[hit.aktenzeichen] = hit
+            best[document_key(hit)] = hit
 
     ranked = sorted(best.values(), key=lambda h: h.score, reverse=True)
     return [
@@ -69,9 +70,9 @@ def _build_source_refs(hits: list[Hit]) -> list[SourceRef]:
     seen: set[str] = set()
     refs: list[SourceRef] = []
     for hit in hits:
-        if hit.aktenzeichen in seen:
+        if document_key(hit) in seen:
             continue
-        seen.add(hit.aktenzeichen)
+        seen.add(document_key(hit))
         refs.append(
             SourceRef(
                 aktenzeichen=hit.aktenzeichen,
@@ -83,7 +84,7 @@ def _build_source_refs(hits: list[Hit]) -> list[SourceRef]:
                 # which is the passage [n] stands for. See SourceRef.
                 page=hit.page_from,
                 paragraph=hit.paragraph_from,
-                nummer=numbers[hit.aktenzeichen],
+                nummer=numbers[document_key(hit)],
             )
         )
     return refs
