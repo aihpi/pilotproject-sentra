@@ -699,3 +699,15 @@ def test_retrieved_documents_without_an_aktenzeichen_are_counted_apart():
 
     assert outcome.belege["anzahl_abgerufen"] == 3
     assert outcome.belege["quellen_ohne_marker"] == [2, 3]
+
+
+def test_a_payload_from_before_280_numbers_empty_aktenzeichen_as_one():
+    """Older stored responses carry no source_file, and SENTRA then numbered
+    every document without an Aktenzeichen as a single source (#300)."""
+    response = _cited_only("Laut [1] und [3].", ("A", 1), ("B", 3))
+    response["hits"] = [{"aktenzeichen": "A"}, {"aktenzeichen": ""}, {"aktenzeichen": "B"}]
+
+    outcome = checks.marker_ausrichtung(response)
+
+    assert outcome.belege["anzahl_abgerufen"] == 3
+    assert outcome.belege["quellen_ohne_marker"] == [2]

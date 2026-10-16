@@ -25,6 +25,13 @@ logger = logging.getLogger(__name__)
 
 DOCUMENTS_LIST_ENDPOINT = "/api/documents"
 CACHE_SECONDS = 60.0
+# An outage is remembered briefly too, so every refresh during one does not
+# wait out the timeout again (#300). Short, so it clears soon after SENTRA is
+# back.
+FAILURE_CACHE_SECONDS = 15.0
+# The list is a scroll over every document and takes about 3 s locally. Generous,
+# since the fetch happens outside any transaction and holds no locks.
+TIMEOUT_SECONDS = 15.0
 
 
 @dataclass(frozen=True)
@@ -51,13 +58,16 @@ def fetch(client: httpx.Client | None = None, *, use_cache: bool = True) -> Best
     """The current Bestand. Never raises: an unreachable SENTRA is a Bestand too."""
     global _cache
     now = time.monotonic()
-    if use_cache and client is None and _cache and now - _cache[0] < CACHE_SECONDS:
-        return _cache[1]
+    if use_cache and client is None and _cache:
+        age = now - _cache[0]
+        limit = CACHE_SECONDS if _cache[1].erreichbar else FAILURE_CACHE_SECONDS
+        if age < limit:
+            return _cache[1]
 
     settings = get_eval_settings()
     owned = client is None
     client = client or httpx.Client(
-        base_url=settings.sentra_base_url, timeout=30.0, headers=sentra_headers(settings)
+        base_url=settings.sentra_base_url, timeout=TIMEOUT_SECONDS, headers=sentra_headers(settings)
     )
     try:
         response = client.get(DOCUMENTS_LIST_ENDPOINT)
@@ -71,9 +81,9 @@ def fetch(client: httpx.Client | None = None, *, use_cache: bool = True) -> Best
         )
     except (httpx.HTTPError, ValueError) as exc:
         logger.warning("Could not read the indexed documents from SENTRA: %s", exc)
-        # Not cached, so the next request tries again rather than reporting a
-        # minute-old outage.
-        return Bestand(fehler="SENTRA ist nicht erreichbar, der Bestand kann nicht geprüft werden")
+        bestand = Bestand(
+            fehler="SENTRA ist nicht erreichbar, der Bestand kann nicht geprüft werden"
+        )
     finally:
         if owned:
             client.close()

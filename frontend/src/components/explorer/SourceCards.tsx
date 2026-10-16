@@ -2,6 +2,7 @@ import type { SourceRef } from "@/types";
 import { pdfUrl, formatDate } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { BookOpen, Calendar, ExternalLink } from "lucide-react";
+import { documentKey } from "@/lib/documents";
 
 interface SourceCardsProps {
   sources: SourceRef[];
@@ -79,14 +80,14 @@ export function SourceCards({ sources, onSelect, selected }: SourceCardsProps) {
           const className = [
             "flex items-start gap-3 rounded-lg border bg-card p-3 text-left transition-colors",
             "hover:border-primary/30 hover:shadow-sm no-underline cursor-pointer group",
-            selected === source.aktenzeichen
+            selected === documentKey(source)
               ? "border-primary ring-1 ring-primary/30"
               : "",
           ].join(" ");
 
           return onSelect ? (
             <button
-              key={source.aktenzeichen}
+              key={documentKey(source)}
               type="button"
               onClick={() => onSelect(source)}
               className={className}
@@ -95,7 +96,7 @@ export function SourceCards({ sources, onSelect, selected }: SourceCardsProps) {
             </button>
           ) : (
             <a
-              key={source.aktenzeichen}
+              key={documentKey(source)}
               href={
                 source.source_file
                   ? pdfUrl(source.source_file, source.page)

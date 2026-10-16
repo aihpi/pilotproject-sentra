@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { fetchDocuments } from "@/lib/api";
 import type { DocumentInfo } from "@/types";
+import { documentKey } from "@/lib/documents";
 
 /** Input with suggestions from the indexed documents.
  *
@@ -66,7 +67,7 @@ export function DocumentAutocomplete({
           <div className="max-h-56 overflow-y-auto p-1">
             {filtered.map((doc) => (
               <button
-                key={doc.aktenzeichen}
+                key={documentKey(doc)}
                 className="flex w-full items-start gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
                 onClick={() => {
                   onChange(doc.aktenzeichen);

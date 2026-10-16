@@ -215,6 +215,11 @@ class TestWordFieldErrorInTitles:
         )
         assert _extract_title(md) == "Dienstunfallfürsorge in Deutschland"
 
+    def test_an_unlabelled_heading_with_the_error_and_a_type_is_cleaned(self):
+        """Cleaned before the document-type check, which skipped it whole (#300)."""
+        md = f"## {self.ERROR}Kurzinformation Fortdauernde Corona-Unternehmenshilfen\n"
+        assert _extract_title(md) == "Fortdauernde Corona-Unternehmenshilfen"
+
     def test_a_title_that_merely_starts_with_a_type_word_is_left_alone(self):
         md = "Titel: Dokumentation der Anhörung zum Haushalt\n"
         assert _extract_title(md) == "Dokumentation der Anhörung zum Haushalt"

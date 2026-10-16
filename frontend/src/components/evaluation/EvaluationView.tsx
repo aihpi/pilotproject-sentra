@@ -24,6 +24,7 @@ import { QueueList } from "@/components/evaluation/QueueList";
 import { ResultsView } from "@/components/evaluation/ResultsView";
 import { RunPicker } from "@/components/evaluation/RunPicker";
 import { VerdictForm } from "@/components/evaluation/VerdictForm";
+import { documentKey } from "@/lib/documents";
 
 /** Stufe 2: working a round's queue.
  *
@@ -204,7 +205,7 @@ export function EvaluationView({ session }: { session: Session | null }) {
                   activeIndex={activeCall}
                   onSelectCall={setActiveCall}
                   onSelectSource={setOpenSource}
-                  selectedSource={openSource?.aktenzeichen}
+                  selectedSource={openSource ? documentKey(openSource) : undefined}
                 />
                 {openSource && (
                   <PdfPane

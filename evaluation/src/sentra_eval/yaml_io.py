@@ -14,8 +14,10 @@ The file is the source of truth for content; the database owns identity. So:
     explicitly, because inventing an identity is exactly what the counter
     exists to prevent
 
-A `tag` in the file is applied when it differs from the case's, and from then
-on counts as set by hand (#285).
+Tag and labels in the file are applied when it creates a case, and not to one
+that exists: those are corrected on screen, and an older export would put the
+old values back on every import (#300). A tag given for a new case counts as
+set by hand.
 
 Import is idempotent, which is what makes "the file is the source of truth"
 true rather than aspirational: running it twice must not double every case's
@@ -26,7 +28,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from sqlalchemy.orm import Session
 
 from sentra_eval import cases as case_store
@@ -57,15 +59,31 @@ class CaseFileError(RuntimeError):
 class CaseEntry(BaseModel):
     """One case as it appears in the file."""
 
+    # A key the importer does not know is refused rather than ignored: a typo
+    # in a field name would otherwise drop that field silently, and a file
+    # from before #285 would be read as all new cases (#300).
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_test_id(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "test_id" in data:
+            raise ValueError(
+                "test_id gibt es seit #285 nicht mehr, die Identität ist `nummer`. "
+                "Die Datei stammt von vorher: bitte neu exportieren."
+            )
+        return data
+
     # Absent for a new case: the backend allocates it and the next export adds
     # it. Writing one by hand is how a number gets reused.
     nummer: int | None = None
     tag: str = ""
     # An open list (#286): a built-in category or any short code.
     kategorie: str
-    # Labels (#286). None means the file does not say, and leaves the case's
-    # label alone: re-importing an older file must not wipe labels set on
-    # screen since.
+    # Labels (#286), and the tag above: applied when the file creates a case,
+    # never to one that exists. Labels are corrected on screen, and a file
+    # exported before the correction would otherwise put the old value back
+    # every time it is imported (#300). None means the file does not say.
     testart: str | None = None
     frageform: str | None = None
     herkunft: str | None = None
@@ -245,16 +263,12 @@ def _update(
         _approve_if_asked(session, entry, case, version, report)
         return
 
-    relabelled = _labels_if_changed(session, entry, case)
-    retagged = _tag_if_given(session, entry, case) or relabelled
     latest = case.versions[-1]
     if _content_of(latest) == entry.content():
         # Identical content. The only thing left that could differ is approval,
         # which is a state change rather than a content one.
         if entry.status == FREIGEGEBEN and not latest.is_approved:
             _approve(session, case, latest, report)
-        elif retagged:
-            report.updated.append(case.tag)
         else:
             report.unchanged.append(case.tag)
         return
@@ -280,19 +294,6 @@ def _approve(session: Session, case: Case, version: CaseVersion, report: ImportR
     except case_store.IncompleteCase as exc:
         raise CaseFileError(str(exc)) from exc
     report.approved.append(case.tag)
-
-
-def _labels_if_changed(session: Session, entry: CaseEntry, case: Case) -> bool:
-    """Apply the file's category and labels where they differ. Whether any did."""
-    changes: dict[str, str] = {
-        name: value for name, value in entry.labels().items() if getattr(case, name) != value
-    }
-    if entry.kategorie != case.kategorie:
-        changes["kategorie"] = entry.kategorie
-    if not changes:
-        return False
-    case_store.set_labels(session, case, **changes)
-    return True
 
 
 def _tag_if_given(session: Session, entry: CaseEntry, case: Case) -> bool:

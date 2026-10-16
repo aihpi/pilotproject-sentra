@@ -44,7 +44,14 @@ TESTARTEN: dict[str, str] = {
 GRENZFALL_AUSSERHALB = "Grenzfall · außerhalb des Bestands"
 
 FRAGEFORMEN: tuple[str, ...] = ("allgemein", "konkret")
-HERKUENFTE: tuple[str, ...] = ("Prüfer-Vorlage", "Hotline", "Feedback", "manuell")
+# Each importer writes one of these, so all of them are offered (#300).
+HERKUENFTE: tuple[str, ...] = (
+    "Prüfer-Vorlage",
+    "Erfassungsvorlage",
+    "Hotline",
+    "Feedback",
+    "manuell",
+)
 
 # Short, because it is the first part of every generated tag and is stored in
 # a String(8). Letters and digits only, so "FI-PRZ-003" stays readable.

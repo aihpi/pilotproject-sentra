@@ -247,7 +247,10 @@ def _extract_title(markdown: str) -> str:
         line = line.strip()
         if not line.startswith("#"):
             continue
-        heading = _deduplicate_title(line.lstrip("#").strip())
+        # Cleaned before the checks (#300): "Fehler! … Kurzinformation <Titel>"
+        # contains a document type, and checked first it was skipped whole
+        # rather than left as <Titel>.
+        heading = _clean_title(_deduplicate_title(line.lstrip("#").strip()))
         if not heading or len(heading) < 5:
             continue
         heading_lower = heading.lower()
@@ -257,10 +260,7 @@ def _extract_title(markdown: str) -> str:
             continue
         if heading_lower.startswith(("aktenzeichen:", "dokumententyp:")):
             continue
-        cleaned = _clean_title(heading)
-        if len(cleaned) < 5:
-            continue
-        return cleaned
+        return heading
 
     return "Unbekannter Titel"
 

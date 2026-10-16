@@ -10,6 +10,7 @@ import {
   Building2,
   ExternalLink,
 } from "lucide-react";
+import { documentKey } from "@/lib/documents";
 
 type SortMode = "relevance" | "date";
 
@@ -83,7 +84,7 @@ export function DocumentList({ documents, referenceDoc }: DocumentListProps) {
       <div className="space-y-2">
         {sorted.map((doc) => (
           <a
-            key={doc.aktenzeichen}
+            key={documentKey(doc)}
             href={doc.source_file ? pdfUrl(doc.source_file) : undefined}
             target="_blank"
             rel="noopener noreferrer"

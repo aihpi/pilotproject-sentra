@@ -130,10 +130,16 @@ def _database_state() -> tuple[str, str | None]:
 # ── Test cases (Phase 1 of the Vorlage) ─────────────────────────────
 
 
-def _as_response(case: Case, aktueller_bestand: bestand.Bestand | None = None) -> CaseResponse:
+def _as_response(case: Case, aktueller_bestand: bestand.Bestand) -> CaseResponse:
+    """The case as the API returns it.
+
+    The Bestand is fetched by the caller before it opens a session (#300).
+    Fetching here meant an HTTP call to SENTRA inside a transaction that may
+    already hold counter rows FOR UPDATE.
+    """
     latest = case.versions[-1] if case.versions else None
     hindernisse = (
-        case_store.approval_blockers(latest, aktueller_bestand or bestand.fetch())
+        case_store.approval_blockers(latest, aktueller_bestand)
         if latest is not None and not latest.is_approved and case.zurueckgezogen_at is None
         else []
     )
@@ -183,6 +189,7 @@ def list_cases(include_withdrawn: bool = False) -> list[CaseResponse]:
 @router.post("/cases", response_model=CaseResponse, status_code=201)
 def create_case(body: CreateCaseRequest) -> CaseResponse:
     """A new case. Its number is allocated here and never reused."""
+    aktueller_bestand = bestand.fetch()
     with session_scope() as session:
         try:
             case, _ = case_store.create_case(
@@ -203,7 +210,7 @@ def create_case(body: CreateCaseRequest) -> CaseResponse:
             )
         except labels.LabelError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return _as_response(case)
+        return _as_response(case, aktueller_bestand)
 
 
 # An upload is capped rather than trusted. The sheet handed out has room for
@@ -294,8 +301,9 @@ def _read_upload(raw: bytes) -> list[dict]:
 
 @router.get("/cases/{nummer}", response_model=CaseResponse)
 def get_case(nummer: int) -> CaseResponse:
+    aktueller_bestand = bestand.fetch()
     with session_scope() as session:
-        return _as_response(_lookup(session, nummer))
+        return _as_response(_lookup(session, nummer), aktueller_bestand)
 
 
 @router.patch("/cases/{nummer}", response_model=CaseResponse)
@@ -307,6 +315,7 @@ def update_case(nummer: int, body: UpdateCaseRequest) -> CaseResponse:
     means asking for a new draft, and that is what comes back.
     """
     fields = body.model_dump(exclude_none=True)
+    aktueller_bestand = bestand.fetch()
     with session_scope() as session:
         case = _lookup(session, nummer)
         latest = case.versions[-1]
@@ -315,20 +324,21 @@ def update_case(nummer: int, body: UpdateCaseRequest) -> CaseResponse:
         else:
             case_store.edit_draft(session, latest, **fields)
         session.refresh(case)
-        return _as_response(case)
+        return _as_response(case, aktueller_bestand)
 
 
 @router.post("/cases/{nummer}/freigeben", response_model=CaseResponse)
 def approve_case(nummer: int) -> CaseResponse:
     """Approve the latest draft, making it the yardstick for future rounds."""
+    aktueller_bestand = bestand.fetch()
     with session_scope() as session:
         case = _lookup(session, nummer)
         try:
-            case_store.approve(session, case.versions[-1], bestand=bestand.fetch())
+            case_store.approve(session, case.versions[-1], bestand=aktueller_bestand)
         except case_store.IncompleteCase as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         session.refresh(case)
-        return _as_response(case)
+        return _as_response(case, aktueller_bestand)
 
 
 @router.put("/cases/{nummer}/tag", response_model=CaseResponse)
@@ -338,6 +348,7 @@ def set_case_tag(nummer: int, body: SetTagRequest) -> CaseResponse:
     The number is what everything points at, so a tag can be corrected freely.
     It only has to stay unique.
     """
+    aktueller_bestand = bestand.fetch()
     with session_scope() as session:
         case = _lookup(session, nummer)
         try:
@@ -345,17 +356,18 @@ def set_case_tag(nummer: int, body: SetTagRequest) -> CaseResponse:
         except case_store.TagTaken as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         session.refresh(case)
-        return _as_response(case)
+        return _as_response(case, aktueller_bestand)
 
 
 @router.post("/cases/{nummer}/zurueckziehen", response_model=CaseResponse)
 def withdraw_case(nummer: int) -> CaseResponse:
     """Take a case out of future rounds. Its Test-ID stays spent."""
+    aktueller_bestand = bestand.fetch()
     with session_scope() as session:
         case = _lookup(session, nummer)
         case_store.withdraw(session, case)
         session.refresh(case)
-        return _as_response(case)
+        return _as_response(case, aktueller_bestand)
 
 
 @router.get("/kategorien", response_model=dict[str, str])
@@ -378,6 +390,7 @@ def label_values() -> LabelsResponse:
 @router.patch("/cases/{nummer}/labels", response_model=CaseResponse)
 def set_case_labels(nummer: int, body: SetLabelsRequest) -> CaseResponse:
     """Correct a case's labels. No new version: labels are not what is measured."""
+    aktueller_bestand = bestand.fetch()
     with session_scope() as session:
         case = _lookup(session, nummer)
         try:
@@ -392,7 +405,7 @@ def set_case_labels(nummer: int, body: SetLabelsRequest) -> CaseResponse:
         except labels.LabelError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         session.refresh(case)
-        return _as_response(case)
+        return _as_response(case, aktueller_bestand)
 
 
 def _lookup(session: object, nummer: int) -> Case:
@@ -943,6 +956,7 @@ def draft_from_feedback(body: DraftFromFeedbackRequest) -> DraftFromFeedbackResp
     if entry is None:
         raise HTTPException(status_code=404, detail="Rückmeldung nicht gefunden.")
 
+    aktueller_bestand = bestand.fetch()
     with session_scope() as session:
         try:
             case, beanstandet = feedback_store.draft_case(session, entry, kategorie=body.kategorie)
@@ -951,4 +965,6 @@ def draft_from_feedback(body: DraftFromFeedbackRequest) -> DraftFromFeedbackResp
         except feedback_store.FeedbackError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         session.refresh(case)
-        return DraftFromFeedbackResponse(case=_as_response(case), beanstandete_antwort=beanstandet)
+        return DraftFromFeedbackResponse(
+            case=_as_response(case, aktueller_bestand), beanstandete_antwort=beanstandet
+        )

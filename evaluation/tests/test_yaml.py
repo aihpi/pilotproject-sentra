@@ -170,22 +170,46 @@ class TestIdentity:
         with pytest.raises(yaml_io.CaseFileError, match="not a case number"):
             _apply(session, text, allow_new_ids=True)
 
-    def test_a_tag_in_the_file_is_applied_and_kept(self, session):
-        _apply(session, ONE_CASE)
-        text = yaml_io.dump(session).replace("tag: GO-001", "tag: GO-Redezeit")
+    def test_a_tag_in_the_file_is_applied_to_a_new_case(self, session):
+        text = ONE_CASE.replace("- kategorie: GO", "- tag: GO-Redezeit\n  kategorie: GO")
 
-        report = _apply(session, text)
+        _apply(session, text)
 
         case = case_store.get_case(session, 1)
-        assert report.updated == ["GO-Redezeit"]
-        assert case.tag == "GO-Redezeit"
-        assert case.tag_manuell is True
+        assert (case.tag, case.tag_manuell) == ("GO-Redezeit", True)
+
+    def test_but_not_to_one_that_exists(self, session):
+        """An older export would otherwise put back a tag corrected on screen (#300)."""
+        _apply(session, ONE_CASE)
+        case_store.set_tag(session, case_store.get_case(session, 1), "GO-Redezeit")
+        old_export = ONE_CASE.replace(
+            "- kategorie: GO", "- nummer: 1\n  tag: GO-001\n  kategorie: GO"
+        )
+
+        report = _apply(session, old_export)
+
+        assert case_store.get_case(session, 1).tag == "GO-Redezeit"
+        assert report.unchanged == ["GO-Redezeit"]
 
     def test_a_tag_already_taken_is_refused(self, session):
-        _apply(session, ONE_CASE + ONE_CASE.replace("- kategorie", "\n- kategorie", 1))
-        text = yaml_io.dump(session).replace("tag: GO-002", "tag: GO-001")
+        _apply(session, ONE_CASE)
+        text = ONE_CASE.replace("- kategorie: GO", "- tag: GO-001\n  kategorie: GO")
 
         with pytest.raises(yaml_io.CaseFileError, match="schon vergeben"):
+            _apply(session, text)
+
+    def test_a_file_from_before_numbers_is_refused_not_duplicated(self, session):
+        """With test_id and no nummer, every entry used to become a new case (#300)."""
+        text = ONE_CASE.replace("- kategorie: GO", "- test_id: TF-GO-001\n  kategorie: GO")
+
+        with pytest.raises(yaml_io.CaseFileError, match="neu exportieren"):
+            _apply(session, text)
+        assert case_store.list_cases(session) == []
+
+    def test_an_unknown_key_is_refused(self, session):
+        text = ONE_CASE.replace("- kategorie: GO", "- erwartete_antwortt: x\n  kategorie: GO")
+
+        with pytest.raises(yaml_io.CaseFileError, match="erwartete_antwortt"):
             _apply(session, text)
 
 
@@ -307,11 +331,17 @@ class TestLabels:
 
         assert case_store.get_case(session, 1).testart == "Synthese"
 
-    def test_a_changed_label_counts_as_an_update(self, session):
+    def test_a_label_in_the_file_does_not_change_an_existing_case(self, session):
+        """Labels are corrected on screen; a file is applied to an existing case
+        for its content and approval only (#300)."""
         _apply(session, ONE_CASE)
-        text = yaml_io.dump(session).replace("testart: ''", "testart: Quellenwahl")
+        case_store.set_labels(session, case_store.get_case(session, 1), kategorie="WI")
+        old_export = ONE_CASE.replace(
+            "- kategorie: GO", "- nummer: 1\n  testart: Quellenwahl\n  kategorie: GO"
+        )
 
-        report = _apply(session, text)
+        report = _apply(session, old_export)
 
-        assert len(report.updated) == 1
-        assert case_store.get_case(session, 1).testart == "Quellenwahl"
+        case = case_store.get_case(session, 1)
+        assert (case.kategorie, case.testart) == ("WI", "")
+        assert report.updated == []

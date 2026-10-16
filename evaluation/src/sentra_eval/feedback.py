@@ -118,5 +118,6 @@ def draft_case(session: Session, entry: FeedbackEntry, *, kategorie: Kategorie) 
             + (f": {entry.comment}" if entry.comment else "")
         ),
         feedback_id=entry.id,
+        herkunft="Feedback",
     )
     return case, entry.answer

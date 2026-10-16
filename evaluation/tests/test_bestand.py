@@ -182,3 +182,35 @@ class TestImportingAFileThatApproves:
 
         with pytest.raises(yaml_io.CaseFileError, match="nicht im Bestand"):
             yaml_io.apply(session, entries, bestand=LEER)
+
+
+class TestAnOutage:
+    """Remembered briefly, so every refresh during one does not wait out the
+    timeout again (#300)."""
+
+    def test_is_cached_for_a_short_while(self, monkeypatch):
+        calls = []
+
+        class Down:
+            def __init__(self, **kwargs):
+                pass
+
+            def get(self, path):
+                calls.append(path)
+                raise httpx.ConnectError("refused")
+
+            def close(self):
+                pass
+
+        monkeypatch.setattr(bestand.httpx, "Client", Down)
+        bestand.clear_cache()
+
+        first = _REAL_FETCH()
+        second = _REAL_FETCH()
+
+        assert not first.erreichbar and not second.erreichbar
+        assert len(calls) == 1
+        bestand.clear_cache()
+
+    def test_but_not_for_as_long_as_an_answer(self):
+        assert bestand.FAILURE_CACHE_SECONDS < bestand.CACHE_SECONDS

@@ -1,5 +1,6 @@
 import type { DocumentInfo } from "@/types";
 import { Badge } from "@/components/ui/badge";
+import { documentKey } from "@/lib/documents";
 
 interface DocumentsTableProps {
   documents: DocumentInfo[];
@@ -47,7 +48,7 @@ export function DocumentsTable({ documents, isLoading }: DocumentsTableProps) {
         <tbody>
           {documents.map((doc) => (
             <tr
-              key={doc.aktenzeichen}
+              key={documentKey(doc)}
               className="border-b transition-colors hover:bg-muted/50"
             >
               <td className="px-4 py-3 font-mono text-xs">
