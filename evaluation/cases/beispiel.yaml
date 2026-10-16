@@ -1,8 +1,8 @@
 # The worked example from the Vorlage, section 3. Not part of a real round —
 # it is here so the file format has something to read.
 #
-# A new case is written without a test_id; the backend allocates one and the
-# next export writes it back into this file.
+# A new case is written without a nummer; the backend allocates one, with a
+# tag, and the next export writes both back into this file.
 
 - kategorie: GO
   ausgangsfrage: Wie lange darf ein Redner im Plenum sprechen?

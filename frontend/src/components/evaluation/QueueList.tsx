@@ -38,7 +38,9 @@ export function QueueList({ entries, selected, onSelect }: QueueListProps) {
               <span className="w-4 shrink-0">
                 {entry.assessed && <Check className="h-3.5 w-3.5 text-primary" />}
               </span>
-              <span className="font-mono">{entry.test_id}</span>
+              <span className="font-mono" title={`Nr. ${entry.nummer}`}>
+                {entry.tag}
+              </span>
               {entry.grenzfall && (
                 <span
                   className="ml-auto text-[10px] uppercase text-destructive"

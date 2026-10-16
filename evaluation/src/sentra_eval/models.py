@@ -8,8 +8,8 @@ people being careful — the schema has to make it true.
 
 Hence the split:
 
-  Case          the identity. A Test-ID, a category, and nothing that can be
-                argued about later.
+  Case          the identity. A number that never changes, a tag and a category
+                that can be corrected, and nothing that can be argued about later.
   CaseVersion   the content. Append-only once approved. Editing an approved
                 version is not possible; you add another and approve that.
 
@@ -109,8 +109,8 @@ STUFE_3 = "Stufe 3 (Stichprobe)"
 GRENZFALL_IMMER = "Grenzfall (immer manuell, 4.4)"
 
 
-class TestIdSequence(Base):
-    """The next free number per category.
+class Counter(Base):
+    """The next free number for a case, or within a tag prefix.
 
     A counter rather than max(number) + 1. The Vorlage requires that a number is
     never reused, "auch bei zurückgezogenen Testfällen nicht", and max + 1 hands
@@ -118,9 +118,11 @@ class TestIdSequence(Base):
     counter cannot, whatever happens to the rows it counted.
     """
 
-    __tablename__ = "test_id_sequences"
+    __tablename__ = "counters"
 
-    kategorie: Mapped[str] = mapped_column(String(8), primary_key=True)
+    # "nummer" for the case number; a tag prefix such as "FI" for the running
+    # number inside generated tags (#285).
+    name: Mapped[str] = mapped_column(String(64), primary_key=True)
     next_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
@@ -128,10 +130,17 @@ class Case(Base):
     """A test case's identity. Its content is in its versions."""
 
     __tablename__ = "cases"
+    __table_args__ = (UniqueConstraint("nummer", name="uq_cases_nummer"),)
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    # "TF-GO-014". Unique across everything, allocated by TestIdSequence.
-    test_id: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
+    # What people refer to a case by: a running number, never changed and never
+    # reused, "auch bei zurückgezogenen Testfällen nicht" (#285).
+    nummer: Mapped[int] = mapped_column(Integer, nullable=False)
+    # A readable label such as "FI-007". Generated, or set by hand, in which
+    # case tag_manuell keeps it from being regenerated. Unique, but not an
+    # identity: correcting it changes nothing a round or report points at.
+    tag: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    tag_manuell: Mapped[bool] = mapped_column(nullable=False, default=False)
     kategorie: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

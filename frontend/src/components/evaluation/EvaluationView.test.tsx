@@ -35,7 +35,8 @@ const RUN: EvalRun = {
 };
 
 const ENTRY: QueueEntry = {
-  test_id: "TF-GO-001",
+  nummer: 1,
+  tag: "GO-001",
   kategorie: "GO",
   case_version_id: "cv-1",
   version: 1,
@@ -136,9 +137,9 @@ async function renderAndWait() {
   // No session: these tests are about the review screen, and the installation
   // without a login is the case where the typed Tester/in field still exists.
   render(<EvaluationView session={null} />);
-  // The Test-ID appears twice on purpose: once in the queue, once on the case
+  // The tag appears twice on purpose: once in the queue, once on the case
   // pane beside the answer.
-  await screen.findAllByText("TF-GO-001");
+  await screen.findAllByText("GO-001");
 }
 
 beforeEach(() => {
@@ -336,7 +337,7 @@ describe("who the verdict is attributed to", () => {
     render(
       <EvaluationView session={{ benutzername: "wd3", rolle: "pruefer" }} />,
     );
-    await screen.findAllByText("TF-GO-001");
+    await screen.findAllByText("GO-001");
 
     expect(screen.getByText("wd3")).toBeInTheDocument();
     expect(screen.queryByLabelText("Tester/in")).not.toBeInTheDocument();
@@ -346,7 +347,7 @@ describe("who the verdict is attributed to", () => {
     render(
       <EvaluationView session={{ benutzername: "wd3", rolle: "pruefer" }} />,
     );
-    await screen.findAllByText("TF-GO-001");
+    await screen.findAllByText("GO-001");
 
     await userEvent.selectOptions(
       screen.getByLabelText("4.3c Kontextprüfung"),
@@ -374,7 +375,7 @@ describe("who the verdict is attributed to", () => {
     render(
       <EvaluationView session={{ benutzername: "wd3", rolle: "pruefer" }} />,
     );
-    await screen.findAllByText("TF-GO-001");
+    await screen.findAllByText("GO-001");
 
     expect(screen.getByText("4.3c ist erforderlich.")).toBeInTheDocument();
   });

@@ -13,10 +13,14 @@ from sqlalchemy.orm import Session, selectinload
 
 from sentra_eval.bestand import Bestand
 from sentra_eval.categories import Kategorie
-from sentra_eval.models import ENTWURF, FREIGEGEBEN, Case, CaseVersion, TestIdSequence
+from sentra_eval.models import ENTWURF, FREIGEGEBEN, Case, CaseVersion, Counter
 
-# "TF-GO-014": the prefix, the category abbreviation, a three digit number.
-TEST_ID_PATTERN = re.compile(r"TF-(?P<kategorie>[A-Z]{2})-(?P<number>\d{3,})")
+# The counter behind every case number. Tag prefixes are counters too, named
+# after the prefix, and none of them can be called this.
+NUMMER_COUNTER = "nummer"
+
+# A generated tag: a prefix, then its running number, "FI-007".
+GENERATED_TAG = re.compile(r"(?P<prefix>.+)-(?P<number>\d{3,})")
 
 
 class CaseError(RuntimeError):
@@ -38,33 +42,90 @@ class IncompleteCase(CaseError):
 
 
 class UnknownCase(CaseError):
-    """No case with that Test-ID."""
+    """No case with that number."""
 
 
-# ── Test-ID allocation ──────────────────────────────────────────────
+class TagTaken(CaseError):
+    """Another case already carries this tag."""
 
 
-def allocate_test_id(session: Session, kategorie: Kategorie) -> str:
-    """The next Test-ID for a category. Never returns the same one twice.
+# ── Numbers and tags ────────────────────────────────────────────────
 
-    The counter row is locked for the duration, so two imports running at once
-    cannot both read the same next_number. Without the lock this is the classic
-    read-modify-write race, and the symptom would be a unique-constraint error
-    on test_id that looks like a bug in the caller.
+
+def _counter(session: Session, name: str) -> Counter:
+    """The counter row, locked for the rest of the transaction.
+
+    Locked so two imports running at once cannot both read the same
+    next_number. Without the lock this is the classic read-modify-write race,
+    and the symptom would be a unique-constraint error that looks like a bug in
+    the caller.
     """
     row = session.execute(
-        select(TestIdSequence).where(TestIdSequence.kategorie == kategorie).with_for_update()
+        select(Counter).where(Counter.name == name).with_for_update()
     ).scalar_one_or_none()
-
     if row is None:
-        row = TestIdSequence(kategorie=str(kategorie), next_number=1)
+        row = Counter(name=name, next_number=1)
         session.add(row)
         session.flush()
+    return row
 
+
+def _take(session: Session, name: str) -> int:
+    row = _counter(session, name)
     number = row.next_number
     row.next_number = number + 1
     session.flush()
-    return f"TF-{kategorie}-{number:03d}"
+    return number
+
+
+def _reserve(session: Session, name: str, number: int) -> None:
+    """Make sure the counter never hands out `number` or anything below it."""
+    row = _counter(session, name)
+    row.next_number = max(row.next_number, number + 1)
+    session.flush()
+
+
+def allocate_nummer(session: Session) -> int:
+    """The next case number. Never returns the same one twice.
+
+    A counter rather than max(nummer) + 1, which would hand the number back the
+    moment the highest case is withdrawn.
+    """
+    return _take(session, NUMMER_COUNTER)
+
+
+def generate_tag(session: Session, prefix: str) -> str:
+    """The next free tag with this prefix, skipping any set by hand."""
+    while True:
+        tag = f"{prefix}-{_take(session, prefix):03d}"
+        if not _tag_in_use(session, tag):
+            return tag
+
+
+def _tag_in_use(session: Session, tag: str, *, apart_from: Case | None = None) -> bool:
+    statement = select(Case.id).where(Case.tag == tag)
+    if apart_from is not None:
+        statement = statement.where(Case.id != apart_from.id)
+    return session.execute(statement).first() is not None
+
+
+def set_tag(session: Session, case: Case, tag: str) -> Case:
+    """Give a case a tag by hand. It is kept from then on, whatever its labels.
+
+    An empty tag hands the case back to the generator.
+    """
+    tag = tag.strip()
+    if not tag:
+        case.tag = generate_tag(session, case.kategorie)
+        case.tag_manuell = False
+        session.flush()
+        return case
+    if _tag_in_use(session, tag, apart_from=case):
+        raise TagTaken(f"Der Tag {tag!r} ist schon vergeben.")
+    case.tag = tag
+    case.tag_manuell = True
+    session.flush()
+    return case
 
 
 # ── Writing ─────────────────────────────────────────────────────────
@@ -92,7 +153,11 @@ def create_case(
     trail could not distinguish "written and approved together" from "approved
     without anyone reading it".
     """
-    case = Case(test_id=allocate_test_id(session, kategorie), kategorie=str(kategorie))
+    case = Case(
+        nummer=allocate_nummer(session),
+        tag=generate_tag(session, str(kategorie)),
+        kategorie=str(kategorie),
+    )
     session.add(case)
     session.flush()
 
@@ -120,7 +185,7 @@ def edit_draft(session: Session, version: CaseVersion, **fields: object) -> Case
     """Change a draft in place. Refuses an approved version."""
     if version.is_approved:
         raise ApprovedVersionIsImmutable(
-            f"{version.case.test_id} version {version.version} is approved. "
+            f"Nr. {version.case.nummer} version {version.version} is approved. "
             f"Add a new version instead — an approved version is what runs were measured "
             f"against, and editing it would let the expectation follow the answer."
         )
@@ -208,7 +273,7 @@ def approve(
     blockers = approval_blockers(version, bestand)
     if blockers:
         raise IncompleteCase(
-            f"{version.case.test_id} Version {version.version} kann nicht freigegeben "
+            f"Nr. {version.case.nummer} Version {version.version} kann nicht freigegeben "
             f"werden: {'; '.join(blockers)}."
         )
 
@@ -219,39 +284,33 @@ def approve(
 
 
 def seed_case(
-    session: Session, *, test_id: str, kategorie: Kategorie, **content: object
+    session: Session, *, nummer: int, tag: str, kategorie: Kategorie, **content: object
 ) -> tuple[Case, CaseVersion]:
-    """Create a case at a Test-ID that was allocated elsewhere.
+    """Create a case at a number that was allocated elsewhere.
 
     For restoring an exported file into an empty database, and for nothing
-    else. The counter is advanced past the number so it can never be handed out
-    again — without that, seeding TF-GO-007 and then creating a case normally
-    would produce a second TF-GO-007, which is the exact failure the allocator
-    exists to prevent.
+    else. The counters are advanced past the number and the tag's running
+    number, so neither can be handed out again; without that, seeding Nr. 7 and
+    then creating a case normally would produce a second Nr. 7, which is the
+    exact failure the counter exists to prevent.
 
     Deliberately not reachable from the API. The import CLI asks for it with an
     explicit flag, so it cannot happen as a side effect of a normal import.
     """
-    match = TEST_ID_PATTERN.fullmatch(test_id)
-    if match is None or match.group("kategorie") != str(kategorie):
-        raise CaseError(
-            f"{test_id!r} is not a Test-ID for category {kategorie}. "
-            f"Expected the form TF-{kategorie}-001."
-        )
+    if nummer < 1:
+        raise CaseError(f"{nummer} is not a case number.")
+    tag = tag.strip() or f"{kategorie}-{nummer:03d}"
+    if _tag_in_use(session, tag):
+        raise TagTaken(f"Der Tag {tag!r} ist schon vergeben.")
 
-    case = Case(test_id=test_id, kategorie=str(kategorie))
+    case = Case(nummer=nummer, tag=tag, kategorie=str(kategorie))
     session.add(case)
     session.flush()
 
-    number = int(match.group("number"))
-    row = session.execute(
-        select(TestIdSequence).where(TestIdSequence.kategorie == kategorie).with_for_update()
-    ).scalar_one_or_none()
-    if row is None:
-        row = TestIdSequence(kategorie=str(kategorie), next_number=number + 1)
-        session.add(row)
-    else:
-        row.next_number = max(row.next_number, number + 1)
+    _reserve(session, NUMMER_COUNTER, nummer)
+    generated = GENERATED_TAG.fullmatch(tag)
+    if generated is not None:
+        _reserve(session, generated.group("prefix"), int(generated.group("number")))
 
     version = CaseVersion(case_id=case.id, version=1, status=ENTWURF, **content)
     session.add(version)
@@ -260,7 +319,7 @@ def seed_case(
 
 
 def withdraw(session: Session, case: Case) -> Case:
-    """Take a case out of future rounds without freeing its Test-ID."""
+    """Take a case out of future rounds without freeing its number."""
     if case.zurueckgezogen_at is None:
         case.zurueckgezogen_at = datetime.now(UTC)
         session.flush()
@@ -271,18 +330,18 @@ def withdraw(session: Session, case: Case) -> Case:
 
 
 def list_cases(session: Session, *, include_withdrawn: bool = False) -> list[Case]:
-    statement = select(Case).options(selectinload(Case.versions)).order_by(Case.test_id)
+    statement = select(Case).options(selectinload(Case.versions)).order_by(Case.nummer)
     if not include_withdrawn:
         statement = statement.where(Case.zurueckgezogen_at.is_(None))
     return list(session.execute(statement).scalars())
 
 
-def get_case(session: Session, test_id: str) -> Case:
+def get_case(session: Session, nummer: int) -> Case:
     case = session.execute(
-        select(Case).options(selectinload(Case.versions)).where(Case.test_id == test_id)
+        select(Case).options(selectinload(Case.versions)).where(Case.nummer == nummer)
     ).scalar_one_or_none()
     if case is None:
-        raise UnknownCase(f"No case with Test-ID {test_id!r}.")
+        raise UnknownCase(f"Kein Testfall mit Nr. {nummer}.")
     return case
 
 

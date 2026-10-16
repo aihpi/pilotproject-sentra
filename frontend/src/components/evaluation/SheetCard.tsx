@@ -18,7 +18,8 @@ export function SheetCard({ sheet }: { sheet: Sheet }) {
   return (
     <article className="space-y-3 rounded-lg border bg-card p-4">
       <header className="flex flex-wrap items-baseline gap-2">
-        <h4 className="font-semibold">{sheet.test_id}</h4>
+        <h4 className="font-semibold">{sheet.tag}</h4>
+        <span className="text-xs text-muted-foreground">Nr. {sheet.nummer}</span>
         <span className="text-xs text-muted-foreground">{sheet.kategorie}</span>
         <span className="text-xs text-muted-foreground">{sheet.datum}</span>
         {sheet.schweregrad !== null && (

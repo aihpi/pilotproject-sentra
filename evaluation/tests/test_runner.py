@@ -338,7 +338,7 @@ class TestAudit:
 
         session.expire_all()
         run = session.get(Run, run.id)
-        version = case_store.latest_approved(case_store.get_case(session, case.test_id))
+        version = case_store.latest_approved(case_store.get_case(session, case.nummer))
         version.freigegeben_at = datetime.now(UTC) + timedelta(hours=1)
         session.commit()
 

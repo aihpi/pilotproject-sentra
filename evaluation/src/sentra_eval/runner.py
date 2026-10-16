@@ -71,7 +71,8 @@ class PlannedCall:
     """One call a round intends to make."""
 
     case_version_id: UUID
-    test_id: str
+    nummer: int
+    tag: str
     frage: str
     variant_key: str
     repeat_index: int
@@ -106,13 +107,14 @@ def plan(session: Session, run: Run) -> list[PlannedCall]:
     for case in case_store.list_cases(session):
         version = case_store.latest_approved(case)
         if version is None:
-            logger.info("%s has no approved version, skipping", case.test_id)
+            logger.info("Nr. %d has no approved version, skipping", case.nummer)
             continue
         for repeat_index in range(run.repeats):
             planned.append(
                 PlannedCall(
                     case_version_id=version.id,
-                    test_id=case.test_id,
+                    nummer=case.nummer,
+                    tag=case.tag,
                     frage=version.ausgangsfrage,
                     variant_key=ORIGINAL,
                     repeat_index=repeat_index,
@@ -130,7 +132,8 @@ def plan(session: Session, run: Run) -> list[PlannedCall]:
             planned.append(
                 PlannedCall(
                     case_version_id=version.id,
-                    test_id=case.test_id,
+                    nummer=case.nummer,
+                    tag=case.tag,
                     frage=variant.wortlaut,
                     variant_key=variant.stil,
                     repeat_index=0,
@@ -140,7 +143,8 @@ def plan(session: Session, run: Run) -> list[PlannedCall]:
         planned.append(
             PlannedCall(
                 case_version_id=version.id,
-                test_id=case.test_id,
+                nummer=case.nummer,
+                tag=case.tag,
                 frage=version.ausgangsfrage,
                 variant_key=ORIGINAL,
                 repeat_index=0,

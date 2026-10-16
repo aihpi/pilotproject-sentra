@@ -37,7 +37,8 @@ const EVERYONE_AGREED: Agreement = {
 };
 
 const SHEET: Sheet = {
-  test_id: "TF-GO-002",
+  nummer: 1,
+  tag: "GO-002",
   datum: "2026-09-18",
   tester: "WD",
   kategorie: "Geschäftsordnung",
@@ -170,7 +171,7 @@ describe("the documentation sheets", () => {
   it("renders one per case in the Vorlage's vocabulary", async () => {
     given();
 
-    expect(await screen.findByText("TF-GO-002")).toBeInTheDocument();
+    expect(await screen.findByText("GO-002")).toBeInTheDocument();
     expect(screen.getByText("Quellenprüfung 4.3b")).toBeInTheDocument();
     expect(screen.getByText("weicht ab")).toBeInTheDocument();
     expect(screen.getByText("Schweregrad 2")).toBeInTheDocument();
@@ -200,7 +201,7 @@ describe("KISZ escalations", () => {
   it("are absent when there are none", async () => {
     given({ kisz: [] });
 
-    await screen.findByText("TF-GO-002");
+    await screen.findByText("GO-002");
     expect(screen.queryByText(/An KISZ zu melden/)).not.toBeInTheDocument();
   });
 
