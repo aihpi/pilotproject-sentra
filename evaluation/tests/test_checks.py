@@ -656,3 +656,31 @@ class TestMarkerAusrichtungByNumber:
         outcome = checks.marker_ausrichtung(_answer_text("Laut [3] gilt ...", "A", "B"))
 
         assert outcome.belege["marker_ohne_quelle"] == [3]
+
+
+class TestIgnoredDocumentsAreStillCounted:
+    """The count of retrieved documents an answer did not cite is kept (#270),
+    now that uncited ones are no longer among the returned sources."""
+
+    def test_counted_against_everything_retrieved(self):
+        response = _cited_only("Laut [1] und [3].", ("A", 1), ("C", 3))
+        response["hits"] = [
+            {"aktenzeichen": "A"},
+            {"aktenzeichen": "B"},
+            {"aktenzeichen": "A"},
+            {"aktenzeichen": "C"},
+            {"aktenzeichen": "D"},
+        ]
+
+        outcome = checks.marker_ausrichtung(response)
+
+        assert outcome.belege["anzahl_abgerufen"] == 4
+        assert outcome.belege["quellen_ohne_marker"] == [2, 4]
+        # Still evidence, not a finding.
+        assert outcome.auffaellig is False
+
+    def test_without_a_debug_payload_the_sources_are_what_was_given(self):
+        outcome = checks.marker_ausrichtung(_answer_text("Nur [1].", "A", "B", "C"))
+
+        assert outcome.belege["anzahl_abgerufen"] == 3
+        assert outcome.belege["quellen_ohne_marker"] == [2, 3]

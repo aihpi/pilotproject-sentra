@@ -182,6 +182,20 @@ def _source_numbers(sources: list) -> list[int]:
     return list(range(1, len(sources) + 1))
 
 
+def _retrieved_numbers(hits: list) -> list[int]:
+    """The numbers of every retrieved document, cited or not.
+
+    From the debug payload's passages, numbered as SENTRA numbers them: by
+    order of first appearance of the Aktenzeichen. Empty without a payload.
+    """
+    seen: dict[str, int] = {}
+    for hit in hits:
+        az = hit.get("aktenzeichen") if isinstance(hit, dict) else None
+        if az:
+            seen.setdefault(az, len(seen) + 1)
+    return list(seen.values())
+
+
 def marker_ausrichtung(response: dict) -> CheckOutcome:
     """Whether every [n] has an nth source, and every source is cited.
 
@@ -206,16 +220,22 @@ def marker_ausrichtung(response: dict) -> CheckOutcome:
     available = _source_numbers(sources)
 
     dangling = [n for n in used if n not in available]
-    uncited = [n for n in available if n not in used]
+    # What the answer left unused out of what it was given. Since #268 the
+    # sources hold only cited documents, so this counts against everything
+    # retrieved, from the debug payload; a response without one falls back to
+    # its sources, which before #268 were everything retrieved anyway.
+    retrieved = _retrieved_numbers(response.get("hits") or []) or available
+    uncited = [n for n in retrieved if n not in used]
 
     belege = {
         "verwendete_marker": used,
         "anzahl_quellen": len(sources),
+        "anzahl_abgerufen": len(retrieved),
         # A marker pointing at a source that is not there. The model invented a
         # number, and a reviewer following it finds nothing.
         "marker_ohne_quelle": dangling,
-        # A source the answer never referred to. Evidence, not a finding — see
-        # below.
+        # A retrieved document the answer never referred to. Evidence, not a
+        # finding — see below.
         "quellen_ohne_marker": uncited,
     }
 
