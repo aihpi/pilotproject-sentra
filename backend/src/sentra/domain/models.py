@@ -165,6 +165,9 @@ class SourceRef:
     # Zero for a document indexed before #134.
     page: int = 0
     paragraph: int = 0
+    # The n of the [n] that cites it. Not its position in a returned list: only
+    # cited sources are returned (#268), so [3] can be the second one shown.
+    nummer: int = 0
 
 
 @dataclass

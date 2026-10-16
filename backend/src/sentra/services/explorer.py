@@ -23,7 +23,9 @@ from sentra.rag.generator import (
     OVERVIEW_PROMPT,
     AnswerGenerator,
     AnswerMethod,
+    cited_numbers,
     format_context,
+    source_numbers,
 )
 from sentra.rag.store import VectorStore
 
@@ -63,6 +65,7 @@ def _build_source_refs(hits: list[Hit]) -> list[SourceRef]:
     source in order of first appearance, so this is what the numbering in a
     generated answer is supposed to line up with.
     """
+    numbers = source_numbers(hits)
     seen: set[str] = set()
     refs: list[SourceRef] = []
     for hit in hits:
@@ -80,6 +83,7 @@ def _build_source_refs(hits: list[Hit]) -> list[SourceRef]:
                 # which is the passage [n] stands for. See SourceRef.
                 page=hit.page_from,
                 paragraph=hit.paragraph_from,
+                nummer=numbers[hit.aktenzeichen],
             )
         )
     return refs
@@ -243,9 +247,14 @@ def _generate(
             system_prompt=effective_prompt,
         )
 
-    sources = _build_source_refs(results)
     context = format_context(results)
     generated = generate(query, context, system_prompt=system_prompt)
+
+    # Only what the answer cites (#268). An answer with no marker, a refusal
+    # among them, lists no sources: a reader should not be shown documents as
+    # backing an answer that drew on none of them.
+    cited = cited_numbers(generated.text)
+    sources = [ref for ref in _build_source_refs(results) if ref.nummer in cited]
 
     return AnswerResult(
         text=generated.text,
