@@ -13,7 +13,7 @@ somebody who has already filled in two hundred rows.
 
 Two things deliberately not collected:
 
-  Test-ID   allocated by the backend, never reused, "auch bei zurückgezogenen
+  Nummer    allocated by the backend, never reused, "auch bei zurückgezogenen
             Testfällen nicht". A column for it is an invitation to write one by
             hand, which is how a number gets used twice.
   Status    a case is approved by review, not by the person who wrote it. The
@@ -27,6 +27,10 @@ from pathlib import Path
 from typing import IO, Any
 
 from sentra_eval.categories import KATEGORIE_NAMEN, Kategorie
+from sentra_eval.labels import TESTARTEN, LabelError, normalise_kategorie
+
+# What a case collected through these templates records as its Herkunft.
+HERKUNFT = "Erfassungsvorlage"
 
 JA = "ja"
 NEIN = "nein"
@@ -45,6 +49,10 @@ class Feld:
     hilfe: str
     pflicht: bool = False
     auswahl: tuple[str, ...] = ()
+    # The list is a suggestion, not a limit: Bereich and Testart are open lists
+    # (#286), so a value not in it can be typed in. Excel then gives no error,
+    # and the Word form offers a combo box rather than a dropdown.
+    offen: bool = False
     breite: int = 40
     mehrzeilig: bool = False
 
@@ -54,13 +62,28 @@ FIELDS: tuple[Feld, ...] = (
         name="kategorie",
         label="Kategorie",
         hilfe=(
-            "Grobe Einordnung der Frage. Bestimmt die Test-ID. "
+            "Bereich, aus dem die Frage stammt: Fachbereich oder Hotline-Thema. "
             + "; ".join(f"{k} = {n}" for k, n in KATEGORIE_NAMEN.items())
-            + "."
+            + ". Ein anderes Kürzel aus Buchstaben oder Ziffern geht auch, z. B. WD3."
         ),
         pflicht=True,
         auswahl=tuple(k.value for k in Kategorie),
+        offen=True,
         breite=12,
+    ),
+    Feld(
+        name="testart",
+        label="Testart",
+        hilfe=(
+            "Was der Testfall prüfen soll. Regelfall: die Antwort steht im Bestand. "
+            "Präzision: Zahlen, Fristen, Paragrafen. Quellenwahl: es gibt eine ähnliche "
+            "oder veraltete Arbeit. Synthese: die Antwort braucht mehrere Arbeiten. "
+            "Grenzfälle: außerhalb des Bestands, mehrdeutig, veraltet, falsche Annahme. "
+            "Freiwillig; eine eigene Bezeichnung geht auch."
+        ),
+        auswahl=tuple(TESTARTEN),
+        offen=True,
+        breite=24,
     ),
     Feld(
         name="ausgangsfrage",
@@ -184,7 +207,7 @@ DIE_EINE_REGEL = (
 )
 
 NICHT_AUSFUELLEN = (
-    "Test-ID und Status werden nicht hier vergeben. Die Test-ID vergibt das "
+    "Nummer und Status werden nicht hier vergeben. Die Nummer vergibt das "
     "System und benutzt sie nie ein zweites Mal; über die Freigabe entscheidet "
     "die fachliche Durchsicht, nicht die erfassende Person."
 )
@@ -227,9 +250,9 @@ def build_workbook() -> Any:
     the question and not after", and that is the sentence the whole exercise
     depends on.
 
-    Categories and Grenzfall are dropdowns rather than free text. Not tidiness:
-    `kategorie` decides the Test-ID, and a typo there is a case that cannot be
-    imported at all.
+    Categories, Testart and Grenzfall are dropdowns rather than free text, so the
+    usual values are picked rather than spelled. Category and Testart are open
+    lists (#286), so their dropdowns accept a value typed in; Grenzfall does not.
     """
     _require_openpyxl()
     from openpyxl import Workbook
@@ -281,6 +304,7 @@ def build_workbook() -> Any:
             formula1='"' + ",".join(feld.auswahl) + '"',
             allow_blank=True,
             showDropDown=False,
+            showErrorMessage=not feld.offen,
         )
         validation.error = "Bitte einen Wert aus der Liste wählen."
         validation.errorTitle = feld.label
@@ -406,10 +430,9 @@ _W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 def _add_control(document: Any, feld: Feld) -> None:
     """One content control, shaded, as a paragraph of its own.
 
-    A dropdown where the field has a fixed set of answers and a plain text box
-    otherwise. The dropdown matters for the same reason it does in the sheet:
-    `kategorie` decides the Test-ID, and a typo is a case that cannot be
-    imported.
+    A dropdown where the field has a fixed set of answers, a combo box where
+    the list is only a suggestion (category and Testart, #286), and a plain
+    text box otherwise.
     """
     from docx.oxml.ns import qn
     from docx.oxml.parser import OxmlElement
@@ -436,7 +459,7 @@ def _add_control(document: Any, feld: Feld) -> None:
     properties.append(placeholder)
 
     if feld.auswahl:
-        dropdown = OxmlElement("w:dropDownList")
+        dropdown = OxmlElement("w:comboBox" if feld.offen else "w:dropDownList")
         for option in feld.auswahl:
             item = OxmlElement("w:listItem")
             item.set(qn("w:displayText"), option)
@@ -519,8 +542,8 @@ def read_workbook(source: Path | IO[bytes], *, name: str = "") -> list[dict[str,
             continue
 
         entry: dict[str, Any] = {name: werte.get(name, "") for name in FIELD_NAMES}
-        entry["kategorie"] = entry["kategorie"].upper()
         entry["grenzfall"] = _bool(entry["grenzfall"], row_number)
+        entry["herkunft"] = HERKUNFT
         # Never from the sheet. The backend allocates the one and review
         # decides the other.
         entry["status"] = "entwurf"
@@ -536,13 +559,10 @@ def _check_required(entry: dict[str, Any], row_number: int, label: str) -> None:
         if feld.pflicht and not str(entry.get(feld.name, "")).strip():
             raise VorlageError(f"{label}, Zeile {row_number}: {feld.label} fehlt.")
 
-    kategorie = entry["kategorie"]
-    erlaubt = {k.value for k in Kategorie}
-    if kategorie not in erlaubt:
-        raise VorlageError(
-            f"{label}, Zeile {row_number}: Kategorie „{kategorie}“ ist unbekannt. "
-            f"Erlaubt: {', '.join(sorted(erlaubt))}."
-        )
+    try:
+        entry["kategorie"] = normalise_kategorie(str(entry["kategorie"]))
+    except LabelError as exc:
+        raise VorlageError(f"{label}, Zeile {row_number}: {exc}") from exc
 
     # The rule the case store enforces at approval, checked here so it is
     # found while the sheet is open rather than at import time.

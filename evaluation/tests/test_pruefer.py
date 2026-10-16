@@ -121,13 +121,37 @@ class TestReadingARow:
         assert {e.referenz_falsch_az for e in _read(path)} == {""}
 
 
-class TestRefusing:
-    def test_a_fachbereich_without_a_category_names_the_row(self, tmp_path):
+class TestLabels:
+    """What a reviewer row says about itself (#287)."""
+
+    def test_herkunft_and_frageform_come_with_the_row(self, tmp_path):
+        allgemein, konkret = _read(_document(tmp_path, [ZWEI_FRAGEN]))
+
+        assert (allgemein.herkunft, allgemein.frageform) == ("Prüfer-Vorlage", "allgemein")
+        assert konkret.frageform == "konkret"
+
+    def test_a_fachbereich_without_a_category_becomes_one(self, tmp_path):
+        """Categories are an open list since #286, so WD 3 is a new one rather
+        than a refused row."""
         row = ("XY03", "Frage?", "Antwort.", "WD 3 - 3000 - 001/25", "")
 
-        with pytest.raises(VorlageError, match=r"Zeile 2 \(XY03\).*WD 3 - 3000 - 001/25"):
-            pruefer.read_document(_document(tmp_path, [row]))
+        (entry,) = _read(_document(tmp_path, [row]))
 
+        assert entry.kategorie == "WD3"
+
+    def test_a_testart_column_is_read_when_someone_adds_it(self, tmp_path):
+        header = (*HEADER, "Testart")
+        row = (*ZWEI_FRAGEN, "Präzision")
+
+        entries = _read(_document(tmp_path, [row], header=header))
+
+        assert {e.testart for e in entries} == {"Präzision"}
+
+    def test_without_the_column_there_is_no_testart(self, tmp_path):
+        assert {e.testart for e in _read(_document(tmp_path, [ZWEI_FRAGEN]))} == {""}
+
+
+class TestRefusing:
     def test_a_source_without_an_aktenzeichen_names_the_row(self, tmp_path):
         row = ("XY04", "Frage?", "Antwort.", "Irgendein Gutachten", "")
 
