@@ -181,6 +181,45 @@ class TestExtractTitle:
 # ---------------------------------------------------------------------------
 
 
+class TestWordFieldErrorInTitles:
+    """Word's "Fehler! Kein Text mit angegebener Formatvorlage im Dokument." sits
+    in front of the real title in 11 indexed documents, and is the whole title
+    in one (#281)."""
+
+    ERROR = "Fehler! Kein Text mit angegebener Formatvorlage im Dokument. "
+
+    def test_it_is_stripped_from_a_labelled_title(self):
+        md = f"Titel: {self.ERROR}Die deutsche Minderheit in der Ukraine 1941-1945\n"
+        assert _extract_title(md) == "Die deutsche Minderheit in der Ukraine 1941-1945"
+
+    def test_a_document_type_left_in_front_goes_too(self):
+        md = f"Titel: {self.ERROR}Aktueller Begriff Abgeordnetenentschädigung heute\n"
+        assert _extract_title(md) == "Abgeordnetenentschädigung heute"
+
+    def test_the_english_message_as_well(self):
+        md = "Titel: Error! No text of specified style in document. Jugendschutz online\n"
+        assert _extract_title(md) == "Jugendschutz online"
+
+    def test_a_title_that_was_only_the_error_falls_back_to_a_heading(self):
+        md = f"Titel: {self.ERROR.strip()}\n## Barrierefreiheit auf Webseiten\n"
+        assert _extract_title(md) == "Barrierefreiheit auf Webseiten"
+
+    def test_the_fallback_skips_doubled_boilerplate(self):
+        """WD 6-015-25: the label held only the error, and Docling doubles the
+        boilerplate heading in front of the real one."""
+        md = (
+            f"## Wissenschaftliche Dienste Wissenschaftliche Dienste\n"
+            f"## Dokumententyp: Fachbereich WD 6 Fachbereich WD 6\n"
+            f"Titel: {self.ERROR.strip()}\n"
+            f"## Dienstunfallfürsorge in Deutschland\n"
+        )
+        assert _extract_title(md) == "Dienstunfallfürsorge in Deutschland"
+
+    def test_a_title_that_merely_starts_with_a_type_word_is_left_alone(self):
+        md = "Titel: Dokumentation der Anhörung zum Haushalt\n"
+        assert _extract_title(md) == "Dokumentation der Anhörung zum Haushalt"
+
+
 class TestDeduplicateTitle:
     def test_duplicated(self):
         assert _deduplicate_title("Foo Bar Baz Foo Bar Baz") == "Foo Bar Baz"
