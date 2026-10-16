@@ -190,7 +190,7 @@ function Progress({ run }: { run: EvalRun }) {
   );
 }
 
-/** What the upload did, by Test-ID.
+/** What the upload did, by tag.
  *
  *  Counts alone leave the author wondering which rows landed, and the IDs are
  *  what they will look for next. */

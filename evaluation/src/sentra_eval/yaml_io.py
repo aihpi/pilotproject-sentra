@@ -7,12 +7,15 @@ all, before there is a UI to write them in.
 
 The file is the source of truth for content; the database owns identity. So:
 
-  - a case with no `test_id` is new, and the backend allocates one
-  - a case with a known `test_id` is compared against its latest version, and
+  - a case with no `nummer` is new, and the backend allocates one
+  - a case with a known `nummer` is compared against its latest version, and
     only a real difference writes anything
-  - a case with an unknown `test_id` is refused, unless seeding is asked for
-    explicitly, because inventing an identity is exactly what the allocator
+  - a case with an unknown `nummer` is refused, unless seeding is asked for
+    explicitly, because inventing an identity is exactly what the counter
     exists to prevent
+
+A `tag` in the file is applied when it differs from the case's, and from then
+on counts as set by hand (#285).
 
 Import is idempotent, which is what makes "the file is the source of truth"
 true rather than aspirational: running it twice must not double every case's
@@ -23,15 +26,15 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy.orm import Session
 
 from sentra_eval import cases as case_store
 from sentra_eval.bestand import Bestand
-from sentra_eval.categories import Kategorie
+from sentra_eval.labels import LabelError, normalise_kategorie
 from sentra_eval.models import FREIGEGEBEN, Case, CaseVersion
 
-# The fields that make up a case's content. Identity (test_id) and bookkeeping
+# The fields that make up a case's content. Identity (nummer, tag) and bookkeeping
 # (timestamps, version numbers) are deliberately not here: those belong to the
 # database, and a file that could set them could rewrite history.
 CONTENT_FIELDS = (
@@ -56,8 +59,16 @@ class CaseEntry(BaseModel):
 
     # Absent for a new case: the backend allocates it and the next export adds
     # it. Writing one by hand is how a number gets reused.
-    test_id: str | None = None
-    kategorie: Kategorie
+    nummer: int | None = None
+    tag: str = ""
+    # An open list (#286): a built-in category or any short code.
+    kategorie: str
+    # Labels (#286). None means the file does not say, and leaves the case's
+    # label alone: re-importing an older file must not wipe labels set on
+    # screen since.
+    testart: str | None = None
+    frageform: str | None = None
+    herkunft: str | None = None
     ausgangsfrage: str = Field(min_length=1)
     abteilung: str = ""
     erwartete_antwort: str = ""
@@ -72,8 +83,24 @@ class CaseEntry(BaseModel):
     # approve button performs.
     status: str = "entwurf"
 
+    @field_validator("kategorie")
+    @classmethod
+    def _kategorie(cls, value: str) -> str:
+        try:
+            return normalise_kategorie(value)
+        except LabelError as exc:
+            raise ValueError(str(exc)) from exc
+
     def content(self) -> dict[str, Any]:
         return {name: getattr(self, name) for name in CONTENT_FIELDS}
+
+    def labels(self) -> dict[str, str]:
+        """The labels the file gives, and only those."""
+        return {
+            name: value
+            for name in ("testart", "frageform", "herkunft")
+            if (value := getattr(self, name)) is not None
+        }
 
 
 @dataclass
@@ -135,7 +162,7 @@ def validate(raw: list[Any]) -> list[CaseEntry]:
         if not isinstance(item, dict):
             problems.append(f"entry {index + 1}: expected a mapping, found {type(item).__name__}")
             continue
-        name = item.get("test_id") or f"entry {index + 1}"
+        name = f"Nr. {item['nummer']}" if item.get("nummer") else f"entry {index + 1}"
         try:
             entries.append(CaseEntry.model_validate(item))
         except ValidationError as exc:
@@ -168,7 +195,7 @@ def apply(
     """
     report = ImportReport(bestand=bestand)
     for entry in entries:
-        if entry.test_id is None:
+        if entry.nummer is None:
             _create(session, entry, report)
         else:
             _update(session, entry, report, allow_new_ids=allow_new_ids)
@@ -176,46 +203,67 @@ def apply(
 
 
 def _create(session: Session, entry: CaseEntry, report: ImportReport) -> None:
-    case, version = case_store.create_case(session, kategorie=entry.kategorie, **entry.content())
-    report.created.append(case.test_id)
+    given = entry.labels()
+    case, version = case_store.create_case(
+        session,
+        kategorie=entry.kategorie,
+        testart=given.get("testart", ""),
+        frageform=given.get("frageform", ""),
+        herkunft=given.get("herkunft", "manuell"),
+        **entry.content(),
+    )
+    _tag_if_given(session, entry, case)
+    report.created.append(case.tag)
     _approve_if_asked(session, entry, case, version, report)
 
 
 def _update(
     session: Session, entry: CaseEntry, report: ImportReport, *, allow_new_ids: bool
 ) -> None:
-    assert entry.test_id is not None
+    assert entry.nummer is not None
     try:
-        case = case_store.get_case(session, entry.test_id)
+        case = case_store.get_case(session, entry.nummer)
     except case_store.UnknownCase as exc:
         if not allow_new_ids:
             raise CaseFileError(
-                f"{entry.test_id}: no such case. Test-IDs are allocated by the backend, so a "
+                f"Nr. {entry.nummer}: no such case. Numbers are allocated by the backend, so a "
                 f"new case is written without one. If you are seeding a fresh database from an "
                 f"exported file, pass --allow-new-ids."
             ) from exc
-        case, version = case_store.seed_case(
-            session, test_id=entry.test_id, kategorie=entry.kategorie, **entry.content()
-        )
-        report.created.append(case.test_id)
+        try:
+            case, version = case_store.seed_case(
+                session,
+                nummer=entry.nummer,
+                tag=entry.tag,
+                kategorie=entry.kategorie,
+                **entry.labels(),
+                **entry.content(),
+            )
+        except case_store.CaseError as seed_exc:
+            raise CaseFileError(f"Nr. {entry.nummer}: {seed_exc}") from seed_exc
+        report.created.append(case.tag)
         _approve_if_asked(session, entry, case, version, report)
         return
 
+    relabelled = _labels_if_changed(session, entry, case)
+    retagged = _tag_if_given(session, entry, case) or relabelled
     latest = case.versions[-1]
     if _content_of(latest) == entry.content():
         # Identical content. The only thing left that could differ is approval,
         # which is a state change rather than a content one.
         if entry.status == FREIGEGEBEN and not latest.is_approved:
             _approve(session, case, latest, report)
+        elif retagged:
+            report.updated.append(case.tag)
         else:
-            report.unchanged.append(case.test_id)
+            report.unchanged.append(case.tag)
         return
 
     if latest.is_approved:
         version = case_store.add_version(session, case, **entry.content())
     else:
         version = case_store.edit_draft(session, latest, **entry.content())
-    report.updated.append(case.test_id)
+    report.updated.append(case.tag)
     _approve_if_asked(session, entry, case, version, report)
 
 
@@ -231,7 +279,32 @@ def _approve(session: Session, case: Case, version: CaseVersion, report: ImportR
         case_store.approve(session, version, bestand=report.bestand)
     except case_store.IncompleteCase as exc:
         raise CaseFileError(str(exc)) from exc
-    report.approved.append(case.test_id)
+    report.approved.append(case.tag)
+
+
+def _labels_if_changed(session: Session, entry: CaseEntry, case: Case) -> bool:
+    """Apply the file's category and labels where they differ. Whether any did."""
+    changes: dict[str, str] = {
+        name: value for name, value in entry.labels().items() if getattr(case, name) != value
+    }
+    if entry.kategorie != case.kategorie:
+        changes["kategorie"] = entry.kategorie
+    if not changes:
+        return False
+    case_store.set_labels(session, case, **changes)
+    return True
+
+
+def _tag_if_given(session: Session, entry: CaseEntry, case: Case) -> bool:
+    """Apply the file's tag if it has one that differs. Whether it did."""
+    tag = entry.tag.strip()
+    if not tag or tag == case.tag:
+        return False
+    try:
+        case_store.set_tag(session, case, tag)
+    except case_store.TagTaken as exc:
+        raise CaseFileError(f"Nr. {case.nummer}: {exc}") from exc
+    return True
 
 
 def _content_of(version: CaseVersion) -> dict[str, Any]:
@@ -248,8 +321,12 @@ def dump(session: Session, *, include_withdrawn: bool = False) -> str:
         latest = case.versions[-1]
         entries.append(
             {
-                "test_id": case.test_id,
+                "nummer": case.nummer,
+                "tag": case.tag,
                 "kategorie": case.kategorie,
+                "testart": case.testart,
+                "frageform": case.frageform,
+                "herkunft": case.herkunft,
                 **_content_of(latest),
                 "status": latest.status,
             }

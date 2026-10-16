@@ -104,7 +104,7 @@ def draft_case(session: Session, entry: FeedbackEntry, *, kategorie: Kategorie) 
     existing = case_store.from_feedback(session, entry.id)
     if existing is not None:
         raise AlreadyImported(
-            f"This feedback was already used for {existing.test_id}. The same complaint twice "
+            f"This feedback was already used for Nr. {existing.nummer}. The same complaint twice "
             f"would weight one problem more heavily than the rest of the round."
         )
 

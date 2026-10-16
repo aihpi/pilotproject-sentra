@@ -111,7 +111,7 @@ def _round(client, *, grenzfall=False, repeats=2, handler=None, clean=False):
         "referenz_korrekt_az": ("WD 3 - 3000 - 029/23" if clean else "WD 9 - 3000 - 999/25"),
         "grenzfall": grenzfall,
     }
-    test_id = client.post("/api/eval/cases", json=body).json()["test_id"]
+    test_id = client.post("/api/eval/cases", json=body).json()["nummer"]
     client.post(f"/api/eval/cases/{test_id}/freigeben")
 
     with session_scope() as session:
@@ -411,7 +411,7 @@ class TestTheReportEndpoints:
         response = client.get(f"/api/eval/runs/{run_id}/boegen")
 
         assert response.status_code == 200
-        assert response.json()[0]["test_id"] == "TF-GO-001"
+        assert response.json()[0]["nummer"] == 1
 
     def test_a_sheet_carries_the_machine_verdict(self, client):
         """Withheld from the queue, present in the record."""

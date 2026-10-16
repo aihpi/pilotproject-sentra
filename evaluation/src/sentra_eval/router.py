@@ -12,11 +12,11 @@ import zipfile
 from io import BytesIO
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from sentra_eval import bestand, models, pruefer, triage, vorlagen, yaml_io
+from sentra_eval import bestand, labels, models, pruefer, triage, vorlagen, yaml_io
 from sentra_eval import cases as case_store
 from sentra_eval import feedback as feedback_store
 from sentra_eval import report as report_store
@@ -41,6 +41,7 @@ from sentra_eval.models import (
 from sentra_eval.schemas import (
     AgreementResponse,
     ApproveVariantRequest,
+    BreakdownRowResponse,
     CallResponse,
     CaseResponse,
     CaseVersionResponse,
@@ -52,10 +53,13 @@ from sentra_eval.schemas import (
     EvalHealthResponse,
     FeedbackEntryResponse,
     ImportResponse,
+    LabelsResponse,
     MachineVerdictsResponse,
     QueueCall,
     QueueEntryResponse,
     RunResponse,
+    SetLabelsRequest,
+    SetTagRequest,
     SheetResponse,
     StartRunRequest,
     SubmitVerdictRequest,
@@ -134,7 +138,12 @@ def _as_response(case: Case, aktueller_bestand: bestand.Bestand | None = None) -
         else []
     )
     return CaseResponse(
-        test_id=case.test_id,
+        nummer=case.nummer,
+        tag=case.tag,
+        tag_manuell=case.tag_manuell,
+        testart=case.testart,
+        frageform=case.frageform,
+        herkunft=case.herkunft,
         kategorie=case.kategorie,
         created_at=case.created_at,
         zurueckgezogen_at=case.zurueckgezogen_at,
@@ -173,21 +182,27 @@ def list_cases(include_withdrawn: bool = False) -> list[CaseResponse]:
 
 @router.post("/cases", response_model=CaseResponse, status_code=201)
 def create_case(body: CreateCaseRequest) -> CaseResponse:
-    """A new case. The Test-ID is allocated here and never reused."""
+    """A new case. Its number is allocated here and never reused."""
     with session_scope() as session:
-        case, _ = case_store.create_case(
-            session,
-            kategorie=body.kategorie,
-            ausgangsfrage=body.ausgangsfrage,
-            abteilung=body.abteilung,
-            erwartete_antwort=body.erwartete_antwort,
-            referenz_korrekt=body.referenz_korrekt,
-            referenz_falsch=body.referenz_falsch,
-            referenz_korrekt_az=body.referenz_korrekt_az,
-            referenz_falsch_az=body.referenz_falsch_az,
-            grund_fuer_aufnahme=body.grund_fuer_aufnahme,
-            grenzfall=body.grenzfall,
-        )
+        try:
+            case, _ = case_store.create_case(
+                session,
+                kategorie=body.kategorie,
+                testart=body.testart,
+                frageform=body.frageform,
+                herkunft=body.herkunft,
+                ausgangsfrage=body.ausgangsfrage,
+                abteilung=body.abteilung,
+                erwartete_antwort=body.erwartete_antwort,
+                referenz_korrekt=body.referenz_korrekt,
+                referenz_falsch=body.referenz_falsch,
+                referenz_korrekt_az=body.referenz_korrekt_az,
+                referenz_falsch_az=body.referenz_falsch_az,
+                grund_fuer_aufnahme=body.grund_fuer_aufnahme,
+                grenzfall=body.grenzfall,
+            )
+        except labels.LabelError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         return _as_response(case)
 
 
@@ -277,14 +292,14 @@ def _read_upload(raw: bytes) -> list[dict]:
     return vorlagen.read_workbook(BytesIO(raw), name=name)
 
 
-@router.get("/cases/{test_id}", response_model=CaseResponse)
-def get_case(test_id: str) -> CaseResponse:
+@router.get("/cases/{nummer}", response_model=CaseResponse)
+def get_case(nummer: int) -> CaseResponse:
     with session_scope() as session:
-        return _as_response(_lookup(session, test_id))
+        return _as_response(_lookup(session, nummer))
 
 
-@router.patch("/cases/{test_id}", response_model=CaseResponse)
-def update_case(test_id: str, body: UpdateCaseRequest) -> CaseResponse:
+@router.patch("/cases/{nummer}", response_model=CaseResponse)
+def update_case(nummer: int, body: UpdateCaseRequest) -> CaseResponse:
     """Change the latest version, or add one if it is already approved.
 
     Which of the two happens is not the caller's choice. An approved version is
@@ -293,7 +308,7 @@ def update_case(test_id: str, body: UpdateCaseRequest) -> CaseResponse:
     """
     fields = body.model_dump(exclude_none=True)
     with session_scope() as session:
-        case = _lookup(session, test_id)
+        case = _lookup(session, nummer)
         latest = case.versions[-1]
         if latest.is_approved:
             case_store.add_version(session, case, **fields)
@@ -303,11 +318,11 @@ def update_case(test_id: str, body: UpdateCaseRequest) -> CaseResponse:
         return _as_response(case)
 
 
-@router.post("/cases/{test_id}/freigeben", response_model=CaseResponse)
-def approve_case(test_id: str) -> CaseResponse:
+@router.post("/cases/{nummer}/freigeben", response_model=CaseResponse)
+def approve_case(nummer: int) -> CaseResponse:
     """Approve the latest draft, making it the yardstick for future rounds."""
     with session_scope() as session:
-        case = _lookup(session, test_id)
+        case = _lookup(session, nummer)
         try:
             case_store.approve(session, case.versions[-1], bestand=bestand.fetch())
         except case_store.IncompleteCase as exc:
@@ -316,11 +331,28 @@ def approve_case(test_id: str) -> CaseResponse:
         return _as_response(case)
 
 
-@router.post("/cases/{test_id}/zurueckziehen", response_model=CaseResponse)
-def withdraw_case(test_id: str) -> CaseResponse:
+@router.put("/cases/{nummer}/tag", response_model=CaseResponse)
+def set_case_tag(nummer: int, body: SetTagRequest) -> CaseResponse:
+    """Give a case a tag by hand, or an empty one to have it generated again.
+
+    The number is what everything points at, so a tag can be corrected freely.
+    It only has to stay unique.
+    """
+    with session_scope() as session:
+        case = _lookup(session, nummer)
+        try:
+            case_store.set_tag(session, case, body.tag)
+        except case_store.TagTaken as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        session.refresh(case)
+        return _as_response(case)
+
+
+@router.post("/cases/{nummer}/zurueckziehen", response_model=CaseResponse)
+def withdraw_case(nummer: int) -> CaseResponse:
     """Take a case out of future rounds. Its Test-ID stays spent."""
     with session_scope() as session:
-        case = _lookup(session, test_id)
+        case = _lookup(session, nummer)
         case_store.withdraw(session, case)
         session.refresh(case)
         return _as_response(case)
@@ -328,15 +360,46 @@ def withdraw_case(test_id: str) -> CaseResponse:
 
 @router.get("/kategorien", response_model=dict[str, str])
 def kategorien() -> dict[str, str]:
-    """The closed list a Test-ID can be built from, for the UI's dropdown."""
-    return {str(k): name for k, name in KATEGORIE_NAMEN.items()}
+    """Categories for the case form: the built-in ones with their names, then any in use."""
+    with session_scope() as session:
+        offered = labels.offered(session)["kategorie"]
+    names = {str(k): name for k, name in KATEGORIE_NAMEN.items()}
+    return {k: names.get(k, k) for k in offered}
 
 
-def _lookup(session: object, test_id: str) -> Case:
+@router.get("/labels", response_model=LabelsResponse)
+def label_values() -> LabelsResponse:
+    """The values to offer per label (#286). A value typed in by hand appears
+    while a case uses it and is gone once none does."""
+    with session_scope() as session:
+        return LabelsResponse(**labels.offered(session))
+
+
+@router.patch("/cases/{nummer}/labels", response_model=CaseResponse)
+def set_case_labels(nummer: int, body: SetLabelsRequest) -> CaseResponse:
+    """Correct a case's labels. No new version: labels are not what is measured."""
+    with session_scope() as session:
+        case = _lookup(session, nummer)
+        try:
+            case_store.set_labels(
+                session,
+                case,
+                kategorie=body.kategorie,
+                testart=body.testart,
+                frageform=body.frageform,
+                herkunft=body.herkunft,
+            )
+        except labels.LabelError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        session.refresh(case)
+        return _as_response(case)
+
+
+def _lookup(session: object, nummer: int) -> Case:
     try:
-        return case_store.get_case(session, test_id)  # type: ignore[arg-type]
+        return case_store.get_case(session, nummer)  # type: ignore[arg-type]
     except case_store.UnknownCase as exc:
-        raise HTTPException(status_code=404, detail=f"Testfall {test_id} nicht gefunden.") from exc
+        raise HTTPException(status_code=404, detail=f"Testfall {nummer} nicht gefunden.") from exc
 
 
 # ── Rounds (Phase 2 of the Vorlage) ─────────────────────────────────
@@ -433,12 +496,13 @@ def list_calls(run_id: UUID) -> list[CallResponse]:
             .join(CaseVersion, Call.case_version_id == CaseVersion.id)
             .join(Case, CaseVersion.case_id == Case.id)
             .where(Call.run_id == run_id)
-            .order_by(Case.test_id, Call.variant_key, Call.repeat_index)
+            .order_by(Case.nummer, Call.variant_key, Call.repeat_index)
         ).all()
         return [
             CallResponse(
                 id=call.id,
-                test_id=case.test_id,
+                nummer=case.nummer,
+                tag=case.tag,
                 variant_key=call.variant_key,
                 repeat_index=call.repeat_index,
                 status=call.status,
@@ -490,7 +554,8 @@ def review_queue(run_id: UUID) -> list[QueueEntryResponse]:
         _lookup_run(session, run_id)
         return [
             QueueEntryResponse(
-                test_id=entry.test_id,
+                nummer=entry.nummer,
+                tag=entry.tag,
                 kategorie=entry.kategorie,
                 case_version_id=entry.case_version_id,
                 version=entry.version,
@@ -702,6 +767,40 @@ def agreement(run_id: UUID) -> AgreementResponse:
         )
 
 
+@router.get("/aufschluesselung", response_model=list[BreakdownRowResponse])
+def aufschluesselung(
+    dimension: list[str] = Query(...),
+    run_id: UUID | None = None,
+) -> list[BreakdownRowResponse]:
+    """Results grouped by one or more labels, for one round or for all (#289).
+
+    `?dimension=testart&dimension=kategorie` combines them: one row per pair
+    of values that occurs.
+    """
+    with session_scope() as session:
+        run = _lookup_run(session, run_id) if run_id is not None else None
+        try:
+            rows = report_store.breakdown(session, dimension, run=run)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return [
+            BreakdownRowResponse(
+                werte=row.werte,
+                faelle=row.faelle,
+                auffaellig=row.auffaellig,
+                befunde=row.befunde,
+                abweichung=AgreementResponse(
+                    einig=row.abweichung.einig,
+                    zu_streng=row.abweichung.zu_streng,
+                    zu_grosszuegig=row.abweichung.zu_grosszuegig,
+                    nicht_bewertet=row.abweichung.nicht_bewertet,
+                    abweichungsquote=row.abweichung.abweichungsquote,
+                ),
+            )
+            for row in rows
+        ]
+
+
 @router.get("/trend", response_model=TrendResponse)
 def trend_report() -> TrendResponse:
     """The Trendauswertung across every round, section 6.
@@ -737,18 +836,18 @@ def _variant_response(variant: models.Variant) -> VariantResponse:
     )
 
 
-@router.get("/cases/{test_id}/varianten", response_model=list[VariantResponse])
-def list_variants(test_id: str) -> list[VariantResponse]:
+@router.get("/cases/{nummer}/varianten", response_model=list[VariantResponse])
+def list_variants(nummer: int) -> list[VariantResponse]:
     """The paraphrases for the case's latest version, proposed or approved."""
     with session_scope() as session:
-        case = _lookup(session, test_id)
+        case = _lookup(session, nummer)
         return [
             _variant_response(v) for v in variant_store.for_version(session, case.versions[-1].id)
         ]
 
 
-@router.post("/cases/{test_id}/varianten/vorschlagen", response_model=list[VariantResponse])
-def propose_variants(test_id: str) -> list[VariantResponse]:
+@router.post("/cases/{nummer}/varianten/vorschlagen", response_model=list[VariantResponse])
+def propose_variants(nummer: int) -> list[VariantResponse]:
     """Ask the judge model for three paraphrases.
 
     The judge model rather than CHAT_MODEL: letting the system under test write
@@ -759,7 +858,7 @@ def propose_variants(test_id: str) -> list[VariantResponse]:
     that quietly asks a different question does not measure robustness.
     """
     with session_scope() as session:
-        case = _lookup(session, test_id)
+        case = _lookup(session, nummer)
         try:
             proposed = variant_store.propose(session, case.versions[-1])
         except JudgeUnavailable as exc:
@@ -769,11 +868,11 @@ def propose_variants(test_id: str) -> list[VariantResponse]:
         return [_variant_response(v) for v in proposed]
 
 
-@router.patch("/cases/{test_id}/varianten/{stil}", response_model=VariantResponse)
-def edit_variant(test_id: str, stil: str, body: EditVariantRequest) -> VariantResponse:
+@router.patch("/cases/{nummer}/varianten/{stil}", response_model=VariantResponse)
+def edit_variant(nummer: int, stil: str, body: EditVariantRequest) -> VariantResponse:
     """Correct a proposal. An approved variant is frozen."""
     with session_scope() as session:
-        variant = _lookup_variant(session, test_id, stil)
+        variant = _lookup_variant(session, nummer, stil)
         try:
             variant_store.edit(session, variant, body.wortlaut)
         except variant_store.ApprovedVariantIsFrozen as exc:
@@ -781,14 +880,14 @@ def edit_variant(test_id: str, stil: str, body: EditVariantRequest) -> VariantRe
         return _variant_response(variant)
 
 
-@router.post("/cases/{test_id}/varianten/{stil}/freigeben", response_model=VariantResponse)
-def approve_variant(test_id: str, stil: str, body: ApproveVariantRequest) -> VariantResponse:
+@router.post("/cases/{nummer}/varianten/{stil}/freigeben", response_model=VariantResponse)
+def approve_variant(nummer: int, stil: str, body: ApproveVariantRequest) -> VariantResponse:
     """A person has read this and confirmed it asks the same question.
 
     Only approved variants are ever run, so this is what puts one into a round.
     """
     with session_scope() as session:
-        variant = _lookup_variant(session, test_id, stil)
+        variant = _lookup_variant(session, nummer, stil)
         try:
             variant_store.approve(session, variant, freigegeben_durch=body.freigegeben_durch)
         except variant_store.VariantError as exc:
@@ -796,8 +895,8 @@ def approve_variant(test_id: str, stil: str, body: ApproveVariantRequest) -> Var
         return _variant_response(variant)
 
 
-def _lookup_variant(session: Session, test_id: str, stil: str) -> models.Variant:
-    case = _lookup(session, test_id)
+def _lookup_variant(session: Session, nummer: int, stil: str) -> models.Variant:
+    case = _lookup(session, nummer)
     for variant in variant_store.for_version(session, case.versions[-1].id):
         if variant.stil == stil:
             return variant

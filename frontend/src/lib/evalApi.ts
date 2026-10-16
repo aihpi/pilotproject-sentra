@@ -1,6 +1,9 @@
 import type {
+  CaseLabels,
   EvalVariant,
+  LabelValues,
   Agreement,
+  BreakdownRow,
   CaseDraft,
   EvalCase,
   EvalRun,
@@ -213,8 +216,8 @@ export function createCase(body: CaseDraft): Promise<EvalCase> {
  *  Which of the two happens is the harness's decision, not the caller's: an
  *  approved version is what a round was measured against, so it is never
  *  edited. Asking to change one is asking for a new draft. */
-export function updateCase(testId: string, body: Partial<CaseDraft>): Promise<EvalCase> {
-  return request(`/eval/cases/${testId}`, {
+export function updateCase(nummer: number, body: Partial<CaseDraft>): Promise<EvalCase> {
+  return request(`/eval/cases/${nummer}`, {
     method: "PATCH",
     body,
     label: "Der Testfall konnte nicht geändert werden",
@@ -222,18 +225,18 @@ export function updateCase(testId: string, body: Partial<CaseDraft>): Promise<Ev
   });
 }
 
-export function approveCase(testId: string): Promise<EvalCase> {
-  return request(`/eval/cases/${testId}/freigeben`, {
+export function approveCase(nummer: number): Promise<EvalCase> {
+  return request(`/eval/cases/${nummer}/freigeben`, {
     method: "POST",
     label: "Der Testfall konnte nicht freigegeben werden",
     statusMessages: { 502: NOT_RUNNING },
   });
 }
 
-/** Take a case out of future rounds. Not a deletion: the Test-ID stays spent
+/** Take a case out of future rounds. Not a deletion: the number stays spent
  *  and is never reused, "auch bei zurückgezogenen Testfällen nicht". */
-export function withdrawCase(testId: string): Promise<EvalCase> {
-  return request(`/eval/cases/${testId}/zurueckziehen`, {
+export function withdrawCase(nummer: number): Promise<EvalCase> {
+  return request(`/eval/cases/${nummer}/zurueckziehen`, {
     method: "POST",
     label: "Der Testfall konnte nicht zurückgezogen werden",
     statusMessages: { 502: NOT_RUNNING },
@@ -241,8 +244,8 @@ export function withdrawCase(testId: string): Promise<EvalCase> {
 }
 
 /** The variants of a case's latest version (4.2), proposed or approved. */
-export function fetchVariants(testId: string): Promise<EvalVariant[]> {
-  return request(`/eval/cases/${testId}/varianten`, {
+export function fetchVariants(nummer: number): Promise<EvalVariant[]> {
+  return request(`/eval/cases/${nummer}/varianten`, {
     label: "Die Varianten konnten nicht geladen werden",
     statusMessages: { 502: NOT_RUNNING },
   });
@@ -251,8 +254,8 @@ export function fetchVariants(testId: string): Promise<EvalVariant[]> {
 /** Ask the judge model for the three variants. Replaces unapproved proposals
  *  and leaves approved ones alone. A 503 here is the judge model, not the
  *  harness, so the server's own message is shown rather than NOT_RUNNING. */
-export function proposeVariants(testId: string): Promise<EvalVariant[]> {
-  return request(`/eval/cases/${testId}/varianten/vorschlagen`, {
+export function proposeVariants(nummer: number): Promise<EvalVariant[]> {
+  return request(`/eval/cases/${nummer}/varianten/vorschlagen`, {
     method: "POST",
     label: "Die Varianten konnten nicht erzeugt werden",
     statusMessages: { 502: NOT_RUNNING },
@@ -260,11 +263,11 @@ export function proposeVariants(testId: string): Promise<EvalVariant[]> {
 }
 
 export function editVariant(
-  testId: string,
+  nummer: number,
   stil: string,
   wortlaut: string,
 ): Promise<EvalVariant> {
-  return request(`/eval/cases/${testId}/varianten/${stil}`, {
+  return request(`/eval/cases/${nummer}/varianten/${stil}`, {
     method: "PATCH",
     body: { wortlaut },
     label: "Die Variante konnte nicht gespeichert werden",
@@ -274,14 +277,54 @@ export function editVariant(
 
 /** Only approved variants are ever asked in a round. */
 export function approveVariant(
-  testId: string,
+  nummer: number,
   stil: string,
   freigegebenDurch: string,
 ): Promise<EvalVariant> {
-  return request(`/eval/cases/${testId}/varianten/${stil}/freigeben`, {
+  return request(`/eval/cases/${nummer}/varianten/${stil}/freigeben`, {
     method: "POST",
     body: { freigegeben_durch: freigegebenDurch },
     label: "Die Variante konnte nicht freigegeben werden",
+    statusMessages: { 502: NOT_RUNNING },
+  });
+}
+
+/** Results grouped by one or more labels, for one round or for all (#289). */
+export function fetchBreakdown(
+  dimensionen: string[],
+  runId?: string,
+): Promise<BreakdownRow[]> {
+  const params = new URLSearchParams(dimensionen.map((d) => ["dimension", d]));
+  if (runId) params.set("run_id", runId);
+  return request(`/eval/aufschluesselung?${params}`, {
+    label: "Die Aufschlüsselung konnte nicht geladen werden",
+    statusMessages: { 502: NOT_RUNNING, 503: NOT_RUNNING },
+  });
+}
+/** The values to offer per label, for the dropdowns (#286). */
+export function fetchLabels(): Promise<LabelValues> {
+  return request("/eval/labels", {
+    label: "Die Auswahllisten konnten nicht geladen werden",
+    statusMessages: { 502: NOT_RUNNING, 503: NOT_RUNNING },
+  });
+}
+
+/** Correct a case's labels. Creates no new version. */
+export function setLabels(nummer: number, body: CaseLabels): Promise<EvalCase> {
+  return request(`/eval/cases/${nummer}/labels`, {
+    method: "PATCH",
+    body,
+    label: "Die Labels konnten nicht gespeichert werden",
+    statusMessages: { 502: NOT_RUNNING },
+  });
+}
+
+/** Set a case's tag by hand; an empty one has it generated again. */
+export function setTag(nummer: number, tag: string): Promise<EvalCase> {
+  return request(`/eval/cases/${nummer}/tag`, {
+    method: "PUT",
+    body: { tag },
+    label: "Der Tag konnte nicht gespeichert werden",
     statusMessages: { 502: NOT_RUNNING },
   });
 }

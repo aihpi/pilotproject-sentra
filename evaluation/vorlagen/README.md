@@ -18,12 +18,23 @@ markiert, wenn ein Testfall erst nach dem Start der Runde freigegeben wurde.
 
 ## Was nicht ausgefüllt wird
 
-**Test-ID** vergibt das System und benutzt sie nie ein zweites Mal, auch bei
+**Nummer** vergibt das System und benutzt sie nie ein zweites Mal, auch bei
 zurückgezogenen Testfällen nicht. Eine von Hand eingetragene Nummer ist der Weg,
-auf dem eine Nummer doppelt vergeben wird.
+auf dem eine Nummer doppelt vergeben wird. Der lesbare **Tag** (z. B.
+`FI-PRZ-003`) entsteht aus Bereich und Testart und lässt sich später in der
+Administration ändern.
 
 **Status** entscheidet die fachliche Durchsicht. Alles, was über diese Vorlagen
 hereinkommt, ist zunächst ein Entwurf — auch wenn es vollständig ausgefüllt ist.
+
+## Testart
+
+Freiwillig, aber nützlich für die Auswertung: Was soll der Testfall prüfen?
+Regelfall, Präzision (Zahlen, Fristen, Paragrafen), Quellenwahl (es gibt eine
+ähnliche oder veraltete Arbeit), Synthese (mehrere Arbeiten nötig) oder einer
+der Grenzfälle. Bereich und Testart bieten eine Liste an, eine eigene
+Bezeichnung lässt sich aber auch eintragen. Sie erscheint in der Auswahl,
+solange ein Testfall sie benutzt.
 
 ## Grenzfälle
 
@@ -57,9 +68,13 @@ Verzeichnis und hat andere Spalten, deshalb gilt beim Einlesen:
   erwarteten Antwort und denselben Quellen.
 - Die Spalte „Referenzquelle(korrekt)“ enthält die Textstelle und wird zur
   erwarteten Antwort. „Referenzquelle“ ist die Arbeit, aus der sie stammt.
-- Die Kategorie ergibt sich aus dem Fachbereich der korrekten Quelle
-  (WD 4 → FI, WD 5 → WI). Ein anderer Fachbereich wird mit Zeile gemeldet.
-- Die Nummer der Prüferin oder des Prüfers ist keine Test-ID. Sie steht im
+- Der Bereich ergibt sich aus dem Fachbereich der korrekten Quelle
+  (WD 4 → FI, WD 5 → WI). Ein anderer Fachbereich wird zu einem eigenen
+  Bereich, z. B. WD 3 → WD3.
+- Herkunft („Prüfer-Vorlage“) und Frageform (allgemein oder konkret) werden
+  automatisch gesetzt. Hat die Tabelle eine zusätzliche Spalte „Testart“, wird
+  sie übernommen; sonst lässt sich die Testart in der Administration setzen.
+- Die Nummer der Prüferin oder des Prüfers ist nicht die Nummer des Testfalls. Sie steht im
   Feld „Grund für die Aufnahme“, damit sich ein Testfall zurückverfolgen lässt.
 - Ist die ähnliche Quelle dieselbe Arbeit wie die korrekte, wird der Testfall
   trotzdem angelegt, aber ohne Aktenzeichen der ähnlichen Quelle, sonst könnte

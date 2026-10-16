@@ -58,7 +58,13 @@ class ImportResponse(BaseModel):
 
 
 class CaseResponse(BaseModel):
-    test_id: str
+    nummer: int
+    tag: str
+    # Set by hand, so label changes leave it alone (#285).
+    tag_manuell: bool = False
+    testart: str = ""
+    frageform: str = ""
+    herkunft: str = ""
     kategorie: str
     created_at: datetime
     zurueckgezogen_at: datetime | None
@@ -69,8 +75,14 @@ class CaseResponse(BaseModel):
     versions: list[CaseVersionResponse]
 
 
+class SetTagRequest(BaseModel):
+    # Empty hands the tag back to the generator (#285).
+    tag: str = Field(max_length=64)
+
+
 class CreateCaseRequest(BaseModel):
-    kategorie: Kategorie
+    # An open list since #286: the built-in categories, or any short code.
+    kategorie: str = Field(min_length=1, max_length=8)
     # The only field a draft must have. Everything else can be filled in later,
     # which is what lets a case be started from a feedback entry or a YAML stub.
     ausgangsfrage: str = Field(min_length=1)
@@ -84,6 +96,27 @@ class CreateCaseRequest(BaseModel):
     referenz_falsch_az: str = ""
     grund_fuer_aufnahme: str = ""
     grenzfall: bool = False
+    testart: str = Field(default="", max_length=64)
+    frageform: str = Field(default="", max_length=16)
+    herkunft: str = Field(default="manuell", max_length=64)
+
+
+class SetLabelsRequest(BaseModel):
+    """Labels to correct. Omitted ones stay as they are (#286)."""
+
+    kategorie: str | None = Field(default=None, min_length=1, max_length=8)
+    testart: str | None = Field(default=None, max_length=64)
+    frageform: str | None = Field(default=None, max_length=16)
+    herkunft: str | None = Field(default=None, max_length=64)
+
+
+class LabelsResponse(BaseModel):
+    """The values to offer per label: built-in ones first, then those in use."""
+
+    kategorie: list[str]
+    testart: list[str]
+    frageform: list[str]
+    herkunft: list[str]
 
 
 class UpdateCaseRequest(BaseModel):
@@ -148,7 +181,8 @@ class RunResponse(BaseModel):
 
 class CallResponse(BaseModel):
     id: UUID
-    test_id: str
+    nummer: int
+    tag: str
     variant_key: str
     repeat_index: int
     status: str
@@ -185,7 +219,8 @@ class QueueCall(BaseModel):
 
 
 class QueueEntryResponse(BaseModel):
-    test_id: str
+    nummer: int
+    tag: str
     kategorie: str
     case_version_id: UUID
     version: int
@@ -291,7 +326,8 @@ class SheetResponse(BaseModel):
     somebody will retype.
     """
 
-    test_id: str
+    nummer: int
+    tag: str
     datum: str
     tester: str
     kategorie: str
@@ -387,3 +423,13 @@ class DraftFromFeedbackResponse(BaseModel):
     # deliberately not stored on the case: a yardstick taken from the system
     # under test is not a yardstick.
     beanstandete_antwort: str
+
+
+class BreakdownRowResponse(BaseModel):
+    """One combination of label values in the Aufschlüsselung (#289)."""
+
+    werte: dict[str, str]
+    faelle: int
+    auffaellig: int
+    befunde: dict[str, int]
+    abweichung: AgreementResponse

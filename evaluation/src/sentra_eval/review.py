@@ -60,7 +60,8 @@ class QueueEntry:
     Deliberately without check results. See the module docstring.
     """
 
-    test_id: str
+    nummer: int
+    tag: str
     kategorie: str
     case_version_id: UUID
     version: int
@@ -93,7 +94,7 @@ def queue(session: Session, run_id: UUID) -> list[QueueEntry]:
         .join(CaseVersion, Call.case_version_id == CaseVersion.id)
         .join(Case, CaseVersion.case_id == Case.id)
         .where(Call.run_id == run_id, Call.zweck == ZWECK_ANTWORT, Call.status == OK)
-        .order_by(Case.test_id, Call.variant_key, Call.repeat_index)
+        .order_by(Case.nummer, Call.variant_key, Call.repeat_index)
     ).all()
 
     assessed = {
@@ -109,7 +110,8 @@ def queue(session: Session, run_id: UUID) -> list[QueueEntry]:
         entry = entries.get(version.id)
         if entry is None:
             entry = QueueEntry(
-                test_id=case.test_id,
+                nummer=case.nummer,
+                tag=case.tag,
                 kategorie=case.kategorie,
                 case_version_id=version.id,
                 version=version.version,

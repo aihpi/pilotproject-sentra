@@ -135,7 +135,8 @@ export interface QueueCall {
 }
 
 export interface QueueEntry {
-  test_id: string;
+  nummer: number;
+  tag: string;
   kategorie: string;
   case_version_id: string;
   version: number;
@@ -250,12 +251,36 @@ export interface EvalVariant {
   freigegeben_at: string | null;
 }
 
+/** The values to offer per label (#286): built-in ones first, then those in
+ *  use. A value typed in by hand is listed while a case uses it. */
+export interface LabelValues {
+  kategorie: string[];
+  testart: string[];
+  frageform: string[];
+  herkunft: string[];
+}
+
+export interface CaseLabels {
+  kategorie?: string;
+  testart?: string;
+  frageform?: string;
+  herkunft?: string;
+}
+
 /** A test case and every version of it.
  *
  *  `versions` is ordered, oldest first. The last one is what a new round would
  *  use if it is approved — `latest_approved`, not `latest`. */
 export interface EvalCase {
-  test_id: string;
+  /** Permanent, never reused: what everything refers to (#285). */
+  nummer: number;
+  /** A readable label, generated or set by hand. Can change. */
+  tag: string;
+  tag_manuell?: boolean;
+  /** Labels for breaking a round down (#286). Empty when not set. */
+  testart?: string;
+  frageform?: string;
+  herkunft?: string;
   kategorie: string;
   created_at: string;
   zurueckgezogen_at: string | null;
@@ -267,7 +292,7 @@ export interface EvalCase {
 
 /** The content of a case, as it is written or changed.
  *
- *  No `test_id`: the backend allocates it and never reuses it. No `status`
+ *  No `nummer`: the backend allocates it and never reuses it. No `status`
  *  either — approval is its own act with its own timestamp. */
 export interface CaseDraft {
   kategorie: string;
@@ -280,11 +305,13 @@ export interface CaseDraft {
   referenz_falsch_az: string;
   grund_fuer_aufnahme: string;
   grenzfall: boolean;
+  /** Only when creating; afterwards labels change through the Labels panel. */
+  testart?: string;
 }
 
-/** What an uploaded collection sheet did, by Test-ID.
+/** What an uploaded collection sheet did, by tag.
  *
- *  Test-IDs rather than counts: "3 angelegt" leaves the author wondering which
+ *  Tags rather than counts: "3 angelegt" leaves the author wondering which
  *  three, and the IDs are what they will look for next.
  *
  *  `freigegeben` is always empty for a sheet — an upload can only create
@@ -323,12 +350,22 @@ export interface Agreement {
   abweichungsquote: number | null;
 }
 
+/** One combination of label values in the Aufschlüsselung (#289). */
+export interface BreakdownRow {
+  werte: Record<string, string>;
+  faelle: number;
+  auffaellig: number;
+  befunde: Record<string, number>;
+  abweichung: Agreement;
+}
+
 /** The Vorlage's Phase-4 documentation sheet, one per case.
  *
  *  German field names on purpose: a sheet is what gets filed, and translating
  *  the vocabulary is how the sheet and the template drift apart. */
 export interface Sheet {
-  test_id: string;
+  nummer: number;
+  tag: string;
   datum: string;
   tester: string;
   kategorie: string;

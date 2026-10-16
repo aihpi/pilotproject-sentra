@@ -145,7 +145,7 @@ class TestTheApi:
             },
         )
         assert response.status_code == 201
-        return response.json()["test_id"]
+        return response.json()["nummer"]
 
     def test_the_listing_says_what_a_draft_still_needs(self, client):
         self._create(client)

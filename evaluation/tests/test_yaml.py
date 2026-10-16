@@ -62,15 +62,15 @@ class TestParsing:
     def test_a_problem_names_the_case_and_the_field(self):
         """Whoever wrote the file wrote YAML, so they are told which case and
         which key — not about `loc` and `input_value`."""
-        text = "- test_id: TF-GO-007\n  kategorie: ZZ\n  ausgangsfrage: x\n"
+        text = "- nummer: 7\n  kategorie: Z-Z!\n  ausgangsfrage: x\n"
 
         with pytest.raises(yaml_io.CaseFileError) as caught:
             yaml_io.parse(text)
 
-        assert "TF-GO-007" in str(caught.value)
+        assert "Nr. 7" in str(caught.value)
         assert "kategorie" in str(caught.value)
 
-    def test_a_case_without_a_test_id_is_named_by_position(self):
+    def test_a_case_without_a_number_is_named_by_position(self):
         with pytest.raises(yaml_io.CaseFileError, match="entry 1"):
             yaml_io.parse("- kategorie: GO\n")  # no ausgangsfrage
 
@@ -79,10 +79,10 @@ class TestParsing:
 
 
 class TestImporting:
-    def test_a_case_without_a_test_id_gets_one(self, session):
+    def test_a_case_without_a_number_gets_one(self, session):
         report = _apply(session, ONE_CASE)
 
-        assert report.created == ["TF-GO-001"]
+        assert report.created == ["GO-001"]
 
     def test_importing_twice_changes_nothing(self, session):
         """The property that makes the file a source of truth."""
@@ -92,13 +92,13 @@ class TestImporting:
 
         assert report.created == []
         assert report.updated == []
-        assert report.unchanged == ["TF-GO-001"]
+        assert report.unchanged == ["GO-001"]
 
     def test_and_does_not_add_a_version(self, session):
         _apply(session, ONE_CASE)
         _apply(session, yaml_io.dump(session))
 
-        case = case_store.get_case(session, "TF-GO-001")
+        case = case_store.get_case(session, 1)
         assert len(case.versions) == 1
 
     def test_changed_content_edits_a_draft_in_place(self, session):
@@ -107,8 +107,8 @@ class TestImporting:
 
         report = _apply(session, changed)
 
-        case = case_store.get_case(session, "TF-GO-001")
-        assert report.updated == ["TF-GO-001"]
+        case = case_store.get_case(session, 1)
+        assert report.updated == ["GO-001"]
         assert len(case.versions) == 1
 
     def test_changed_content_versions_an_approved_case(self, session):
@@ -117,15 +117,15 @@ class TestImporting:
 
         _apply(session, changed)
 
-        case = case_store.get_case(session, "TF-GO-001")
+        case = case_store.get_case(session, 1)
         assert [v.version for v in case.versions] == [1, 2]
         assert case.versions[0].erwartete_antwort.count("15 Minuten") == 1
 
     def test_status_freigegeben_approves(self, session):
         report = _apply(session, ONE_CASE + "  status: freigegeben\n")
 
-        assert report.approved == ["TF-GO-001"]
-        assert case_store.latest_approved(case_store.get_case(session, "TF-GO-001")) is not None
+        assert report.approved == ["GO-001"]
+        assert case_store.latest_approved(case_store.get_case(session, 1)) is not None
 
     def test_an_incomplete_case_cannot_be_approved_from_a_file(self, session):
         text = "- kategorie: GO\n  ausgangsfrage: x\n  status: freigegeben\n"
@@ -138,41 +138,55 @@ class TestImporting:
 
 
 class TestIdentity:
-    def test_an_unknown_test_id_is_refused(self, session):
-        text = ONE_CASE.replace("- kategorie: GO", "- test_id: TF-GO-042\n  kategorie: GO")
+    def test_an_unknown_number_is_refused(self, session):
+        text = ONE_CASE.replace("- kategorie: GO", "- nummer: 42\n  kategorie: GO")
 
         with pytest.raises(yaml_io.CaseFileError, match="allocated by the backend"):
             _apply(session, text)
 
     def test_seeding_is_possible_but_must_be_asked_for(self, session):
-        text = ONE_CASE.replace("- kategorie: GO", "- test_id: TF-GO-042\n  kategorie: GO")
+        text = ONE_CASE.replace("- kategorie: GO", "- nummer: 42\n  tag: GO-042\n  kategorie: GO")
 
         report = _apply(session, text, allow_new_ids=True)
 
-        assert report.created == ["TF-GO-042"]
+        assert report.created == ["GO-042"]
+        assert case_store.get_case(session, 42).tag == "GO-042"
 
-    def test_seeding_advances_the_counter_past_the_number(self, session):
-        """Otherwise seeding TF-GO-042 and then creating a case normally would
-        produce a second TF-GO-042 — the exact failure the allocator exists to
-        prevent."""
-        text = ONE_CASE.replace("- kategorie: GO", "- test_id: TF-GO-042\n  kategorie: GO")
+    def test_seeding_advances_both_counters_past_it(self, session):
+        """Otherwise seeding Nr. 42 and then creating a case normally would
+        produce a second Nr. 42 — the exact failure the counter exists to
+        prevent. The tag's running number is advanced the same way."""
+        text = ONE_CASE.replace("- kategorie: GO", "- nummer: 42\n  tag: GO-042\n  kategorie: GO")
         _apply(session, text, allow_new_ids=True)
 
         report = _apply(session, ONE_CASE)
 
-        assert report.created == ["TF-GO-043"]
+        assert report.created == ["GO-043"]
+        assert case_store.list_cases(session)[-1].nummer == 43
 
-    def test_a_malformed_seeded_id_is_refused(self, session):
-        text = ONE_CASE.replace("- kategorie: GO", "- test_id: GO-42\n  kategorie: GO")
+    def test_a_number_below_one_is_refused(self, session):
+        text = ONE_CASE.replace("- kategorie: GO", "- nummer: 0\n  kategorie: GO")
 
-        with pytest.raises(case_store.CaseError, match="not a Test-ID"):
+        with pytest.raises(yaml_io.CaseFileError, match="not a case number"):
             _apply(session, text, allow_new_ids=True)
 
-    def test_a_seeded_id_must_match_its_category(self, session):
-        text = ONE_CASE.replace("- kategorie: GO", "- test_id: TF-GV-001\n  kategorie: GO")
+    def test_a_tag_in_the_file_is_applied_and_kept(self, session):
+        _apply(session, ONE_CASE)
+        text = yaml_io.dump(session).replace("tag: GO-001", "tag: GO-Redezeit")
 
-        with pytest.raises(case_store.CaseError, match="not a Test-ID for category GO"):
-            _apply(session, text, allow_new_ids=True)
+        report = _apply(session, text)
+
+        case = case_store.get_case(session, 1)
+        assert report.updated == ["GO-Redezeit"]
+        assert case.tag == "GO-Redezeit"
+        assert case.tag_manuell is True
+
+    def test_a_tag_already_taken_is_refused(self, session):
+        _apply(session, ONE_CASE + ONE_CASE.replace("- kategorie", "\n- kategorie", 1))
+        text = yaml_io.dump(session).replace("tag: GO-002", "tag: GO-001")
+
+        with pytest.raises(yaml_io.CaseFileError, match="schon vergeben"):
+            _apply(session, text)
 
 
 # ── Round trip ──────────────────────────────────────────────────────
@@ -198,7 +212,7 @@ class TestRoundTrip:
 
     def test_withdrawn_cases_are_left_out_by_default(self, session):
         _apply(session, ONE_CASE)
-        case_store.withdraw(session, case_store.get_case(session, "TF-GO-001"))
+        case_store.withdraw(session, case_store.get_case(session, 1))
 
         assert yaml_io.parse(yaml_io.dump(session)) == []
         assert len(yaml_io.parse(yaml_io.dump(session, include_withdrawn=True))) == 1
@@ -235,7 +249,7 @@ class TestTheCli:
         exported = tmp_path / "out.yaml"
         assert cli(["export", str(exported)]) == 0
 
-        assert "TF-GO-001" in exported.read_text(encoding="utf-8")
+        assert "GO-001" in exported.read_text(encoding="utf-8")
 
     def test_a_dry_run_writes_nothing(self, cli, tmp_path, capsys):
         source = tmp_path / "cases.yaml"
@@ -249,7 +263,7 @@ class TestTheCli:
 
     def test_a_bad_file_exits_nonzero_and_says_why(self, cli, tmp_path, capsys):
         source = tmp_path / "cases.yaml"
-        source.write_text("- kategorie: ZZ\n  ausgangsfrage: x\n", encoding="utf-8")
+        source.write_text("- kategorie: Z-Z!\n  ausgangsfrage: x\n", encoding="utf-8")
 
         assert cli(["import", str(source)]) == 1
         assert "kategorie" in capsys.readouterr().err
@@ -261,3 +275,43 @@ class TestTheCli:
         example = Path(__file__).resolve().parents[1] / "cases" / "beispiel.yaml"
 
         assert cli(["import", str(example)]) == 0
+
+
+class TestLabels:
+    """Labels in the file (#287). Absent means "the file does not say"."""
+
+    def test_labels_in_the_file_are_applied(self, session):
+        text = ONE_CASE.replace("- kategorie: GO", "- testart: Präzision\n  kategorie: GO")
+
+        _apply(session, text)
+
+        case = case_store.get_case(session, 1)
+        assert case.testart == "Präzision"
+        assert case.tag == "GO-PRZ-001"
+
+    def test_they_survive_the_round_trip(self, session):
+        _apply(session, ONE_CASE.replace("- kategorie: GO", "- testart: Synthese\n  kategorie: GO"))
+        before = yaml_io.dump(session)
+
+        report = _apply(session, before)
+
+        assert report.unchanged == [case_store.get_case(session, 1).tag]
+        assert yaml_io.dump(session) == before
+
+    def test_a_file_without_labels_leaves_them_alone(self, session):
+        """An older file re-imported must not wipe labels set on screen since."""
+        _apply(session, ONE_CASE)
+        case_store.set_labels(session, case_store.get_case(session, 1), testart="Synthese")
+
+        _apply(session, ONE_CASE.replace("- kategorie: GO", "- nummer: 1\n  kategorie: GO"))
+
+        assert case_store.get_case(session, 1).testart == "Synthese"
+
+    def test_a_changed_label_counts_as_an_update(self, session):
+        _apply(session, ONE_CASE)
+        text = yaml_io.dump(session).replace("testart: ''", "testart: Quellenwahl")
+
+        report = _apply(session, text)
+
+        assert len(report.updated) == 1
+        assert case_store.get_case(session, 1).testart == "Quellenwahl"

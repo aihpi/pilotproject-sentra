@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { EvalCase } from "@/types";
 
@@ -16,11 +16,12 @@ import type { EvalCase } from "@/types";
  *    one. That was #130 from the other end, and it made technique 4.4
  *    unreachable
  *
- *    withdrawal is not deletion. The Test-ID stays spent
+ *    withdrawal is not deletion. The number stays spent
  */
 
 const APPROVED: EvalCase = {
-  test_id: "TF-GO-001",
+  nummer: 1,
+  tag: "GO-001",
   kategorie: "GO",
   created_at: "2026-09-18T10:00:00Z",
   zurueckgezogen_at: null,
@@ -45,7 +46,8 @@ const APPROVED: EvalCase = {
 
 const DRAFT: EvalCase = {
   ...APPROVED,
-  test_id: "TF-AR-001",
+  nummer: 2,
+  tag: "AR-001",
   kategorie: "AR",
   versions: [
     {
@@ -63,7 +65,8 @@ const DRAFT: EvalCase = {
 
 const WITHDRAWN: EvalCase = {
   ...APPROVED,
-  test_id: "TF-GV-001",
+  nummer: 3,
+  tag: "GV-001",
   zurueckgezogen_at: "2026-09-18T11:00:00Z",
 };
 
@@ -73,12 +76,24 @@ const updateCase = vi.fn();
 const approveCase = vi.fn();
 const withdrawCase = vi.fn();
 
+const setLabels = vi.fn();
+const setTag = vi.fn();
+
 vi.mock("@/lib/evalApi", () => ({
   fetchCases: (...a: unknown[]) => fetchCases(...a),
   createCase: (...a: unknown[]) => createCase(...a),
   updateCase: (...a: unknown[]) => updateCase(...a),
   approveCase: (...a: unknown[]) => approveCase(...a),
   withdrawCase: (...a: unknown[]) => withdrawCase(...a),
+  fetchLabels: () =>
+    Promise.resolve({
+      kategorie: ["GO", "GV", "AR", "FI", "WI"],
+      testart: ["Regelfall", "Präzision"],
+      frageform: ["allgemein", "konkret"],
+      herkunft: ["manuell"],
+    }),
+  setLabels: (...a: unknown[]) => setLabels(...a),
+  setTag: (...a: unknown[]) => setTag(...a),
   fetchRuns: () => Promise.resolve([RUN, OLDER_RUN]),
   fetchRun: () => Promise.resolve(RUN),
   importSheet: () => Promise.resolve({}),
@@ -101,6 +116,7 @@ vi.mock("@/lib/evalApi", () => ({
     }),
   fetchSheets: () => Promise.resolve([]),
   fetchKisz: () => Promise.resolve([]),
+  fetchBreakdown: () => Promise.resolve([]),
   fetchTrend: () =>
     Promise.resolve({
       runden: 1,
@@ -161,7 +177,7 @@ async function renderWith(cases: EvalCase[]) {
   // row failed to find the row. A marker that is true of the empty state is
   // not a marker that the list has loaded.
   if (cases.length > 0) {
-    await screen.findByText(cases[0].test_id);
+    await screen.findByText(cases[0].tag);
   } else {
     await screen.findByText(/Noch keine Testfälle/);
   }
@@ -181,9 +197,11 @@ describe("the case list", () => {
   it("shows what state each case is in", async () => {
     await renderWith([APPROVED, DRAFT]);
 
-    expect(screen.getByText("TF-GO-001")).toBeInTheDocument();
-    expect(screen.getByText("freigegeben")).toBeInTheDocument();
-    expect(screen.getByText("entwurf")).toBeInTheDocument();
+    // Within the table: the Status filter above it offers the same words.
+    const table = within(screen.getByRole("table"));
+    expect(table.getByText("GO-001")).toBeInTheDocument();
+    expect(table.getByText("freigegeben")).toBeInTheDocument();
+    expect(table.getByText("entwurf")).toBeInTheDocument();
   });
 
   it("offers approval only where there is a draft to approve", async () => {
@@ -197,7 +215,7 @@ describe("the case list", () => {
   it("offers nothing on a withdrawn case", async () => {
     await renderWith([WITHDRAWN]);
 
-    expect(screen.getByText("zurückgezogen")).toBeInTheDocument();
+    expect(within(screen.getByRole("table")).getByText("zurückgezogen")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /Zurückziehen/ }),
     ).not.toBeInTheDocument();
@@ -304,7 +322,7 @@ describe("failures", () => {
   it("shows the server's reason for refusing approval", async () => {
     approveCase.mockRejectedValue(
       new Error(
-        "TF-AR-001 version 1 cannot be approved: erwartete Antwort is missing.",
+        "AR-001 version 1 cannot be approved: erwartete Antwort is missing.",
       ),
     );
     await renderWith([DRAFT]);

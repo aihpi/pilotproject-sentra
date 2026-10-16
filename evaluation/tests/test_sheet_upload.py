@@ -83,7 +83,7 @@ class TestAGoodSheet:
         Test-IDs are what they will look for next."""
         response = _post(client, _sheet([ORDENTLICH, {**ORDENTLICH, "Kategorie": "GV"}]))
 
-        assert response.json()["angelegt"] == ["TF-GO-001", "TF-GV-001"]
+        assert response.json()["angelegt"] == ["GO-001", "GV-001"]
 
     def test_nothing_uploaded_is_approved(self, client):
         """The boundary the whole endpoint rests on. An upload that could
@@ -101,11 +101,11 @@ class TestAGoodSheet:
 
         second = _post(client, _sheet([ORDENTLICH])).json()
 
-        assert first["angelegt"] == ["TF-GO-001"]
+        assert first["angelegt"] == ["GO-001"]
         # Without a Test-ID the second upload is a new case, not the same one.
         # That is the documented behaviour of the file format and the reason
         # the response lists IDs: it is visible rather than silent.
-        assert second["angelegt"] == ["TF-GO-002"]
+        assert second["angelegt"] == ["GO-002"]
 
 
 class TestTheWrongFile:
@@ -148,7 +148,7 @@ class TestABadRow:
     def test_a_bad_row_writes_nothing_at_all(self, client):
         """All or nothing. A sheet half-imported leaves somebody reconciling
         which rows landed, which is worse than importing none of them."""
-        _post(client, _sheet([ORDENTLICH, {**ORDENTLICH, "Kategorie": "XX"}]))
+        _post(client, _sheet([ORDENTLICH, {**ORDENTLICH, "Kategorie": "X-X!"}]))
 
         assert client.get("/api/eval/cases").json() == []
 
@@ -161,7 +161,7 @@ class TestAReviewerDocument:
         response = _post(client, _document(tmp_path, [ZWEI_FRAGEN]).read_bytes())
 
         assert response.status_code == 200
-        assert response.json()["angelegt"] == ["TF-FI-001", "TF-FI-002"]
+        assert response.json()["angelegt"] == ["FI-001", "FI-002"]
 
     def test_nothing_uploaded_is_approved(self, client, tmp_path):
         _post(client, _document(tmp_path, [ZWEI_FRAGEN]).read_bytes())
@@ -171,7 +171,7 @@ class TestAReviewerDocument:
         assert {v["status"] for c in cases for v in c["versions"]} == {"entwurf"}
 
     def test_the_row_survives_the_trip(self, client, tmp_path):
-        row = ("XY09", "Frage?", "Antwort.", "WD 3 - 3000 - 001/25", "")
+        row = ("XY09", "Frage?", "Antwort.", "Ein Gutachten ohne Aktenzeichen", "")
 
         response = _post(client, _document(tmp_path, [row]).read_bytes())
 

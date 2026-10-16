@@ -51,25 +51,25 @@ describe("variants of a case", () => {
   it("are proposed on request", async () => {
     fetchVariants.mockResolvedValue([]);
     proposeVariants.mockResolvedValue(PROPOSED);
-    render(<VariantPanel testId="TF-FI-001" approver="mario" />);
+    render(<VariantPanel nummer={1} approver="mario" />);
 
     await userEvent.click(await screen.findByRole("button", { name: "Varianten vorschlagen" }));
 
-    expect(proposeVariants).toHaveBeenCalledWith("TF-FI-001");
+    expect(proposeVariants).toHaveBeenCalledWith(1);
     expect(await screen.findByDisplayValue("Dry Income Besteuerung")).toBeInTheDocument();
   });
 
   it("can be corrected before approval", async () => {
     fetchVariants.mockResolvedValue(PROPOSED);
     editVariant.mockResolvedValue(variant("verkuerzt", "Besteuerung Dry Income"));
-    render(<VariantPanel testId="TF-FI-001" approver="mario" />);
+    render(<VariantPanel nummer={1} approver="mario" />);
 
     const box = await screen.findByLabelText("Variante Verkürzt");
     await userEvent.clear(box);
     await userEvent.type(box, "Besteuerung Dry Income");
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
-    expect(editVariant).toHaveBeenCalledWith("TF-FI-001", "verkuerzt", "Besteuerung Dry Income");
+    expect(editVariant).toHaveBeenCalledWith(1, "verkuerzt", "Besteuerung Dry Income");
   });
 
   it("are approved in the name of whoever is signed in", async () => {
@@ -77,18 +77,18 @@ describe("variants of a case", () => {
     approveVariant.mockResolvedValue(
       variant("fachsprachlich", "Unterliegt Dry Income der Einkommensteuer?", true),
     );
-    render(<VariantPanel testId="TF-FI-001" approver="mario" />);
+    render(<VariantPanel nummer={1} approver="mario" />);
 
     await screen.findByLabelText("Variante Fachsprachlich");
     await userEvent.click(screen.getAllByRole("button", { name: "Freigeben" })[1]);
 
-    expect(approveVariant).toHaveBeenCalledWith("TF-FI-001", "fachsprachlich", "mario");
+    expect(approveVariant).toHaveBeenCalledWith(1, "fachsprachlich", "mario");
     expect(await screen.findByText("freigegeben von mario")).toBeInTheDocument();
   });
 
   it("are frozen once approved", async () => {
     fetchVariants.mockResolvedValue(PROPOSED.map((v) => ({ ...v, ...variant(v.stil, v.wortlaut, true) })));
-    render(<VariantPanel testId="TF-FI-001" approver="mario" />);
+    render(<VariantPanel nummer={1} approver="mario" />);
 
     expect(await screen.findByText("Dry Income Besteuerung")).toBeInTheDocument();
     expect(screen.queryByRole("textbox")).toBeNull();
@@ -100,7 +100,7 @@ describe("variants of a case", () => {
     proposeVariants.mockRejectedValue(
       new Error("Die Varianten konnten nicht erzeugt werden: Judge nicht konfiguriert"),
     );
-    render(<VariantPanel testId="TF-FI-001" approver="mario" />);
+    render(<VariantPanel nummer={1} approver="mario" />);
 
     await userEvent.click(await screen.findByRole("button", { name: "Varianten vorschlagen" }));
 

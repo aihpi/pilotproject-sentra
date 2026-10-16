@@ -7,18 +7,21 @@ import { CaseTable } from "./CaseTable";
 /** Sorting the Testfälle table (#252).
  *
  *  What is easy to get wrong here is the order itself rather than the click:
- *  Test-IDs carry a number, and the statuses have a workflow order that the
+ *  Case numbers are numbers, and the statuses have a workflow order that the
  *  alphabet does not know about. */
 
 function testCase(
-  testId: string,
+  tag: string,
   frage: string,
   status: "entwurf" | "freigegeben",
   withdrawn = false,
 ): EvalCase {
   return {
-    test_id: testId,
-    kategorie: testId.split("-")[1],
+    // The tag's running number doubles as the case number here, so number
+    // order and tag order agree and the expected orders stay readable.
+    nummer: Number(tag.split("-")[1]),
+    tag,
+    kategorie: tag.split("-")[0],
     created_at: "2026-10-08T10:00:00Z",
     zurueckgezogen_at: withdrawn ? "2026-10-09T10:00:00Z" : null,
     versions: [
@@ -42,10 +45,10 @@ function testCase(
 }
 
 const CASES = [
-  testCase("TF-WI-010", "Was ist Strom?", "freigegeben"),
-  testCase("TF-WI-002", "Ökonomische Wirkungen?", "entwurf"),
-  testCase("TF-FI-001", "Arbeitsvolumen?", "freigegeben", true),
-  testCase("TF-WI-009", "Biomethan?", "entwurf"),
+  testCase("WI-010", "Was ist Strom?", "freigegeben"),
+  testCase("WI-002", "Ökonomische Wirkungen?", "entwurf"),
+  testCase("FI-001", "Arbeitsvolumen?", "freigegeben", true),
+  testCase("WI-009", "Biomethan?", "entwurf"),
 ];
 
 function renderTable() {
@@ -61,9 +64,10 @@ function renderTable() {
   );
 }
 
+/** The tag in each row, in the order shown. */
 function shownIds(): string[] {
   const rows = screen.getAllByRole("row").slice(1);
-  return rows.map((row) => within(row).getAllByRole("cell")[0].textContent ?? "");
+  return rows.map((row) => within(row).getAllByRole("cell")[1].textContent ?? "");
 }
 
 function header(name: string) {
@@ -71,30 +75,30 @@ function header(name: string) {
 }
 
 describe("sorting the Testfälle", () => {
-  it("starts by Test-ID, counting the number rather than the characters", () => {
+  it("starts by number, counting it as a number rather than as characters", () => {
     renderTable();
 
-    expect(shownIds()).toEqual(["TF-FI-001", "TF-WI-002", "TF-WI-009", "TF-WI-010"]);
+    expect(shownIds()).toEqual(["FI-001", "WI-002", "WI-009", "WI-010"]);
   });
 
   it("reverses when the same header is clicked again", async () => {
     renderTable();
 
-    await userEvent.click(header("Test-ID"));
+    await userEvent.click(header("Nr\\."));
 
-    expect(shownIds()).toEqual(["TF-WI-010", "TF-WI-009", "TF-WI-002", "TF-FI-001"]);
-    expect(screen.getByRole("columnheader", { name: /Test-ID/ })).toHaveAttribute(
+    expect(shownIds()).toEqual(["WI-010", "WI-009", "WI-002", "FI-001"]);
+    expect(screen.getByRole("columnheader", { name: /Nr\./ })).toHaveAttribute(
       "aria-sort",
       "descending",
     );
   });
 
-  it("sorts by Kategorie, with Test-ID deciding within one", async () => {
+  it("sorts by Bereich, with the number deciding within one", async () => {
     renderTable();
 
-    await userEvent.click(header("Kategorie"));
+    await userEvent.click(header("Bereich"));
 
-    expect(shownIds()).toEqual(["TF-FI-001", "TF-WI-002", "TF-WI-009", "TF-WI-010"]);
+    expect(shownIds()).toEqual(["FI-001", "WI-002", "WI-009", "WI-010"]);
   });
 
   it("sorts the questions alphabetically, umlauts where a German reader expects them", async () => {
@@ -103,7 +107,7 @@ describe("sorting the Testfälle", () => {
     await userEvent.click(header("Ausgangsfrage"));
 
     // Arbeitsvolumen, Biomethan, Ökonomische, Was
-    expect(shownIds()).toEqual(["TF-FI-001", "TF-WI-009", "TF-WI-002", "TF-WI-010"]);
+    expect(shownIds()).toEqual(["FI-001", "WI-009", "WI-002", "WI-010"]);
   });
 
   it("sorts the status in workflow order, drafts first and withdrawn last", async () => {
@@ -111,7 +115,7 @@ describe("sorting the Testfälle", () => {
 
     await userEvent.click(header("Status"));
 
-    expect(shownIds()).toEqual(["TF-WI-002", "TF-WI-009", "TF-WI-010", "TF-FI-001"]);
+    expect(shownIds()).toEqual(["WI-002", "WI-009", "WI-010", "FI-001"]);
   });
 });
 
@@ -133,7 +137,7 @@ describe("what a draft still needs before approval", () => {
 
   it("lists the blockers and offers no working Freigeben", async () => {
     const onApprove = renderWith({
-      ...testCase("TF-WI-001", "Biomethan?", "entwurf"),
+      ...testCase("WI-001", "Biomethan?", "entwurf"),
       freigabe_hindernisse: ["WD 5 - 3000 - 074/26 ist nicht im Bestand, bitte erst einlesen"],
     });
 
@@ -146,13 +150,13 @@ describe("what a draft still needs before approval", () => {
 
   it("leaves a complete draft as it was", async () => {
     const onApprove = renderWith({
-      ...testCase("TF-WI-001", "Biomethan?", "entwurf"),
+      ...testCase("WI-001", "Biomethan?", "entwurf"),
       freigabe_hindernisse: [],
     });
 
     expect(screen.queryByRole("list", { name: "Vor der Freigabe fehlt" })).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Freigeben" }));
-    expect(onApprove).toHaveBeenCalledWith("TF-WI-001");
+    expect(onApprove).toHaveBeenCalledWith(1);
   });
 });
 
@@ -161,8 +165,8 @@ describe("variants", () => {
     render(
       <CaseTable
         cases={[
-          testCase("TF-WI-001", "Biomethan?", "freigegeben"),
-          testCase("TF-WI-002", "Strom?", "entwurf"),
+          testCase("WI-001", "Biomethan?", "freigegeben"),
+          testCase("WI-002", "Strom?", "entwurf"),
         ]}
         busy={false}
         onCreate={vi.fn()}
@@ -173,5 +177,52 @@ describe("variants", () => {
     );
 
     expect(screen.getAllByRole("button", { name: "Varianten" })).toHaveLength(1);
+  });
+});
+
+describe("filtering and labels", () => {
+  const labelled = [
+    { ...testCase("FI-001", "Eins?", "entwurf"), testart: "Präzision", frageform: "konkret" },
+    { ...testCase("FI-002", "Zwei?", "freigegeben"), testart: "Regelfall", frageform: "allgemein" },
+    { ...testCase("WI-003", "Drei?", "entwurf"), testart: "Präzision", frageform: "allgemein" },
+  ];
+
+  function renderLabelled() {
+    render(
+      <CaseTable
+        cases={labelled}
+        busy={false}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onApprove={vi.fn()}
+        onWithdraw={vi.fn()}
+      />,
+    );
+  }
+
+  it("narrows the table to one value of a label (#288)", async () => {
+    renderLabelled();
+
+    await userEvent.selectOptions(screen.getByLabelText("Filter Testart"), "Präzision");
+
+    expect(shownIds()).toEqual(["FI-001", "WI-003"]);
+    expect(screen.getByText(/Testfälle \(2 von 3\)/)).toBeInTheDocument();
+  });
+
+  it("combines filters", async () => {
+    renderLabelled();
+
+    await userEvent.selectOptions(screen.getByLabelText("Filter Testart"), "Präzision");
+    await userEvent.selectOptions(screen.getByLabelText("Filter Bereich"), "WI");
+
+    expect(shownIds()).toEqual(["WI-003"]);
+  });
+
+  it("opens a case's labels for editing", async () => {
+    renderLabelled();
+
+    await userEvent.click(screen.getAllByRole("button", { name: "Labels" })[0]);
+
+    expect(screen.getByLabelText("Tag")).toHaveValue("FI-001");
   });
 });

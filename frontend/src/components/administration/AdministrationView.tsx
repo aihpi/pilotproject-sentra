@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import type { CaseDraft, EvalCase, EvalRun, Session } from "@/types";
+import type { CaseDraft, EvalCase, EvalRun, LabelValues, Session } from "@/types";
 import {
   approveCase,
   createCase,
   fetchCases,
+  fetchLabels,
   fetchRun,
   fetchRuns,
   updateCase,
@@ -56,16 +57,30 @@ export function AdministrationView({ session }: { session: Session | null }) {
   >(
     "testfaelle",
   );
-  const [editing, setEditing] = useState<string | null>(null);
+  const [editing, setEditing] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const [offered, setOffered] = useState<LabelValues>({
+    kategorie: [],
+    testart: [],
+    frageform: [],
+    herkunft: [],
+  });
+
   const load = useCallback(() => {
     fetchCases()
       .then(setCases)
       .catch((e: Error) => setLoadError(e.message));
+    // Reloaded with the cases: a value typed in on one case is suggested for
+    // the next, and one nobody uses any more drops out.
+    fetchLabels()
+      .then(setOffered)
+      .catch(() => {
+        /* Suggestions only. Editing still works without them. */
+      });
   }, []);
 
   useEffect(() => {
@@ -111,7 +126,7 @@ export function AdministrationView({ session }: { session: Session | null }) {
     }
   }
 
-  const open = cases.find((c) => c.test_id === editing) ?? null;
+  const open = cases.find((c) => c.nummer === editing) ?? null;
   const latest = open?.versions[open.versions.length - 1] ?? null;
 
   if (loadError) {
@@ -197,7 +212,8 @@ export function AdministrationView({ session }: { session: Session | null }) {
           {creating && (
             <CaseForm
               initial={EMPTY}
-              categories={["GO", "GV", "AR"]}
+              categories={offered.kategorie}
+              testarten={offered.testart}
               editingApproved={false}
               submitting={busy}
               onCancel={() => setCreating(false)}
@@ -207,7 +223,7 @@ export function AdministrationView({ session }: { session: Session | null }) {
 
           {open && latest && (
             <CaseForm
-              key={open.test_id}
+              key={open.nummer}
               initial={{
                 kategorie: open.kategorie,
                 ausgangsfrage: latest.ausgangsfrage,
@@ -220,18 +236,18 @@ export function AdministrationView({ session }: { session: Session | null }) {
                 grund_fuer_aufnahme: latest.grund_fuer_aufnahme,
                 grenzfall: latest.grenzfall,
               }}
-              categories={["GO", "GV", "AR"]}
+              categories={offered.kategorie}
               editingApproved={latest.status === "freigegeben"}
               submitting={busy}
               onCancel={() => setEditing(null)}
               onSubmit={(draft) => {
-                // Never the category: it is baked into the Test-ID, which is
-                // allocated once and never reused, so changing it would leave the
-                // number saying one thing and the case another. PATCH has no
-                // kategorie field for exactly that reason.
-                const { kategorie, ...fields } = draft;
+                // Never the labels: they change through the Labels panel, which
+                // creates no version, and PATCH on the content has no fields
+                // for them.
+                const { kategorie, testart, ...fields } = draft;
                 void kategorie;
-                void act(() => updateCase(open.test_id, fields));
+                void testart;
+                void act(() => updateCase(open.nummer, fields));
               }}
             />
           )}
@@ -243,13 +259,15 @@ export function AdministrationView({ session }: { session: Session | null }) {
               setCreating(true);
               setEditing(null);
             }}
-            onEdit={(testId) => {
-              setEditing(testId);
+            onEdit={(nummer) => {
+              setEditing(nummer);
               setCreating(false);
             }}
-            onApprove={(testId) => void act(() => approveCase(testId))}
-            onWithdraw={(testId) => void act(() => withdrawCase(testId))}
+            onApprove={(nummer) => void act(() => approveCase(nummer))}
+            onWithdraw={(nummer) => void act(() => withdrawCase(nummer))}
             approver={session?.benutzername ?? "Administration"}
+            offered={offered}
+            onLabelsChanged={load}
           />
         </>
       )}

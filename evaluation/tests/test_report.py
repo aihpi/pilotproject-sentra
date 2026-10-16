@@ -235,7 +235,7 @@ class TestSheets:
 
         sheet = report.sheets(session, run)[0]
 
-        assert sheet.test_id
+        assert sheet.tag
         assert sheet.quellenbewertung_4_3b == ""
         assert sheet.manuell_geprueft_durch == "entfällt"
 
@@ -300,3 +300,93 @@ class TestTrend:
 
         assert found.abweichung["zu_streng"] == 1
         assert found.abweichung["abweichungsquote"] == 0.5
+
+
+# ── Broken down by label (#289) ─────────────────────────────────────
+
+
+def _labelled(session, run, testart, **kwargs):
+    case, version = _case(session, run, **kwargs)
+    case_store.set_labels(session, case, testart=testart)
+    return case, version
+
+
+class TestBreakdown:
+    def test_cases_are_grouped_by_one_label(self, session, run):
+        _labelled(session, run, "Präzision", n=1, machine_flagged=True)
+        _labelled(session, run, "Präzision", n=2)
+        _labelled(session, run, "Regelfall", n=3)
+
+        rows = {r.werte["testart"]: r for r in report.breakdown(session, ["testart"], run=run)}
+
+        assert rows["Präzision"].faelle == 2
+        assert rows["Präzision"].auffaellig == 1
+        assert rows["Präzision"].befunde == {"quellenauswahl": 1}
+        assert rows["Regelfall"].auffaellig == 0
+
+    def test_a_finding_on_every_repeat_is_one_case(self, session, run):
+        """Per case like the trend, so the numbers do not scale with repeats."""
+        _labelled(session, run, "Präzision", machine_flagged=True, repeats=3)
+
+        (row,) = report.breakdown(session, ["testart"], run=run)
+
+        assert (row.faelle, row.auffaellig, row.befunde) == (1, 1, {"quellenauswahl": 1})
+
+    def test_two_labels_combine_into_one_row_per_pair(self, session, run):
+        _labelled(session, run, "Präzision", n=1, kategorie=Kategorie.GO)
+        _labelled(session, run, "Präzision", n=2, kategorie=Kategorie.GV)
+        _labelled(session, run, "Präzision", n=3, kategorie=Kategorie.GO)
+
+        rows = report.breakdown(session, ["kategorie", "testart"], run=run)
+
+        assert [(r.werte["kategorie"], r.faelle) for r in rows] == [("GO", 2), ("GV", 1)]
+
+    def test_the_headline_number_is_split_too(self, session, run):
+        _labelled(session, run, "Präzision", n=1, machine_flagged=True, human_says=QUELLE_KORREKT)
+        _labelled(session, run, "Präzision", n=2, machine_flagged=True, human_says=QUELLE_FALSCH)
+        _labelled(session, run, "Regelfall", n=3)
+
+        rows = {r.werte["testart"]: r for r in report.breakdown(session, ["testart"], run=run)}
+
+        assert rows["Präzision"].abweichung.zu_streng == 1
+        assert rows["Präzision"].abweichung.einig == 1
+        assert rows["Präzision"].abweichung.abweichungsquote == 0.5
+        assert rows["Regelfall"].abweichung.nicht_bewertet == 1
+
+    def test_a_case_without_the_label_is_its_own_group(self, session, run):
+        _case(session, run, n=1)
+
+        (row,) = report.breakdown(session, ["testart"], run=run)
+
+        assert row.werte["testart"] == report.OHNE_WERT
+
+    def test_without_a_round_it_covers_every_round(self, session, run):
+        second = Run(
+            sentra_base_url="http://sentra.invalid",
+            repeats=1,
+            stichprobe_seed=2,
+            stichprobe_anteil=0.0,
+            label="Runde 2",
+        )
+        session.add(second)
+        session.flush()
+        _labelled(session, run, "Präzision", n=1)
+        _labelled(session, second, "Präzision", n=2)
+
+        (only_first,) = report.breakdown(session, ["testart"], run=run)
+        (both,) = report.breakdown(session, ["testart"])
+
+        assert (only_first.faelle, both.faelle) == (1, 2)
+
+    def test_it_uses_the_labels_as_they_are_now(self, session, run):
+        """A label corrected after the round re-sorts the round too."""
+        case, _ = _labelled(session, run, "Präzision")
+        case_store.set_labels(session, case, testart="Synthese")
+
+        (row,) = report.breakdown(session, ["testart"], run=run)
+
+        assert row.werte["testart"] == "Synthese"
+
+    def test_an_unknown_dimension_is_refused(self, session, run):
+        with pytest.raises(ValueError, match="Aufschlüsseln geht nach"):
+            report.breakdown(session, ["farbe"], run=run)

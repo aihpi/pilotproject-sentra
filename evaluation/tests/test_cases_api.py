@@ -48,11 +48,13 @@ def client(monkeypatch, tmp_path):
 
 
 class TestCreating:
-    def test_a_case_comes_back_with_an_allocated_test_id(self, client):
+    def test_a_case_comes_back_with_a_number_and_a_generated_tag(self, client):
         response = client.post("/api/eval/cases", json=CASE)
 
         assert response.status_code == 201
-        assert response.json()["test_id"] == "TF-GO-001"
+        assert response.json()["nummer"] == 1
+        assert response.json()["tag"] == "GO-001"
+        assert response.json()["tag_manuell"] is False
 
     def test_it_starts_as_one_draft_version(self, client):
         body = client.post("/api/eval/cases", json=CASE).json()
@@ -65,9 +67,16 @@ class TestCreating:
 
         assert response.status_code == 422
 
-    def test_an_unknown_category_is_rejected(self, client):
-        """The closed list, enforced at the edge rather than trusted."""
-        response = client.post("/api/eval/cases", json={**CASE, "kategorie": "XX"})
+    def test_a_new_category_is_accepted(self, client):
+        """An open list since #286: a category nobody has used yet is just a new one."""
+        response = client.post("/api/eval/cases", json={**CASE, "kategorie": "wd3"})
+
+        assert response.status_code == 201
+        assert response.json()["kategorie"] == "WD3"
+        assert response.json()["tag"] == "WD3-001"
+
+    def test_a_malformed_category_is_rejected(self, client):
+        response = client.post("/api/eval/cases", json={**CASE, "kategorie": "W-3!"})
 
         assert response.status_code == 422
 
@@ -80,7 +89,7 @@ class TestReading:
         assert len(client.get("/api/eval/cases").json()) == 2
 
     def test_an_unknown_test_id_is_a_404(self, client):
-        response = client.get("/api/eval/cases/TF-GO-999")
+        response = client.get("/api/eval/cases/999")
 
         assert response.status_code == 404
         assert "nicht gefunden" in response.json()["detail"]
@@ -95,31 +104,25 @@ class TestEditing:
     def test_a_draft_is_edited_in_place(self, client):
         client.post("/api/eval/cases", json=CASE)
 
-        body = client.patch(
-            "/api/eval/cases/TF-GO-001", json={"erwartete_antwort": "Anders"}
-        ).json()
+        body = client.patch("/api/eval/cases/1", json={"erwartete_antwort": "Anders"}).json()
 
         assert len(body["versions"]) == 1
         assert body["versions"][0]["erwartete_antwort"] == "Anders"
 
     def test_editing_an_approved_case_adds_a_version(self, client):
         client.post("/api/eval/cases", json=CASE)
-        client.post("/api/eval/cases/TF-GO-001/freigeben")
+        client.post("/api/eval/cases/1/freigeben")
 
-        body = client.patch(
-            "/api/eval/cases/TF-GO-001", json={"erwartete_antwort": "Überarbeitet"}
-        ).json()
+        body = client.patch("/api/eval/cases/1", json={"erwartete_antwort": "Überarbeitet"}).json()
 
         assert [v["version"] for v in body["versions"]] == [1, 2]
         assert body["versions"][1]["status"] == "entwurf"
 
     def test_the_approved_version_keeps_what_it_had(self, client):
         client.post("/api/eval/cases", json=CASE)
-        client.post("/api/eval/cases/TF-GO-001/freigeben")
+        client.post("/api/eval/cases/1/freigeben")
 
-        body = client.patch(
-            "/api/eval/cases/TF-GO-001", json={"erwartete_antwort": "Überarbeitet"}
-        ).json()
+        body = client.patch("/api/eval/cases/1", json={"erwartete_antwort": "Überarbeitet"}).json()
 
         assert body["versions"][0]["erwartete_antwort"] == CASE["erwartete_antwort"]
 
@@ -128,7 +131,7 @@ class TestApproving:
     def test_approving_stamps_the_timestamp(self, client):
         client.post("/api/eval/cases", json=CASE)
 
-        body = client.post("/api/eval/cases/TF-GO-001/freigeben").json()
+        body = client.post("/api/eval/cases/1/freigeben").json()
 
         assert body["versions"][0]["status"] == "freigegeben"
         assert body["versions"][0]["freigegeben_at"] is not None
@@ -136,7 +139,7 @@ class TestApproving:
     def test_an_incomplete_case_is_refused_with_a_reason(self, client):
         client.post("/api/eval/cases", json={**CASE, "erwartete_antwort": ""})
 
-        response = client.post("/api/eval/cases/TF-GO-001/freigeben")
+        response = client.post("/api/eval/cases/1/freigeben")
 
         assert response.status_code == 422
         assert "erwartete Antwort" in response.json()["detail"]
@@ -145,14 +148,169 @@ class TestApproving:
 class TestWithdrawing:
     def test_a_withdrawn_case_leaves_the_list(self, client):
         client.post("/api/eval/cases", json=CASE)
-        client.post("/api/eval/cases/TF-GO-001/zurueckziehen")
+        client.post("/api/eval/cases/1/zurueckziehen")
 
         assert client.get("/api/eval/cases").json() == []
 
     def test_and_its_number_stays_spent(self, client):
         client.post("/api/eval/cases", json=CASE)
-        client.post("/api/eval/cases/TF-GO-001/zurueckziehen")
+        client.post("/api/eval/cases/1/zurueckziehen")
 
         body = client.post("/api/eval/cases", json=CASE).json()
 
-        assert body["test_id"] == "TF-GO-002"
+        assert body["nummer"] == 2
+
+
+class TestTheTag:
+    """A tag is a label, not an identity (#285): it can be corrected by hand,
+    must stay unique, and an empty one hands it back to the generator."""
+
+    def test_a_tag_set_by_hand_is_kept_and_marked(self, client):
+        client.post("/api/eval/cases", json=CASE)
+
+        body = client.put("/api/eval/cases/1/tag", json={"tag": "GO-Redezeit"}).json()
+
+        assert body["tag"] == "GO-Redezeit"
+        assert body["tag_manuell"] is True
+        assert body["nummer"] == 1
+
+    def test_a_tag_already_taken_is_refused(self, client):
+        client.post("/api/eval/cases", json=CASE)
+        client.post("/api/eval/cases", json=CASE)
+
+        response = client.put("/api/eval/cases/2/tag", json={"tag": "GO-001"})
+
+        assert response.status_code == 409
+        assert "schon vergeben" in response.json()["detail"]
+
+    def test_an_empty_tag_is_generated_again(self, client):
+        client.post("/api/eval/cases", json=CASE)
+        client.put("/api/eval/cases/1/tag", json={"tag": "von Hand"})
+
+        body = client.put("/api/eval/cases/1/tag", json={"tag": ""}).json()
+
+        assert body["tag_manuell"] is False
+        assert body["tag"].startswith("GO-")
+
+    def test_the_generator_skips_a_tag_somebody_took_by_hand(self, client):
+        client.post("/api/eval/cases", json=CASE)
+        client.put("/api/eval/cases/1/tag", json={"tag": "GO-002"})
+
+        body = client.post("/api/eval/cases", json=CASE).json()
+
+        assert body["tag"] == "GO-003"
+
+
+class TestLabels:
+    """Labels for breaking a round down (#286)."""
+
+    def test_a_case_is_created_with_its_labels_and_a_tag_from_them(self, client):
+        body = client.post(
+            "/api/eval/cases",
+            json={**CASE, "testart": "Präzision", "frageform": "konkret", "herkunft": "Hotline"},
+        ).json()
+
+        assert (body["testart"], body["frageform"], body["herkunft"]) == (
+            "Präzision",
+            "konkret",
+            "Hotline",
+        )
+        assert body["tag"] == "GO-PRZ-001"
+
+    def test_correcting_labels_adds_no_version(self, client):
+        client.post("/api/eval/cases", json=CASE)
+
+        body = client.patch("/api/eval/cases/1/labels", json={"testart": "Synthese"}).json()
+
+        assert body["testart"] == "Synthese"
+        assert len(body["versions"]) == 1
+
+    def test_a_generated_tag_follows_the_labels(self, client):
+        client.post("/api/eval/cases", json=CASE)
+
+        body = client.patch(
+            "/api/eval/cases/1/labels", json={"kategorie": "FI", "testart": "Quellenwahl"}
+        ).json()
+
+        assert body["tag"] == "FI-QLW-001"
+
+    def test_a_tag_set_by_hand_stays(self, client):
+        client.post("/api/eval/cases", json=CASE)
+        client.put("/api/eval/cases/1/tag", json={"tag": "Redezeit"})
+
+        body = client.patch("/api/eval/cases/1/labels", json={"testart": "Synthese"}).json()
+
+        assert body["tag"] == "Redezeit"
+
+    def test_choosing_the_grenzfall_testart_marks_the_draft(self, client):
+        client.post("/api/eval/cases", json=CASE)
+
+        body = client.patch(
+            "/api/eval/cases/1/labels", json={"testart": "Grenzfall · außerhalb des Bestands"}
+        ).json()
+
+        assert body["versions"][-1]["grenzfall"] is True
+
+    def test_leaving_it_unmarks_the_draft(self, client):
+        client.post(
+            "/api/eval/cases", json={**CASE, "testart": "Grenzfall · außerhalb des Bestands"}
+        )
+
+        body = client.patch("/api/eval/cases/1/labels", json={"testart": "Regelfall"}).json()
+
+        assert body["versions"][-1]["grenzfall"] is False
+
+    def test_an_approved_version_keeps_its_grenzfall_flag(self, client):
+        """It is what a round measured against."""
+        client.post("/api/eval/cases", json=CASE)
+        client.post("/api/eval/cases/1/freigeben")
+
+        body = client.patch(
+            "/api/eval/cases/1/labels", json={"testart": "Grenzfall · außerhalb des Bestands"}
+        ).json()
+
+        assert body["versions"][-1]["grenzfall"] is False
+
+
+class TestOfferedValues:
+    """Built-in values always, and a hand-added one only while a case uses it."""
+
+    def test_the_built_in_values_are_offered_with_no_cases(self, client):
+        offered = client.get("/api/eval/labels").json()
+
+        assert offered["testart"][0] == "Regelfall"
+        assert "Grenzfall · außerhalb des Bestands" in offered["testart"]
+        assert offered["frageform"] == ["allgemein", "konkret"]
+        assert "GO" in offered["kategorie"]
+
+    def test_a_value_typed_in_is_offered_while_in_use(self, client):
+        client.post("/api/eval/cases", json={**CASE, "testart": "Rechenweg", "kategorie": "WD3"})
+
+        offered = client.get("/api/eval/labels").json()
+
+        assert "Rechenweg" in offered["testart"]
+        assert "WD3" in offered["kategorie"]
+
+    def test_and_disappears_once_no_case_uses_it(self, client):
+        client.post("/api/eval/cases", json={**CASE, "testart": "Rechenweg"})
+        client.patch("/api/eval/cases/1/labels", json={"testart": "Regelfall"})
+
+        offered = client.get("/api/eval/labels").json()
+
+        assert "Rechenweg" not in offered["testart"]
+
+
+class TestTheBreakdownEndpoint:
+    """GET /aufschluesselung (#289). The grouping itself is tested in test_report.py."""
+
+    def test_it_answers_with_rows_per_label_value(self, client):
+        response = client.get("/api/eval/aufschluesselung?dimension=testart&dimension=kategorie")
+
+        assert response.status_code == 200
+        assert response.json() == []  # no round has run
+
+    def test_an_unknown_dimension_is_a_422(self, client):
+        response = client.get("/api/eval/aufschluesselung?dimension=farbe")
+
+        assert response.status_code == 422
+        assert "Aufschlüsseln" in response.json()["detail"]

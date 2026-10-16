@@ -60,7 +60,8 @@ NICHT_BEWERTET = "nicht bewertet"
 class Sheet:
     """One Phase-4 documentation sheet, section 6, field for field."""
 
-    test_id: str
+    nummer: int
+    tag: str
     datum: str
     tester: str
     kategorie: str
@@ -114,7 +115,8 @@ def sheets(session: Session, run: Run) -> list[Sheet]:
 
         out.append(
             Sheet(
-                test_id=case.test_id,
+                nummer=case.nummer,
+                tag=case.tag,
                 datum=run.started_at.date().isoformat(),
                 tester=verdict.tester if verdict else "",
                 kategorie=KATEGORIE_NAMEN.get(case.kategorie, case.kategorie),
@@ -148,7 +150,7 @@ def sheets(session: Session, run: Run) -> list[Sheet]:
                 freitext_anmerkung=verdict.anmerkung if verdict else "",
             )
         )
-    return sorted(out, key=lambda s: s.test_id)
+    return sorted(out, key=lambda s: s.nummer)
 
 
 def _calls_for(session: Session, run: Run, case_version_id: UUID) -> list[Call]:
@@ -240,6 +242,25 @@ class Agreement:
 def agreement(session: Session, run: Run) -> Agreement:
     """Compare what the checks said with what the humans said, on 4.3b."""
     result = Agreement()
+    for outcome in _agreement_by_case(session, run).values():
+        _count(result, outcome)
+    return result
+
+
+def _count(result: Agreement, outcome: str) -> None:
+    if outcome == EINIG:
+        result.einig += 1
+    elif outcome == ZU_STRENG:
+        result.zu_streng += 1
+    elif outcome == ZU_GROSSZUEGIG:
+        result.zu_grosszuegig += 1
+    else:
+        result.nicht_bewertet += 1
+
+
+def _agreement_by_case(session: Session, run: Run) -> dict[UUID, str]:
+    """Each case version's outcome on 4.3b: einig, zu streng, zu großzügig or unassessed."""
+    outcomes: dict[UUID, str] = {}
     verdicts = {
         v.case_version_id: v
         for v in session.execute(select(Verdict).where(Verdict.run_id == run.id)).scalars()
@@ -259,20 +280,20 @@ def agreement(session: Session, run: Run) -> Agreement:
     for case_version_id, machine_flagged in machine_by_case.items():
         verdict = verdicts.get(case_version_id)
         if verdict is None:
-            result.nicht_bewertet += 1
+            outcomes[case_version_id] = NICHT_BEWERTET
             continue
         human_flagged = verdict.quelle_4_3b == QUELLE_FALSCH
         if machine_flagged == human_flagged:
-            result.einig += 1
+            outcomes[case_version_id] = EINIG
         elif machine_flagged:
             # The check fired and the human did not agree: reviewer time spent
             # on something that was fine.
-            result.zu_streng += 1
+            outcomes[case_version_id] = ZU_STRENG
         else:
             # The human found what the check missed. This is what Stufe 3 is
             # for, and the direction that matters most.
-            result.zu_grosszuegig += 1
-    return result
+            outcomes[case_version_id] = ZU_GROSSZUEGIG
+    return outcomes
 
 
 # ── Across rounds ───────────────────────────────────────────────────
@@ -351,3 +372,93 @@ def trend(session: Session) -> Trend:
         "abweichungsquote": combined.abweichungsquote,
     }
     return out
+
+
+# ── Broken down by label ────────────────────────────────────────────
+
+# The labels a round can be broken down by (#289). See labels.py.
+DIMENSIONEN: tuple[str, ...] = ("kategorie", "testart", "frageform", "herkunft")
+OHNE_WERT = "(ohne)"
+
+
+@dataclass
+class BreakdownRow:
+    """One combination of label values, across the rounds asked for."""
+
+    werte: dict[str, str]
+    faelle: int = 0
+    auffaellig: int = 0
+    befunde: dict[str, int] = field(default_factory=dict)
+    abweichung: Agreement = field(default_factory=Agreement)
+
+
+def breakdown(
+    session: Session, dimensionen: list[str], *, run: Run | None = None
+) -> list[BreakdownRow]:
+    """Every case in a round, or in every round, grouped by one or more labels.
+
+    A case counts once per round it was asked in. "auffaellig" is a case with
+    at least one automatic finding, counted per case like the trend so the
+    number does not scale with the repeats. The agreement is the same 4.3b
+    comparison as the headline number, split by label.
+
+    By the case's labels as they are now, not as they were when the round ran:
+    labels are corrected after the fact, and a correction should re-sort the
+    past rounds too, or the breakdown keeps the mistake.
+    """
+    unknown = [d for d in dimensionen if d not in DIMENSIONEN]
+    if unknown or not dimensionen:
+        raise ValueError(f"Aufschlüsseln geht nach {', '.join(DIMENSIONEN)}, nicht nach {unknown}.")
+
+    runs = [run] if run is not None else list(session.execute(select(Run)).scalars())
+    labels_of: dict[UUID, dict[str, str]] = {
+        version_id: {d: getattr(case, d) or OHNE_WERT for d in dimensionen}
+        for version_id, case in session.execute(
+            select(CaseVersion.id, Case).join(Case, CaseVersion.case_id == Case.id)
+        ).all()
+    }
+
+    rows: dict[tuple[str, ...], BreakdownRow] = {}
+
+    def row_for(version_id: UUID) -> BreakdownRow:
+        werte = labels_of[version_id]
+        key = tuple(werte[d] for d in dimensionen)
+        if key not in rows:
+            rows[key] = BreakdownRow(werte=werte)
+        return rows[key]
+
+    for each in runs:
+        asked = set(
+            session.execute(
+                select(Call.case_version_id)
+                .where(Call.run_id == each.id, Call.zweck == ZWECK_ANTWORT)
+                .distinct()
+            ).scalars()
+        )
+        findings: dict[UUID, set[str]] = {version_id: set() for version_id in asked}
+        for pruefung, version_id in session.execute(
+            select(CheckResult.pruefung, Call.case_version_id)
+            .join(Call, CheckResult.call_id == Call.id)
+            .where(Call.run_id == each.id, CheckResult.auffaellig.is_(True))
+            .distinct()
+        ).all():
+            findings.setdefault(version_id, set()).add(pruefung)
+        for pruefung, version_id in session.execute(
+            select(GroupCheckResult.pruefung, GroupCheckResult.case_version_id)
+            .where(GroupCheckResult.run_id == each.id, GroupCheckResult.auffaellig.is_(True))
+            .distinct()
+        ).all():
+            findings.setdefault(version_id, set()).add(pruefung)
+
+        for version_id, found in findings.items():
+            row = row_for(version_id)
+            row.faelle += 1
+            if found:
+                row.auffaellig += 1
+            for pruefung in found:
+                row.befunde[pruefung] = row.befunde.get(pruefung, 0) + 1
+
+        for version_id, outcome in _agreement_by_case(session, each).items():
+            _count(row_for(version_id).abweichung, outcome)
+
+    return sorted(rows.values(), key=lambda r: [r.werte[d] for d in dimensionen])

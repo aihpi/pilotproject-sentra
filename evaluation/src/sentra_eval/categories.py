@@ -1,7 +1,7 @@
 """The categories a test case can belong to.
 
-One definition, because the Test-ID is built from the abbreviation and the
-number is allocated per category. Adding a category here is the whole change;
+One definition, because a generated tag is built from the abbreviation and
+its running number is counted per category. Adding a category here is the whole change;
 nothing else holds a copy.
 
 The three the Vorlage names by example are the starting set. It says explicitly
@@ -19,7 +19,7 @@ from enum import StrEnum
 
 
 class Kategorie(StrEnum):
-    """Category abbreviation, as it appears inside a Test-ID."""
+    """Category abbreviation, as it appears inside a generated tag."""
 
     GO = "GO"  # Geschäftsordnung
     GV = "GV"  # Gesetzgebungsverfahren

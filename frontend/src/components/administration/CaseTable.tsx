@@ -1,9 +1,22 @@
 import { Fragment, useState } from "react";
-import type { EvalCase } from "@/types";
+import type { EvalCase, LabelValues } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { VariantPanel } from "@/components/administration/VariantPanel";
+import { LabelPanel } from "@/components/administration/LabelPanel";
 
-type SortKey = "test_id" | "kategorie" | "ausgangsfrage" | "status";
+type SortKey = "nummer" | "tag" | "kategorie" | "testart" | "ausgangsfrage" | "status";
+
+const FILTERS = [
+  { key: "kategorie", label: "Bereich" },
+  { key: "testart", label: "Testart" },
+  { key: "frageform", label: "Frageform" },
+  { key: "herkunft", label: "Herkunft" },
+  { key: "status", label: "Status" },
+] as const;
+
+type FilterKey = (typeof FILTERS)[number]["key"];
+
+const NO_LABELS: LabelValues = { kategorie: [], testart: [], frageform: [], herkunft: [] };
 type Direction = "asc" | "desc";
 
 const COLLATOR = new Intl.Collator("de", { numeric: true, sensitivity: "base" });
@@ -30,18 +43,26 @@ function compare(a: EvalCase, b: EvalCase, key: SortKey): number {
         a.versions[a.versions.length - 1]?.ausgangsfrage ?? "",
         b.versions[b.versions.length - 1]?.ausgangsfrage ?? "",
       );
+    case "nummer":
+      return a.nummer - b.nummer;
+    case "testart":
+      return COLLATOR.compare(a.testart ?? "", b.testart ?? "");
     default:
-      // Numeric collation, so TF-WI-010 follows TF-WI-009 rather than TF-WI-001.
       return COLLATOR.compare(a[key], b[key]);
   }
 }
 
-/** Sorted by the chosen column, ties broken by Test-ID so the order is stable. */
+/** Sorted by the chosen column, ties broken by number so the order is stable. */
 function sortCases(cases: EvalCase[], key: SortKey, direction: Direction): EvalCase[] {
   const sign = direction === "asc" ? 1 : -1;
   return [...cases].sort(
-    (a, b) => sign * (compare(a, b, key) || compare(a, b, "test_id")),
+    (a, b) => sign * (compare(a, b, key) || compare(a, b, "nummer")),
   );
+}
+
+/** The value a filter compares, empty where the case has none. */
+function filterValue(entry: EvalCase, key: FilterKey): string {
+  return key === "status" ? statusOf(entry) : (entry[key] ?? "");
 }
 
 function SortHeader({
@@ -84,7 +105,7 @@ function SortHeader({
  *    an approved case can be edited — which adds a version — and withdrawn
  *    a withdrawn case can do neither, and says why it is still listed
  *
- *  Withdrawal is not deletion and the wording says so. The Test-ID stays
+ *  Withdrawal is not deletion and the wording says so. The number stays
  *  spent, "auch bei zurückgezogenen Testfällen nicht", so somebody expecting
  *  a delete would otherwise go looking for where the number went. */
 export function CaseTable({
@@ -95,18 +116,24 @@ export function CaseTable({
   onApprove,
   onWithdraw,
   approver = "",
+  offered = NO_LABELS,
+  onLabelsChanged = () => {},
 }: {
   cases: EvalCase[];
+  /** The values to suggest when editing labels (#288). */
+  offered?: LabelValues;
+  /** A case's labels or tag were saved, so the list is stale. */
+  onLabelsChanged?: () => void;
   /** Who approves a variant, recorded with it. The signed-in user. */
   approver?: string;
   busy: boolean;
   onCreate: () => void;
-  onEdit: (testId: string) => void;
-  onApprove: (testId: string) => void;
-  onWithdraw: (testId: string) => void;
+  onEdit: (nummer: number) => void;
+  onApprove: (nummer: number) => void;
+  onWithdraw: (nummer: number) => void;
 }) {
   const [sort, setSort] = useState<{ key: SortKey; direction: Direction }>({
-    key: "test_id",
+    key: "nummer",
     direction: "asc",
   });
 
@@ -118,16 +145,32 @@ export function CaseTable({
     );
   }
 
-  const sorted = sortCases(cases, sort.key, sort.direction);
-  // One open at a time: each panel talks to the judge model, and a table full
-  // of open editors is hard to read.
-  const [variantsOpen, setVariantsOpen] = useState<string | null>(null);
+  // "" means no filter on that dimension.
+  const [filters, setFilters] = useState<Record<FilterKey, string>>({
+    kategorie: "",
+    testart: "",
+    frageform: "",
+    herkunft: "",
+    status: "",
+  });
+  const shown = cases.filter((entry) =>
+    FILTERS.every(({ key }) => !filters[key] || filterValue(entry, key) === filters[key]),
+  );
+  const sorted = sortCases(shown, sort.key, sort.direction);
+  // One panel open at a time: a table full of open editors is hard to read.
+  const [panel, setPanel] = useState<{ nummer: number; what: "varianten" | "labels" } | null>(
+    null,
+  );
+  const toggle = (nummer: number, what: "varianten" | "labels") =>
+    setPanel((open) =>
+      open?.nummer === nummer && open.what === what ? null : { nummer, what },
+    );
 
   return (
     <section className="space-y-2">
       <div className="flex items-center gap-3">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Testfälle ({cases.length})
+          Testfälle ({shown.length === cases.length ? cases.length : `${shown.length} von ${cases.length}`})
         </h3>
         <button
           type="button"
@@ -139,6 +182,32 @@ export function CaseTable({
         </button>
       </div>
 
+      {cases.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {FILTERS.map(({ key, label }) => {
+            const values = [...new Set(cases.map((c) => filterValue(c, key)))]
+              .filter(Boolean)
+              .sort((a, b) => COLLATOR.compare(a, b));
+            return (
+              <select
+                key={key}
+                aria-label={`Filter ${label}`}
+                value={filters[key]}
+                onChange={(e) => setFilters((f) => ({ ...f, [key]: e.target.value }))}
+                className="rounded-md border bg-background px-2 py-1"
+              >
+                <option value="">{label}: alle</option>
+                {values.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            );
+          })}
+        </div>
+      )}
+
       {cases.length === 0 ? (
         <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
           Noch keine Testfälle. Einzeln anlegen, oder die ausgefüllte
@@ -149,8 +218,10 @@ export function CaseTable({
           <table className="w-full text-xs">
             <thead className="bg-muted/40 text-left">
               <tr>
-                <SortHeader label="Test-ID" column="test_id" sort={sort} onSort={onSort} />
-                <SortHeader label="Kategorie" column="kategorie" sort={sort} onSort={onSort} />
+                <SortHeader label="Nr." column="nummer" sort={sort} onSort={onSort} />
+                <SortHeader label="Tag" column="tag" sort={sort} onSort={onSort} />
+                <SortHeader label="Bereich" column="kategorie" sort={sort} onSort={onSort} />
+                <SortHeader label="Testart" column="testart" sort={sort} onSort={onSort} />
                 <SortHeader
                   label="Ausgangsfrage"
                   column="ausgangsfrage"
@@ -170,16 +241,25 @@ export function CaseTable({
                 const blockers = entry.freigabe_hindernisse ?? [];
 
                 return (
-                  <Fragment key={entry.test_id}>
+                  <Fragment key={entry.nummer}>
                     <tr className="border-t">
                       <td className="whitespace-nowrap px-3 py-2 font-medium">
-                        {entry.test_id}
+                        {entry.nummer}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 font-mono">
+                        {entry.tag}
                       </td>
                       <td className="px-3 py-2">{entry.kategorie}</td>
+                      <td className="px-3 py-2">{entry.testart || "—"}</td>
                       <td className="max-w-md px-3 py-2">
                         <span className="line-clamp-2">
                           {latest?.ausgangsfrage}
                         </span>
+                        {(entry.frageform || entry.herkunft) && (
+                          <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                            {[entry.frageform, entry.herkunft].filter(Boolean).join(" · ")}
+                          </span>
+                        )}
                         {latest?.grenzfall && (
                           <Badge variant="outline" className="mt-1">
                             Grenzfall
@@ -200,7 +280,7 @@ export function CaseTable({
                         {withdrawn ? (
                           <Badge
                             variant="outline"
-                            title="Die Test-ID bleibt vergeben."
+                            title="Die Nummer bleibt vergeben."
                           >
                             zurückgezogen
                           </Badge>
@@ -218,7 +298,7 @@ export function CaseTable({
                           <span className="flex justify-end gap-1">
                             <button
                               type="button"
-                              onClick={() => onEdit(entry.test_id)}
+                              onClick={() => onEdit(entry.nummer)}
                               disabled={busy}
                               className="rounded-md border px-2 py-1 disabled:opacity-50"
                               title={
@@ -232,7 +312,7 @@ export function CaseTable({
                             {!approved && (
                               <button
                                 type="button"
-                                onClick={() => onApprove(entry.test_id)}
+                                onClick={() => onApprove(entry.nummer)}
                                 disabled={busy || blockers.length > 0}
                                 className="rounded-md border px-2 py-1 disabled:opacity-50"
                                 title={
@@ -247,12 +327,10 @@ export function CaseTable({
                             {approved && (
                               <button
                                 type="button"
-                                onClick={() =>
-                                  setVariantsOpen((open) =>
-                                    open === entry.test_id ? null : entry.test_id,
-                                  )
+                                onClick={() => toggle(entry.nummer, "varianten")}
+                                aria-expanded={
+                                  panel?.nummer === entry.nummer && panel.what === "varianten"
                                 }
-                                aria-expanded={variantsOpen === entry.test_id}
                                 className="rounded-md border px-2 py-1"
                               >
                                 Varianten
@@ -260,10 +338,21 @@ export function CaseTable({
                             )}
                             <button
                               type="button"
-                              onClick={() => onWithdraw(entry.test_id)}
+                              onClick={() => toggle(entry.nummer, "labels")}
+                              aria-expanded={
+                                panel?.nummer === entry.nummer && panel.what === "labels"
+                              }
+                              className="rounded-md border px-2 py-1"
+                              title="Tag und Labels ändern. Legt keine neue Version an."
+                            >
+                              Labels
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onWithdraw(entry.nummer)}
                               disabled={busy}
                               className="rounded-md border px-2 py-1 text-destructive disabled:opacity-50"
-                              title="Nimmt den Testfall aus künftigen Runden. Die Test-ID bleibt vergeben und wird nie erneut verwendet."
+                              title="Nimmt den Testfall aus künftigen Runden. Die Nummer bleibt vergeben und wird nie erneut verwendet."
                             >
                               Zurückziehen
                             </button>
@@ -271,10 +360,19 @@ export function CaseTable({
                         )}
                       </td>
                     </tr>
-                    {variantsOpen === entry.test_id && (
+                    {panel?.nummer === entry.nummer && (
                       <tr>
-                        <td colSpan={6} className="px-3 pb-3">
-                          <VariantPanel testId={entry.test_id} approver={approver} />
+                        <td colSpan={8} className="px-3 pb-3">
+                          {panel.what === "varianten" ? (
+                            <VariantPanel nummer={entry.nummer} approver={approver} />
+                          ) : (
+                            <LabelPanel
+                              key={`${entry.nummer}-${entry.tag}`}
+                              entry={entry}
+                              offered={offered}
+                              onSaved={onLabelsChanged}
+                            />
+                          )}
                         </td>
                       </tr>
                     )}
@@ -288,7 +386,7 @@ export function CaseTable({
 
       <p className="text-xs text-muted-foreground">
         Zurückziehen löscht nichts: der Testfall bleibt als Beleg erhalten und
-        seine Test-ID wird nie erneut vergeben — auch bei zurückgezogenen
+        seine Nummer wird nie erneut vergeben — auch bei zurückgezogenen
         Testfällen nicht.
       </p>
     </section>

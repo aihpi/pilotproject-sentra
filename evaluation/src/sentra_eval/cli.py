@@ -35,8 +35,8 @@ def main(argv: list[str] | None = None) -> int:
         "--allow-new-ids",
         action="store_true",
         help=(
-            "accept cases whose Test-ID does not exist yet, for seeding a fresh database "
-            "from an exported file. Off by default so a typo in a Test-ID is an error "
+            "accept cases whose number does not exist yet, for seeding a fresh database "
+            "from an exported file. Off by default so a typo in a number is an error "
             "rather than a new case."
         ),
     )
@@ -97,10 +97,10 @@ def _import(args: argparse.Namespace) -> int:
             return 0
 
     print(report.summary())
-    for test_id in report.created:
-        print(f"  created  {test_id}")
-    for test_id in report.updated:
-        print(f"  updated  {test_id}")
+    for tag in report.created:
+        print(f"  created  {tag}")
+    for tag in report.updated:
+        print(f"  updated  {tag}")
     return 0
 
 
