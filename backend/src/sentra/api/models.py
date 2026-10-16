@@ -376,6 +376,10 @@ class RetrievedChunk(BaseModel):
     """
 
     aktenzeichen: str
+    # Which document, where the Aktenzeichen is empty: the harness numbers the
+    # retrieved documents the way the answer does, by Aktenzeichen or else by
+    # file (#280).
+    source_file: str = ""
     section_title: str
     chunk_index: int
     score: float
@@ -392,6 +396,7 @@ class RetrievedChunk(BaseModel):
     def from_domain(cls, hit: domain.Hit) -> "RetrievedChunk":
         return cls(
             aktenzeichen=hit.aktenzeichen,
+            source_file=hit.source_file,
             section_title=hit.section_title,
             chunk_index=hit.chunk_index,
             score=hit.score,

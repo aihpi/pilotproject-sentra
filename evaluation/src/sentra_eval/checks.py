@@ -190,9 +190,14 @@ def _retrieved_numbers(hits: list) -> list[int]:
     """
     seen: dict[str, int] = {}
     for hit in hits:
-        az = hit.get("aktenzeichen") if isinstance(hit, dict) else None
-        if az:
-            seen.setdefault(az, len(seen) + 1)
+        if not isinstance(hit, dict):
+            continue
+        # Keyed as SENTRA keys them: by Aktenzeichen, or by file for the
+        # documents without one (#280). Older payloads carry no file and fall
+        # back to the Aktenzeichen alone, as before.
+        key = hit.get("aktenzeichen") or hit.get("source_file")
+        if key:
+            seen.setdefault(key, len(seen) + 1)
     return list(seen.values())
 
 

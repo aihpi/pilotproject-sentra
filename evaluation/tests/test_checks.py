@@ -684,3 +684,18 @@ class TestIgnoredDocumentsAreStillCounted:
 
         assert outcome.belege["anzahl_abgerufen"] == 3
         assert outcome.belege["quellen_ohne_marker"] == [2, 3]
+
+
+def test_retrieved_documents_without_an_aktenzeichen_are_counted_apart():
+    """Numbered as SENTRA numbers them: by Aktenzeichen, else by file (#280)."""
+    response = _cited_only("Laut [1].", ("A", 1))
+    response["hits"] = [
+        {"aktenzeichen": "A"},
+        {"aktenzeichen": "", "source_file": "AB 04-24.pdf"},
+        {"aktenzeichen": "", "source_file": "AB 10-23.pdf"},
+    ]
+
+    outcome = checks.marker_ausrichtung(response)
+
+    assert outcome.belege["anzahl_abgerufen"] == 3
+    assert outcome.belege["quellen_ohne_marker"] == [2, 3]

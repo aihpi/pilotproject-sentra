@@ -77,6 +77,17 @@ DEFAULT_PROMPTS: dict[str, str] = {
 }
 
 
+def document_key(hit: Hit) -> str:
+    """What tells one document from another among the hits.
+
+    The Aktenzeichen where there is one, so two files of the same paper stay
+    one source. The file name where there is none: 88 indexed documents (the
+    Aktueller Begriff and PE papers, and some EU ones) carry an empty
+    Aktenzeichen, and keyed on that they all became a single source (#280).
+    """
+    return hit.aktenzeichen or hit.source_file
+
+
 def source_numbers(hits: list[Hit]) -> dict[str, int]:
     """The number each document is cited by: its order of first appearance.
 
@@ -87,7 +98,7 @@ def source_numbers(hits: list[Hit]) -> dict[str, int]:
     """
     numbers: dict[str, int] = {}
     for hit in hits:
-        numbers.setdefault(hit.aktenzeichen, len(numbers) + 1)
+        numbers.setdefault(document_key(hit), len(numbers) + 1)
     return numbers
 
 
@@ -122,7 +133,7 @@ def format_context(hits: list[Hit]) -> str:
     parts = []
     for hit in hits:
         header = (
-            f"[Quelle {numbers[hit.aktenzeichen]}: {hit.aktenzeichen}, "
+            f"[Quelle {numbers[document_key(hit)]}: {document_key(hit)}, "
             f"Abschnitt: {hit.section_title}"
         )
         location = format_location(hit)
