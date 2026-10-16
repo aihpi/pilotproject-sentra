@@ -22,11 +22,10 @@ import re
 from datetime import UTC, datetime
 from uuid import UUID
 
-from openai import OpenAI, OpenAIError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from sentra_eval.judge import JUDGE_MAX_TOKENS, JudgeUnavailable, judge_config
+from sentra_eval.judge import JudgeUnavailable, ask_judge
 from sentra_eval.models import (
     FREIGEGEBEN,
     VARIANTEN_STILE,
@@ -76,28 +75,9 @@ def propose(session: Session, version: CaseVersion) -> list[Variant]:
     alone — regenerating is a normal thing to want when the first attempt was
     poor, and losing an approval to it would not be.
     """
-    config = judge_config()
-    client = OpenAI(base_url=config.base_url, api_key=config.api_key, timeout=180)
-
-    try:
-        response = client.chat.completions.create(
-            model=config.model,
-            messages=[
-                {"role": "system", "content": VARIANT_SYSTEM_PROMPT},
-                {"role": "user", "content": f"Frage: {version.ausgangsfrage}"},
-            ],
-            temperature=0.3,
-            max_tokens=JUDGE_MAX_TOKENS,
-        )
-    except OpenAIError as exc:
-        raise JudgeUnavailable(f"{type(exc).__name__}: {exc}") from exc
-
-    content = (response.choices[0].message.content or "").strip()
-    if not content:
-        raise JudgeUnavailable(
-            f"The model returned no content (finish_reason={response.choices[0].finish_reason!r})."
-        )
-
+    content, _ = ask_judge(
+        VARIANT_SYSTEM_PROMPT, f"Frage: {version.ausgangsfrage}", temperature=0.3
+    )
     proposed = parse_variants(content)
 
     existing = {
