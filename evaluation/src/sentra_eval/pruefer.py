@@ -66,7 +66,7 @@ def read_document(source: Path | IO[bytes], *, name: str = "") -> list[dict[str,
     from docx import Document
 
     label = name or (source.name if isinstance(source, Path) else "Die Datei")
-    document = Document(source)
+    document = Document(str(source) if isinstance(source, Path) else source)
 
     table, columns = _find_table(document, label)
 

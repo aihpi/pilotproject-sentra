@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from sentra_eval.bestand import Bestand
 from sentra_eval.categories import Kategorie
 from sentra_eval.models import ENTWURF, FREIGEGEBEN, Case, CaseVersion, TestIdSequence
 
@@ -157,7 +158,37 @@ def add_version(session: Session, case: Case, **fields: object) -> CaseVersion:
     return version
 
 
-def approve(session: Session, version: CaseVersion) -> CaseVersion:
+def approval_blockers(version: CaseVersion, bestand: Bestand | None = None) -> list[str]:
+    """What stands between this version and approval, in words for the screen.
+
+    Without a Bestand the index is not consulted. Only the two ways a person
+    approves (the endpoint behind the button, and an imported file) pass one,
+    and they always do; the store itself stays free of HTTP.
+    """
+    blockers = []
+    if not version.erwartete_antwort.strip():
+        blockers.append("erwartete Antwort fehlt")
+    if version.grenzfall:
+        return blockers
+
+    if not version.referenz_korrekt.strip():
+        blockers.append("Referenzquelle (korrekt) fehlt")
+    # Without it 4.3b and the retrieval check can only say "nicht prüfbar" (#257).
+    if not version.referenz_korrekt_az.strip():
+        blockers.append("Aktenzeichen der korrekten Quelle fehlt")
+    elif bestand is not None:
+        if not bestand.erreichbar:
+            blockers.append(bestand.fehler)
+        elif not bestand.enthaelt(version.referenz_korrekt_az):
+            blockers.append(
+                f"{version.referenz_korrekt_az.strip()} ist nicht im Bestand, bitte erst einlesen"
+            )
+    return blockers
+
+
+def approve(
+    session: Session, version: CaseVersion, *, bestand: Bestand | None = None
+) -> CaseVersion:
     """Turn a draft into a yardstick.
 
     Refuses anything that could not actually be measured against. An approved
@@ -174,16 +205,11 @@ def approve(session: Session, version: CaseVersion) -> CaseVersion:
     if version.is_approved:
         return version
 
-    required = [("erwartete Antwort", version.erwartete_antwort)]
-    if not version.grenzfall:
-        required.append(("Referenzquelle (korrekt)", version.referenz_korrekt))
-
-    missing = [name for name, value in required if not value.strip()]
-    if missing:
+    blockers = approval_blockers(version, bestand)
+    if blockers:
         raise IncompleteCase(
-            f"{version.case.test_id} version {version.version} cannot be approved: "
-            f"{', '.join(missing)} is missing. An approved version is what every check "
-            f"compares against."
+            f"{version.case.test_id} Version {version.version} kann nicht freigegeben "
+            f"werden: {'; '.join(blockers)}."
         )
 
     version.status = FREIGEGEBEN

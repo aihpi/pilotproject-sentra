@@ -89,6 +89,7 @@ def _approved_case(session, question="Wie lange darf ein Redner sprechen?"):
         ausgangsfrage=question,
         erwartete_antwort="15 Minuten nach § 35 GOBT.",
         referenz_korrekt="GOBT § 35",
+        referenz_korrekt_az="WD 3 - 3000 - 029/23",
     )
     case_store.approve(session, version)
     session.commit()
@@ -483,6 +484,7 @@ class TestGroupChecksDuringARun:
             ausgangsfrage="Wie lange darf ein Redner sprechen?",
             erwartete_antwort="15 Minuten.",
             referenz_korrekt="GOBT § 35",
+            referenz_korrekt_az="WD 3 - 3000 - 029/23",
         )
         case_store.approve(session, version)
         session.commit()
@@ -603,6 +605,7 @@ class TestTheJudgeIsAskedOnlyWhenNeeded:
             ausgangsfrage="Wie lange darf ein Redner sprechen?",
             erwartete_antwort="15 Minuten.",
             referenz_korrekt="GOBT § 35",
+            referenz_korrekt_az="WD 3 - 3000 - 029/23",
         )
         case_store.approve(session, version)
         session.commit()
@@ -809,6 +812,7 @@ class TestTheRefusalVerdictCoversEveryRepeat:
             ausgangsfrage="Wie lange darf ein Redner sprechen?",
             erwartete_antwort="15 Minuten nach § 35 GOBT.",
             referenz_korrekt="GOBT § 35",
+            referenz_korrekt_az="WD 3 - 3000 - 029/23",
         )
         case_store.approve(session, version)
         session.commit()

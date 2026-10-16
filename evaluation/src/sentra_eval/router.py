@@ -16,9 +16,9 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from sentra_eval import bestand, models, pruefer, triage, vorlagen, yaml_io
 from sentra_eval import cases as case_store
 from sentra_eval import feedback as feedback_store
-from sentra_eval import models, pruefer, triage, vorlagen, yaml_io
 from sentra_eval import report as report_store
 from sentra_eval import review as review_store
 from sentra_eval import runner as run_store
@@ -126,12 +126,19 @@ def _database_state() -> tuple[str, str | None]:
 # ── Test cases (Phase 1 of the Vorlage) ─────────────────────────────
 
 
-def _as_response(case: Case) -> CaseResponse:
+def _as_response(case: Case, aktueller_bestand: bestand.Bestand | None = None) -> CaseResponse:
+    latest = case.versions[-1] if case.versions else None
+    hindernisse = (
+        case_store.approval_blockers(latest, aktueller_bestand or bestand.fetch())
+        if latest is not None and not latest.is_approved and case.zurueckgezogen_at is None
+        else []
+    )
     return CaseResponse(
         test_id=case.test_id,
         kategorie=case.kategorie,
         created_at=case.created_at,
         zurueckgezogen_at=case.zurueckgezogen_at,
+        freigabe_hindernisse=hindernisse,
         versions=[
             CaseVersionResponse(
                 version=v.version,
@@ -156,9 +163,10 @@ def _as_response(case: Case) -> CaseResponse:
 @router.get("/cases", response_model=list[CaseResponse])
 def list_cases(include_withdrawn: bool = False) -> list[CaseResponse]:
     """Every case, newest version last within each."""
+    aktueller_bestand = bestand.fetch()
     with session_scope() as session:
         return [
-            _as_response(c)
+            _as_response(c, aktueller_bestand)
             for c in case_store.list_cases(session, include_withdrawn=include_withdrawn)
         ]
 
@@ -301,7 +309,7 @@ def approve_case(test_id: str) -> CaseResponse:
     with session_scope() as session:
         case = _lookup(session, test_id)
         try:
-            case_store.approve(session, case.versions[-1])
+            case_store.approve(session, case.versions[-1], bestand=bestand.fetch())
         except case_store.IncompleteCase as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         session.refresh(case)

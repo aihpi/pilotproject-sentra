@@ -13,8 +13,9 @@ import argparse
 import sys
 from pathlib import Path
 
-from sentra_eval import yaml_io
+from sentra_eval import bestand, yaml_io
 from sentra_eval.db import EvalDatabaseUnavailable, session_scope
+from sentra_eval.models import FREIGEGEBEN
 from sentra_eval.vorlagen import VorlageError
 
 
@@ -76,9 +77,17 @@ def main(argv: list[str] | None = None) -> int:
 
 def _import(args: argparse.Namespace) -> int:
     entries = _read(args.file)
+    # Only asked when the file approves something, so importing drafts does
+    # not need SENTRA to be up.
+    approves = any(e.status == FREIGEGEBEN for e in entries)
 
     with session_scope() as session:
-        report = yaml_io.apply(session, entries, allow_new_ids=args.allow_new_ids)
+        report = yaml_io.apply(
+            session,
+            entries,
+            allow_new_ids=args.allow_new_ids,
+            bestand=bestand.fetch() if approves else None,
+        )
         if args.dry_run:
             # Rolling back rather than never writing: the report is only
             # accurate if the writes actually happened, since what a case

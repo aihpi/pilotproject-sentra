@@ -71,6 +71,7 @@ def _case(
         ausgangsfrage=f"Frage {n}",
         erwartete_antwort="Erwartete Antwort.",
         referenz_korrekt="GOBT § 35",
+        referenz_korrekt_az="WD 3 - 3000 - 029/23",
         grenzfall=grenzfall,
     )
     case_store.approve(session, version)
