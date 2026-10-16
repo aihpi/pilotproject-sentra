@@ -261,6 +261,10 @@ export interface EvalCase {
   /** A readable label, generated or set by hand. Can change. */
   tag: string;
   tag_manuell?: boolean;
+  /** Labels for breaking a round down (#286). Empty when not set. */
+  testart?: string;
+  frageform?: string;
+  herkunft?: string;
   kategorie: string;
   created_at: string;
   zurueckgezogen_at: string | null;

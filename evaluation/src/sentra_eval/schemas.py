@@ -62,6 +62,9 @@ class CaseResponse(BaseModel):
     tag: str
     # Set by hand, so label changes leave it alone (#285).
     tag_manuell: bool = False
+    testart: str = ""
+    frageform: str = ""
+    herkunft: str = ""
     kategorie: str
     created_at: datetime
     zurueckgezogen_at: datetime | None
@@ -78,7 +81,8 @@ class SetTagRequest(BaseModel):
 
 
 class CreateCaseRequest(BaseModel):
-    kategorie: Kategorie
+    # An open list since #286: the built-in categories, or any short code.
+    kategorie: str = Field(min_length=1, max_length=8)
     # The only field a draft must have. Everything else can be filled in later,
     # which is what lets a case be started from a feedback entry or a YAML stub.
     ausgangsfrage: str = Field(min_length=1)
@@ -92,6 +96,27 @@ class CreateCaseRequest(BaseModel):
     referenz_falsch_az: str = ""
     grund_fuer_aufnahme: str = ""
     grenzfall: bool = False
+    testart: str = Field(default="", max_length=64)
+    frageform: str = Field(default="", max_length=16)
+    herkunft: str = Field(default="manuell", max_length=64)
+
+
+class SetLabelsRequest(BaseModel):
+    """Labels to correct. Omitted ones stay as they are (#286)."""
+
+    kategorie: str | None = Field(default=None, min_length=1, max_length=8)
+    testart: str | None = Field(default=None, max_length=64)
+    frageform: str | None = Field(default=None, max_length=16)
+    herkunft: str | None = Field(default=None, max_length=64)
+
+
+class LabelsResponse(BaseModel):
+    """The values to offer per label: built-in ones first, then those in use."""
+
+    kategorie: list[str]
+    testart: list[str]
+    frageform: list[str]
+    herkunft: list[str]
 
 
 class UpdateCaseRequest(BaseModel):
