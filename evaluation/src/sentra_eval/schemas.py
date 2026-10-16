@@ -119,6 +119,8 @@ class StartRunRequest(BaseModel):
     # than assumed, and recorded on the run because a round scored with it and
     # one scored without are not the same evidence.
     ragas_aktiv: bool = False
+    # Ask the approved variants too (4.2). Off unless asked for (#266).
+    varianten_aktiv: bool = False
 
 
 class RunResponse(BaseModel):
@@ -133,6 +135,7 @@ class RunResponse(BaseModel):
     stichprobe_seed: int
     stichprobe_anteil: float
     ragas_aktiv: bool
+    varianten_aktiv: bool
     # Progress, so a caller polling this can see a round move.
     total: int
     done: int

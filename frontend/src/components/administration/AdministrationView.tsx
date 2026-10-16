@@ -249,6 +249,7 @@ export function AdministrationView({ session }: { session: Session | null }) {
             }}
             onApprove={(testId) => void act(() => approveCase(testId))}
             onWithdraw={(testId) => void act(() => withdrawCase(testId))}
+            approver={session?.benutzername ?? "Administration"}
           />
         </>
       )}

@@ -1,4 +1,5 @@
 import type {
+  EvalVariant,
   Agreement,
   CaseDraft,
   EvalCase,
@@ -159,10 +160,14 @@ export function importSheet(file: File): Promise<ImportReport> {
 
 /** Start a round. Returns immediately — a round is roughly 180 generation
  *  calls at 20 to 29 seconds each, so the caller polls. */
-export function startRun(label: string, repeats: number): Promise<EvalRun> {
+export function startRun(
+  label: string,
+  repeats: number,
+  variantenAktiv = false,
+): Promise<EvalRun> {
   return request("/eval/runs", {
     method: "POST",
-    body: { label, repeats },
+    body: { label, repeats, varianten_aktiv: variantenAktiv },
     label: "Die Testrunde konnte nicht gestartet werden",
     statusMessages: {
       409: "Es läuft bereits eine Testrunde. Erst abwarten oder abbrechen.",
@@ -231,6 +236,52 @@ export function withdrawCase(testId: string): Promise<EvalCase> {
   return request(`/eval/cases/${testId}/zurueckziehen`, {
     method: "POST",
     label: "Der Testfall konnte nicht zurückgezogen werden",
+    statusMessages: { 502: NOT_RUNNING },
+  });
+}
+
+/** The variants of a case's latest version (4.2), proposed or approved. */
+export function fetchVariants(testId: string): Promise<EvalVariant[]> {
+  return request(`/eval/cases/${testId}/varianten`, {
+    label: "Die Varianten konnten nicht geladen werden",
+    statusMessages: { 502: NOT_RUNNING },
+  });
+}
+
+/** Ask the judge model for the three variants. Replaces unapproved proposals
+ *  and leaves approved ones alone. A 503 here is the judge model, not the
+ *  harness, so the server's own message is shown rather than NOT_RUNNING. */
+export function proposeVariants(testId: string): Promise<EvalVariant[]> {
+  return request(`/eval/cases/${testId}/varianten/vorschlagen`, {
+    method: "POST",
+    label: "Die Varianten konnten nicht erzeugt werden",
+    statusMessages: { 502: NOT_RUNNING },
+  });
+}
+
+export function editVariant(
+  testId: string,
+  stil: string,
+  wortlaut: string,
+): Promise<EvalVariant> {
+  return request(`/eval/cases/${testId}/varianten/${stil}`, {
+    method: "PATCH",
+    body: { wortlaut },
+    label: "Die Variante konnte nicht gespeichert werden",
+    statusMessages: { 502: NOT_RUNNING },
+  });
+}
+
+/** Only approved variants are ever asked in a round. */
+export function approveVariant(
+  testId: string,
+  stil: string,
+  freigegebenDurch: string,
+): Promise<EvalVariant> {
+  return request(`/eval/cases/${testId}/varianten/${stil}/freigeben`, {
+    method: "POST",
+    body: { freigegeben_durch: freigegebenDurch },
+    label: "Die Variante konnte nicht freigegeben werden",
     statusMessages: { 502: NOT_RUNNING },
   });
 }

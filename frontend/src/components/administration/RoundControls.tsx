@@ -27,6 +27,7 @@ export function RoundControls({
 }) {
   const [label, setLabel] = useState("");
   const [repeats, setRepeats] = useState(3);
+  const [variantenAktiv, setVariantenAktiv] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<ImportReport | null>(null);
@@ -36,7 +37,7 @@ export function RoundControls({
     setBusy(true);
     setError(null);
     try {
-      onStarted(await startRun(label.trim(), repeats));
+      onStarted(await startRun(label.trim(), repeats, variantenAktiv));
       setLabel("");
     } catch (e) {
       setError((e as Error).message);
@@ -90,6 +91,18 @@ export function RoundControls({
             onChange={(e) => setRepeats(Number(e.target.value))}
             className="w-20 rounded-md border bg-background px-2 py-1 text-xs"
           />
+        </label>
+
+        <label
+          className="flex items-center gap-2 pb-1 text-xs"
+          title="4.2: jede freigegebene Variante wird einmal zusätzlich gefragt."
+        >
+          <input
+            type="checkbox"
+            checked={variantenAktiv}
+            onChange={(e) => setVariantenAktiv(e.target.checked)}
+          />
+          <span className="font-medium">Varianten verwenden</span>
         </label>
 
         <button

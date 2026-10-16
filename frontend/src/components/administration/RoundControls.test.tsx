@@ -64,6 +64,18 @@ beforeEach(() => {
 });
 
 describe("starting a round", () => {
+  it("asks the approved variants only when Varianten verwenden is ticked", async () => {
+    startRun.mockResolvedValue({ ...RUNNING, done: 0 });
+    renderControls();
+
+    await userEvent.click(screen.getByRole("button", { name: "Testrunde starten" }));
+    expect(startRun).toHaveBeenLastCalledWith("", 3, false);
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Varianten verwenden" }));
+    await userEvent.click(screen.getByRole("button", { name: "Testrunde starten" }));
+    expect(startRun).toHaveBeenLastCalledWith("", 3, true);
+  });
+
   it("passes the label and the repeat count", async () => {
     startRun.mockResolvedValue({ ...RUNNING, done: 0 });
     const { onStarted } = renderControls();
@@ -77,7 +89,7 @@ describe("starting a round", () => {
     );
 
     await waitFor(() =>
-      expect(startRun).toHaveBeenCalledWith("Runde September", 3),
+      expect(startRun).toHaveBeenCalledWith("Runde September", 3, false),
     );
     expect(onStarted).toHaveBeenCalled();
   });

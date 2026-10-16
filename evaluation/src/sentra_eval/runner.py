@@ -124,7 +124,9 @@ def plan(session: Session, run: Run) -> list[PlannedCall]:
         # each variant once (4.2). Repeating the variants too would triple the
         # cost of a round — twelve generation calls per case instead of six —
         # for signal 4.1 already provides.
-        for variant in variants.approved_for(session, version.id):
+        #
+        # And only when the round asked for them (#266).
+        for variant in variants.approved_for(session, version.id) if run.varianten_aktiv else []:
             planned.append(
                 PlannedCall(
                     case_version_id=version.id,
@@ -178,6 +180,7 @@ def start_run(
     stichprobe_anteil: float = 0.1,
     stichprobe_seed: int | None = None,
     ragas_aktiv: bool = False,
+    varianten_aktiv: bool = False,
 ) -> Run:
     """Create a round. Refuses one with nothing to do.
 
@@ -192,6 +195,7 @@ def start_run(
         repeats=repeats,
         stichprobe_anteil=stichprobe_anteil,
         ragas_aktiv=ragas_aktiv,
+        varianten_aktiv=varianten_aktiv,
         # Drawn once, at the start, and kept. Stufe 3's job is to detect Stufe 1
         # systematically missing things, which a sample nobody can reconstruct
         # cannot support — so the seed is part of the round's record rather

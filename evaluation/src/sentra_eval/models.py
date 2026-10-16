@@ -284,6 +284,10 @@ class Run(Base):
     # answer on top of the answer itself — and because a round scored with it
     # and a round scored without it are not the same evidence.
     ragas_aktiv: Mapped[bool] = mapped_column(nullable=False, default=False)
+    # Whether approved variants are asked (4.2). Chosen per round like the
+    # repeats (#266): three more calls per case, and a round asked with them
+    # measures something a round without them does not.
+    varianten_aktiv: Mapped[bool] = mapped_column(nullable=False, default=False)
 
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False

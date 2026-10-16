@@ -113,6 +113,8 @@ export interface EvalRun {
   status: string;
   sentra_base_url: string;
   repeats: number;
+  /** Whether this round asks the approved variants (4.2), chosen at start (#266). */
+  varianten_aktiv?: boolean;
   started_at: string;
   completed_at: string | null;
   fehler: string;
@@ -234,6 +236,17 @@ export interface CaseVersion {
   grund_fuer_aufnahme: string;
   grenzfall: boolean;
   created_at: string;
+  freigegeben_at: string | null;
+}
+
+/** A rewording of a case's question (4.2), proposed by the judge model and
+ *  approved by a person. Approved variants are frozen. */
+export interface EvalVariant {
+  stil: string;
+  wortlaut: string;
+  status: string;
+  erstellt_durch: string;
+  freigegeben_durch: string;
   freigegeben_at: string | null;
 }
 
