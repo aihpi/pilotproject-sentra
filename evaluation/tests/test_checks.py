@@ -617,3 +617,42 @@ class TestSeitenangabeStaysQuiet:
 
         assert outcome.belege["genannte_seiten"] == [9]
         assert outcome.belege["seiten_der_quellen"] == [4]
+
+
+def _cited_only(text: str, *numbered: tuple[str, int]) -> dict:
+    """A response as SENTRA returns it since #268: only the cited sources, each
+    with the number the answer cites it by."""
+    return {
+        "text": text,
+        "sources": [{"aktenzeichen": az, "title": "x", "nummer": n} for az, n in numbered],
+    }
+
+
+class TestMarkerAusrichtungByNumber:
+    """Matching by `nummer` once position stopped meaning anything (#270)."""
+
+    def test_cited_one_and_three_is_aligned(self):
+        """Source 2 was retrieved but not cited, so it is not in the response.
+        By position, [3] would point past a list of two."""
+        outcome = checks.marker_ausrichtung(_cited_only("Laut [1] und [3].", ("A", 1), ("C", 3)))
+
+        assert outcome.ergebnis == checks.AUSGERICHTET
+        assert outcome.belege["marker_ohne_quelle"] == []
+
+    def test_an_invented_number_is_still_found(self):
+        outcome = checks.marker_ausrichtung(_cited_only("Laut [1] und [7].", ("A", 1)))
+
+        assert outcome.auffaellig is True
+        assert outcome.belege["marker_ohne_quelle"] == [7]
+
+    def test_a_list_marker_counts_each_number(self):
+        outcome = checks.marker_ausrichtung(_cited_only("Siehe [1, 3].", ("A", 1), ("C", 3)))
+
+        assert outcome.belege["verwendete_marker"] == [1, 3]
+        assert outcome.ergebnis == checks.AUSGERICHTET
+
+    def test_a_stored_response_without_nummer_is_read_by_position(self):
+        """Rounds before #268 stored every retrieved source and no number."""
+        outcome = checks.marker_ausrichtung(_answer_text("Laut [3] gilt ...", "A", "B"))
+
+        assert outcome.belege["marker_ohne_quelle"] == [3]
