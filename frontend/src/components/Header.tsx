@@ -44,18 +44,21 @@ export function Header({
 
   return (
     <header className="border-b bg-white">
-      <div className="relative mx-auto flex h-16 max-w-7xl items-center px-6">
-        <div className="flex items-center gap-3">
+      {/* Brand on the left, navigation on the right (#262). The title used to
+          be centered between them, where a signed-in admin's tabs first ran
+          over it and then sat right beside it, reading as one more tab. Next
+          to the logo, set apart by a rule, it can only be the title. */}
+      <div className="mx-auto flex h-16 max-w-7xl items-center gap-6 px-6">
+        <div className="flex shrink-0 items-center gap-4">
           <img
             src="/logo_aisc_bmftr.jpg"
             alt="KI Service Zentrum"
             className="h-10"
           />
+          <h1 className="border-l pl-4 text-2xl font-bold tracking-wide text-primary">
+            SENTRA
+          </h1>
         </div>
-
-        <h1 className="absolute left-1/2 -translate-x-1/2 text-2xl font-bold text-primary">
-          SENTRA
-        </h1>
 
         <nav className="ml-auto flex items-center gap-1">
           {visible.map((item) => (
@@ -86,16 +89,13 @@ export function Header({
           )}
 
           {session && (
-            <span className="ml-3 flex items-center gap-2 border-l pl-3 text-xs">
-              <span className="text-muted-foreground">
-                {session.benutzername}
-                <span className="ml-1 rounded bg-secondary px-1.5 py-0.5">
-                  {session.rolle}
-                </span>
-              </span>
+            <span className="ml-3 flex items-center border-l pl-3 text-xs">
+              {/* Name and role only on hover: the tabs already show what the
+                  role allows, and the header has no width to spare (#262). */}
               <button
                 type="button"
                 onClick={onSignOut}
+                title={`Angemeldet als ${session.benutzername} (${session.rolle})`}
                 className="rounded-md px-2 py-1 text-muted-foreground hover:bg-secondary"
               >
                 Abmelden
