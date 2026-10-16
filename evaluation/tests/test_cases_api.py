@@ -67,9 +67,16 @@ class TestCreating:
 
         assert response.status_code == 422
 
-    def test_an_unknown_category_is_rejected(self, client):
-        """The closed list, enforced at the edge rather than trusted."""
-        response = client.post("/api/eval/cases", json={**CASE, "kategorie": "XX"})
+    def test_a_new_category_is_accepted(self, client):
+        """An open list since #286: a category nobody has used yet is just a new one."""
+        response = client.post("/api/eval/cases", json={**CASE, "kategorie": "wd3"})
+
+        assert response.status_code == 201
+        assert response.json()["kategorie"] == "WD3"
+        assert response.json()["tag"] == "WD3-001"
+
+    def test_a_malformed_category_is_rejected(self, client):
+        response = client.post("/api/eval/cases", json={**CASE, "kategorie": "W-3!"})
 
         assert response.status_code == 422
 
@@ -192,3 +199,102 @@ class TestTheTag:
         body = client.post("/api/eval/cases", json=CASE).json()
 
         assert body["tag"] == "GO-003"
+
+
+class TestLabels:
+    """Labels for breaking a round down (#286)."""
+
+    def test_a_case_is_created_with_its_labels_and_a_tag_from_them(self, client):
+        body = client.post(
+            "/api/eval/cases",
+            json={**CASE, "testart": "Präzision", "frageform": "konkret", "herkunft": "Hotline"},
+        ).json()
+
+        assert (body["testart"], body["frageform"], body["herkunft"]) == (
+            "Präzision",
+            "konkret",
+            "Hotline",
+        )
+        assert body["tag"] == "GO-PRZ-001"
+
+    def test_correcting_labels_adds_no_version(self, client):
+        client.post("/api/eval/cases", json=CASE)
+
+        body = client.patch("/api/eval/cases/1/labels", json={"testart": "Synthese"}).json()
+
+        assert body["testart"] == "Synthese"
+        assert len(body["versions"]) == 1
+
+    def test_a_generated_tag_follows_the_labels(self, client):
+        client.post("/api/eval/cases", json=CASE)
+
+        body = client.patch(
+            "/api/eval/cases/1/labels", json={"kategorie": "FI", "testart": "Quellenwahl"}
+        ).json()
+
+        assert body["tag"] == "FI-QLW-001"
+
+    def test_a_tag_set_by_hand_stays(self, client):
+        client.post("/api/eval/cases", json=CASE)
+        client.put("/api/eval/cases/1/tag", json={"tag": "Redezeit"})
+
+        body = client.patch("/api/eval/cases/1/labels", json={"testart": "Synthese"}).json()
+
+        assert body["tag"] == "Redezeit"
+
+    def test_choosing_the_grenzfall_testart_marks_the_draft(self, client):
+        client.post("/api/eval/cases", json=CASE)
+
+        body = client.patch(
+            "/api/eval/cases/1/labels", json={"testart": "Grenzfall · außerhalb des Bestands"}
+        ).json()
+
+        assert body["versions"][-1]["grenzfall"] is True
+
+    def test_leaving_it_unmarks_the_draft(self, client):
+        client.post(
+            "/api/eval/cases", json={**CASE, "testart": "Grenzfall · außerhalb des Bestands"}
+        )
+
+        body = client.patch("/api/eval/cases/1/labels", json={"testart": "Regelfall"}).json()
+
+        assert body["versions"][-1]["grenzfall"] is False
+
+    def test_an_approved_version_keeps_its_grenzfall_flag(self, client):
+        """It is what a round measured against."""
+        client.post("/api/eval/cases", json=CASE)
+        client.post("/api/eval/cases/1/freigeben")
+
+        body = client.patch(
+            "/api/eval/cases/1/labels", json={"testart": "Grenzfall · außerhalb des Bestands"}
+        ).json()
+
+        assert body["versions"][-1]["grenzfall"] is False
+
+
+class TestOfferedValues:
+    """Built-in values always, and a hand-added one only while a case uses it."""
+
+    def test_the_built_in_values_are_offered_with_no_cases(self, client):
+        offered = client.get("/api/eval/labels").json()
+
+        assert offered["testart"][0] == "Regelfall"
+        assert "Grenzfall · außerhalb des Bestands" in offered["testart"]
+        assert offered["frageform"] == ["allgemein", "konkret"]
+        assert "GO" in offered["kategorie"]
+
+    def test_a_value_typed_in_is_offered_while_in_use(self, client):
+        client.post("/api/eval/cases", json={**CASE, "testart": "Rechenweg", "kategorie": "WD3"})
+
+        offered = client.get("/api/eval/labels").json()
+
+        assert "Rechenweg" in offered["testart"]
+        assert "WD3" in offered["kategorie"]
+
+    def test_and_disappears_once_no_case_uses_it(self, client):
+        client.post("/api/eval/cases", json={**CASE, "testart": "Rechenweg"})
+        client.patch("/api/eval/cases/1/labels", json={"testart": "Regelfall"})
+
+        offered = client.get("/api/eval/labels").json()
+
+        assert "Rechenweg" not in offered["testart"]

@@ -16,7 +16,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from sentra_eval import bestand, models, pruefer, triage, vorlagen, yaml_io
+from sentra_eval import bestand, labels, models, pruefer, triage, vorlagen, yaml_io
 from sentra_eval import cases as case_store
 from sentra_eval import feedback as feedback_store
 from sentra_eval import report as report_store
@@ -52,10 +52,12 @@ from sentra_eval.schemas import (
     EvalHealthResponse,
     FeedbackEntryResponse,
     ImportResponse,
+    LabelsResponse,
     MachineVerdictsResponse,
     QueueCall,
     QueueEntryResponse,
     RunResponse,
+    SetLabelsRequest,
     SetTagRequest,
     SheetResponse,
     StartRunRequest,
@@ -138,6 +140,9 @@ def _as_response(case: Case, aktueller_bestand: bestand.Bestand | None = None) -
         nummer=case.nummer,
         tag=case.tag,
         tag_manuell=case.tag_manuell,
+        testart=case.testart,
+        frageform=case.frageform,
+        herkunft=case.herkunft,
         kategorie=case.kategorie,
         created_at=case.created_at,
         zurueckgezogen_at=case.zurueckgezogen_at,
@@ -176,21 +181,27 @@ def list_cases(include_withdrawn: bool = False) -> list[CaseResponse]:
 
 @router.post("/cases", response_model=CaseResponse, status_code=201)
 def create_case(body: CreateCaseRequest) -> CaseResponse:
-    """A new case. The Test-ID is allocated here and never reused."""
+    """A new case. Its number is allocated here and never reused."""
     with session_scope() as session:
-        case, _ = case_store.create_case(
-            session,
-            kategorie=body.kategorie,
-            ausgangsfrage=body.ausgangsfrage,
-            abteilung=body.abteilung,
-            erwartete_antwort=body.erwartete_antwort,
-            referenz_korrekt=body.referenz_korrekt,
-            referenz_falsch=body.referenz_falsch,
-            referenz_korrekt_az=body.referenz_korrekt_az,
-            referenz_falsch_az=body.referenz_falsch_az,
-            grund_fuer_aufnahme=body.grund_fuer_aufnahme,
-            grenzfall=body.grenzfall,
-        )
+        try:
+            case, _ = case_store.create_case(
+                session,
+                kategorie=body.kategorie,
+                testart=body.testart,
+                frageform=body.frageform,
+                herkunft=body.herkunft,
+                ausgangsfrage=body.ausgangsfrage,
+                abteilung=body.abteilung,
+                erwartete_antwort=body.erwartete_antwort,
+                referenz_korrekt=body.referenz_korrekt,
+                referenz_falsch=body.referenz_falsch,
+                referenz_korrekt_az=body.referenz_korrekt_az,
+                referenz_falsch_az=body.referenz_falsch_az,
+                grund_fuer_aufnahme=body.grund_fuer_aufnahme,
+                grenzfall=body.grenzfall,
+            )
+        except labels.LabelError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         return _as_response(case)
 
 
@@ -348,8 +359,39 @@ def withdraw_case(nummer: int) -> CaseResponse:
 
 @router.get("/kategorien", response_model=dict[str, str])
 def kategorien() -> dict[str, str]:
-    """The closed list a Test-ID can be built from, for the UI's dropdown."""
-    return {str(k): name for k, name in KATEGORIE_NAMEN.items()}
+    """Categories for the case form: the built-in ones with their names, then any in use."""
+    with session_scope() as session:
+        offered = labels.offered(session)["kategorie"]
+    names = {str(k): name for k, name in KATEGORIE_NAMEN.items()}
+    return {k: names.get(k, k) for k in offered}
+
+
+@router.get("/labels", response_model=LabelsResponse)
+def label_values() -> LabelsResponse:
+    """The values to offer per label (#286). A value typed in by hand appears
+    while a case uses it and is gone once none does."""
+    with session_scope() as session:
+        return LabelsResponse(**labels.offered(session))
+
+
+@router.patch("/cases/{nummer}/labels", response_model=CaseResponse)
+def set_case_labels(nummer: int, body: SetLabelsRequest) -> CaseResponse:
+    """Correct a case's labels. No new version: labels are not what is measured."""
+    with session_scope() as session:
+        case = _lookup(session, nummer)
+        try:
+            case_store.set_labels(
+                session,
+                case,
+                kategorie=body.kategorie,
+                testart=body.testart,
+                frageform=body.frageform,
+                herkunft=body.herkunft,
+            )
+        except labels.LabelError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        session.refresh(case)
+        return _as_response(case)
 
 
 def _lookup(session: object, nummer: int) -> Case:

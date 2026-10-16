@@ -141,6 +141,11 @@ class Case(Base):
     # identity: correcting it changes nothing a round or report points at.
     tag: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     tag_manuell: Mapped[bool] = mapped_column(nullable=False, default=False)
+    # Labels for breaking a round down (#286). On the case, not its versions:
+    # correcting one changes nothing that was measured. See labels.py.
+    testart: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    frageform: Mapped[str] = mapped_column(String(16), nullable=False, default="")
+    herkunft: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     kategorie: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

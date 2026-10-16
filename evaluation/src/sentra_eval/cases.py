@@ -11,8 +11,8 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from sentra_eval import labels
 from sentra_eval.bestand import Bestand
-from sentra_eval.categories import Kategorie
 from sentra_eval.models import ENTWURF, FREIGEGEBEN, Case, CaseVersion, Counter
 
 # The counter behind every case number. Tag prefixes are counters too, named
@@ -116,7 +116,7 @@ def set_tag(session: Session, case: Case, tag: str) -> Case:
     """
     tag = tag.strip()
     if not tag:
-        case.tag = generate_tag(session, case.kategorie)
+        case.tag = generate_tag(session, labels.tag_prefix(case.kategorie, case.testart))
         case.tag_manuell = False
         session.flush()
         return case
@@ -133,9 +133,12 @@ def set_tag(session: Session, case: Case, tag: str) -> Case:
 
 def create_case(
     session: Session,
-    kategorie: Kategorie,
+    kategorie: str,
     ausgangsfrage: str,
     *,
+    testart: str = "",
+    frageform: str = "",
+    herkunft: str = "manuell",
     abteilung: str = "",
     erwartete_antwort: str = "",
     referenz_korrekt: str = "",
@@ -153,11 +156,18 @@ def create_case(
     trail could not distinguish "written and approved together" from "approved
     without anyone reading it".
     """
+    kategorie = labels.normalise_kategorie(str(kategorie))
+    testart = testart.strip()
     case = Case(
         nummer=allocate_nummer(session),
-        tag=generate_tag(session, str(kategorie)),
-        kategorie=str(kategorie),
+        tag=generate_tag(session, labels.tag_prefix(kategorie, testart)),
+        kategorie=kategorie,
+        testart=testart,
+        frageform=frageform.strip(),
+        herkunft=herkunft.strip(),
     )
+    if testart == labels.GRENZFALL_AUSSERHALB:
+        grenzfall = True
     session.add(case)
     session.flush()
 
@@ -284,7 +294,15 @@ def approve(
 
 
 def seed_case(
-    session: Session, *, nummer: int, tag: str, kategorie: Kategorie, **content: object
+    session: Session,
+    *,
+    nummer: int,
+    tag: str,
+    kategorie: str,
+    testart: str = "",
+    frageform: str = "",
+    herkunft: str = "",
+    **content: object,
 ) -> tuple[Case, CaseVersion]:
     """Create a case at a number that was allocated elsewhere.
 
@@ -299,11 +317,19 @@ def seed_case(
     """
     if nummer < 1:
         raise CaseError(f"{nummer} is not a case number.")
-    tag = tag.strip() or f"{kategorie}-{nummer:03d}"
+    kategorie = labels.normalise_kategorie(str(kategorie))
+    tag = tag.strip() or f"{labels.tag_prefix(kategorie, testart)}-{nummer:03d}"
     if _tag_in_use(session, tag):
         raise TagTaken(f"Der Tag {tag!r} ist schon vergeben.")
 
-    case = Case(nummer=nummer, tag=tag, kategorie=str(kategorie))
+    case = Case(
+        nummer=nummer,
+        tag=tag,
+        kategorie=kategorie,
+        testart=testart,
+        frageform=frageform,
+        herkunft=herkunft,
+    )
     session.add(case)
     session.flush()
 
@@ -316,6 +342,46 @@ def seed_case(
     session.add(version)
     session.flush()
     return case, version
+
+
+def set_labels(
+    session: Session,
+    case: Case,
+    *,
+    kategorie: str | None = None,
+    testart: str | None = None,
+    frageform: str | None = None,
+    herkunft: str | None = None,
+) -> Case:
+    """Correct a case's labels. Creates no version: labels are not what is measured.
+
+    A generated tag follows a new Bereich or Testart; one set by hand stays.
+    Choosing or leaving the Testart "Grenzfall · außerhalb des Bestands" sets
+    the grenzfall flag on a draft to match. An approved version keeps its flag:
+    it is what a round measured against.
+    """
+    before = (case.kategorie, case.testart)
+    if kategorie is not None:
+        case.kategorie = labels.normalise_kategorie(kategorie)
+    if testart is not None:
+        case.testart = testart.strip()
+    if frageform is not None:
+        case.frageform = frageform.strip()
+    if herkunft is not None:
+        case.herkunft = herkunft.strip()
+
+    if (case.kategorie, case.testart) != before and not case.tag_manuell:
+        case.tag = generate_tag(session, labels.tag_prefix(case.kategorie, case.testart))
+
+    latest = case.versions[-1] if case.versions else None
+    if testart is not None and latest is not None and not latest.is_approved:
+        if case.testart == labels.GRENZFALL_AUSSERHALB:
+            latest.grenzfall = True
+        elif before[1] == labels.GRENZFALL_AUSSERHALB:
+            latest.grenzfall = False
+
+    session.flush()
+    return case
 
 
 def withdraw(session: Session, case: Case) -> Case:
