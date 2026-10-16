@@ -5,6 +5,7 @@ import { AgreementCard } from "@/components/evaluation/AgreementCard";
 import { SheetCard } from "@/components/evaluation/SheetCard";
 import { TriagePane } from "@/components/evaluation/TriagePane";
 import { Badge } from "@/components/ui/badge";
+import { BreakdownPane } from "@/components/evaluation/BreakdownPane";
 
 /** What a round concluded.
  *
@@ -102,6 +103,8 @@ export function ResultsView({ runId }: { runId: string }) {
           sheets.map((sheet) => <SheetCard key={sheet.nummer} sheet={sheet} />)
         )}
       </section>
+
+      <BreakdownPane runId={runId} />
 
       <TrendPane trend={trend} />
     </div>

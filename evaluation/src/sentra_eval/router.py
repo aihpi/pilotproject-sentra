@@ -12,7 +12,7 @@ import zipfile
 from io import BytesIO
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -41,6 +41,7 @@ from sentra_eval.models import (
 from sentra_eval.schemas import (
     AgreementResponse,
     ApproveVariantRequest,
+    BreakdownRowResponse,
     CallResponse,
     CaseResponse,
     CaseVersionResponse,
@@ -764,6 +765,40 @@ def agreement(run_id: UUID) -> AgreementResponse:
             nicht_bewertet=found.nicht_bewertet,
             abweichungsquote=found.abweichungsquote,
         )
+
+
+@router.get("/aufschluesselung", response_model=list[BreakdownRowResponse])
+def aufschluesselung(
+    dimension: list[str] = Query(...),
+    run_id: UUID | None = None,
+) -> list[BreakdownRowResponse]:
+    """Results grouped by one or more labels, for one round or for all (#289).
+
+    `?dimension=testart&dimension=kategorie` combines them: one row per pair
+    of values that occurs.
+    """
+    with session_scope() as session:
+        run = _lookup_run(session, run_id) if run_id is not None else None
+        try:
+            rows = report_store.breakdown(session, dimension, run=run)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return [
+            BreakdownRowResponse(
+                werte=row.werte,
+                faelle=row.faelle,
+                auffaellig=row.auffaellig,
+                befunde=row.befunde,
+                abweichung=AgreementResponse(
+                    einig=row.abweichung.einig,
+                    zu_streng=row.abweichung.zu_streng,
+                    zu_grosszuegig=row.abweichung.zu_grosszuegig,
+                    nicht_bewertet=row.abweichung.nicht_bewertet,
+                    abweichungsquote=row.abweichung.abweichungsquote,
+                ),
+            )
+            for row in rows
+        ]
 
 
 @router.get("/trend", response_model=TrendResponse)

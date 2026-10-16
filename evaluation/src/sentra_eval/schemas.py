@@ -423,3 +423,13 @@ class DraftFromFeedbackResponse(BaseModel):
     # deliberately not stored on the case: a yardstick taken from the system
     # under test is not a yardstick.
     beanstandete_antwort: str
+
+
+class BreakdownRowResponse(BaseModel):
+    """One combination of label values in the Aufschlüsselung (#289)."""
+
+    werte: dict[str, str]
+    faelle: int
+    auffaellig: int
+    befunde: dict[str, int]
+    abweichung: AgreementResponse

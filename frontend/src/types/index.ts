@@ -332,6 +332,15 @@ export interface Agreement {
   abweichungsquote: number | null;
 }
 
+/** One combination of label values in the Aufschlüsselung (#289). */
+export interface BreakdownRow {
+  werte: Record<string, string>;
+  faelle: number;
+  auffaellig: number;
+  befunde: Record<string, number>;
+  abweichung: Agreement;
+}
+
 /** The Vorlage's Phase-4 documentation sheet, one per case.
  *
  *  German field names on purpose: a sheet is what gets filed, and translating
