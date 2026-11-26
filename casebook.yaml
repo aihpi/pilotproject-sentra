@@ -1,0 +1,20 @@
+# Link between this project and the blueprints of the KI-Servicezentrum that it feeds.
+# The kick-off interview (skill kickoff-interview, plugin kisz-code) fills the empty fields.
+schema: 2
+project: pilotproject-sentra
+partner:                # organization name only, no contact data
+partner_kind:           # public body, SME, research group, start-up, internal
+team: []                # contributors from our team, lead first
+kickoff: open           # open, started, done
+do_not_publish: []      # what the partner does not want published
+blueprints:
+  - slug: rag-public-sector            # repository aihpi/blueprint-rag-public-sector
+    case: sentra              # the [case] tag in the casebook
+    questions: []       # slugs of the research question pages in the casebook
+    since:              # YYYY-MM-DD
+    until:              # set when the project stops feeding the blueprint
+  - slug: rag-evaluation            # repository aihpi/blueprint-rag-evaluation
+    case: sentra              # the [case] tag in the casebook
+    questions: []       # slugs of the research question pages in the casebook
+    since:              # YYYY-MM-DD
+    until:              # set when the project stops feeding the blueprint
